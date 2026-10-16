@@ -47,10 +47,11 @@ export type B2bMilestone = {
 // ── ขออนุญาต (3 อย่างตามหมายเหตุใบ SSE) ──
 export type PermitKind = "local_notice" | "utility" | "building";
 export type PermitStatus = "pending" | "submitted" | "approved" | "not_required";
-export const PERMITS: { kind: PermitKind; label: string }[] = [
-  { kind: "local_notice", label: "หนังสือแจ้งความประสงค์ติดตั้งโซลาร์เซลล์ (หน่วยงานท้องถิ่น)" },
-  { kind: "utility", label: "ผลพิจารณาการเชื่อมต่อระบบไฟฟ้า (กฟน. / กฟภ.)" },
-  { kind: "building", label: "ขออนุญาตดัดแปลงอาคาร (เอกสารโครงสร้าง/สถาปัตย์)" },
+/** short = ชื่อย่อในตารางงานคู่ขนาน (ช่องแคบ) · step = คอลัมน์ที่แสดง (ผลการไฟฟ้าใช้ตอนขนานไฟ) */
+export const PERMITS: { kind: PermitKind; label: string; short: string; step: 3600 | 3800 }[] = [
+  { kind: "local_notice", label: "หนังสือแจ้งความประสงค์ติดตั้งโซลาร์เซลล์ (หน่วยงานท้องถิ่น)", short: "แจ้งท้องถิ่น", step: 3600 },
+  { kind: "utility", label: "ผลพิจารณาการเชื่อมต่อระบบไฟฟ้า (กฟน. / กฟภ.)", short: "ผลพิจารณาการไฟฟ้า", step: 3800 },
+  { kind: "building", label: "ขออนุญาตดัดแปลงอาคาร (เอกสารโครงสร้าง/สถาปัตย์)", short: "ดัดแปลงอาคาร", step: 3600 },
 ];
 export const PERMIT_STATUS_LABEL: Record<PermitStatus, string> = {
   pending: "ยังไม่ยื่น", submitted: "ยื่นแล้ว รอผล", approved: "ได้แล้ว", not_required: "ไม่ต้องใช้",

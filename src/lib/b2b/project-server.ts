@@ -11,14 +11,17 @@ const num = (v: unknown) => (v == null ? null : Number(v));
 
 /** ขั้นย่อยคิดตอนอ่าน (ไม่มีคอลัมน์ให้คอย sync) — สำรวจ: มีวันนัดในอนาคต = 3310 · ถึง/เลยวันนัด = 3320 (เวลาไทย) */
 const ms = (p: string, kind: string) => `EXISTS (SELECT 1 FROM b2b_project_milestones m WHERE m.project_id = ${p}.id AND m.kind = '${kind}')`;
-//  ราคาประมาณการ/ราคายืนยัน: สถานะใบเสนอราคาที่ขยับล่าสุด (Rev ล่าสุดของแต่ละเลขที่) → หลักสิบ (QUOTE_SUB_OFFSET)
+//  ราคาประมาณการ/ราคายืนยัน: สถานะใบเสนอราคาชนิดของขั้นนั้นที่ขยับล่าสุด (Rev ล่าสุดของแต่ละเลขที่) → หลักสิบ (QUOTE_SUB_OFFSET)
+//    กรองชนิดใบ — ขั้นราคายืนยันที่ยังไม่มีใบยืนยันเคยขึ้น "ร่าง" ของใบประมาณการ (16 ต.ค. 69)
 export const PROJECT_SUB_SQL = (p: string) => `
   CASE WHEN ${p}.stage = 3300 AND ${p}.survey_date IS NOT NULL
        THEN CASE WHEN ${p}.survey_date > CAST(DATEADD(HOUR, 7, SYSUTCDATETIME()) AS DATE) THEN 3310 ELSE 3320 END
        WHEN ${p}.stage IN (3200, 3400)
        THEN (SELECT TOP 1 ${p}.stage + CASE qq.status WHEN 'draft' THEN 10 WHEN 'pending_review1' THEN 20 WHEN 'pending_review2' THEN 30
                                                         WHEN 'pending_review3' THEN 40 WHEN 'changes_required' THEN 50 WHEN 'approved' THEN 60 ELSE 70 END
-             FROM b2b_quotations qq WHERE qq.project_id = ${p}.id AND qq.is_latest = 1 ORDER BY qq.updated_at DESC, qq.id DESC)
+             FROM b2b_quotations qq WHERE qq.project_id = ${p}.id AND qq.is_latest = 1
+               AND qq.kind = CASE WHEN ${p}.stage = 3200 THEN 'estimate' ELSE 'confirmed' END
+             ORDER BY qq.updated_at DESC, qq.id DESC)
        -- ได้งาน: ยังไม่เซ็น = 3510 · งวด 1 ยังไม่รับ = 3520 · แนบหลักฐานแล้วรอบัญชี = 3530 (รับแล้วโครงการขยับไป 3600 เอง)
        -- ดำเนินโครงการ (เฟส 4): จาก milestone ที่บันทึกแล้ว
        WHEN ${p}.stage = 3600 THEN CASE WHEN ${ms(p, "procured")} THEN 3620 ELSE 3610 END

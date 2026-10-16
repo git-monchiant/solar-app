@@ -12,11 +12,18 @@ import { apiFetch, getUserContextHeaders } from "@/lib/api";
 import { hasRole, useActiveRoles } from "@/lib/roles";
 import { formatThaiDate, formatTHB } from "@/lib/utils/formatters";
 import {
-  B2B_FLOW, B2B_LOSABLE_MAX_STAGE, B2B_PROJECT_ROLES, B2B_PROJECT_VIEW_ROLES, B2B_STAGE, isClosedStage, listHrefOf, stageLabel,
-  type B2bInstallment, type B2bProject, type B2bProjectFile, type B2bUserOption,
+  B2B_FLOW, B2B_LOSABLE_MAX_STAGE, B2B_PROJECT_ROLES, B2B_PROJECT_VIEW_ROLES, B2B_STAGE, B2B_SURVEY_SUB, INSTALLMENT_STATUS_LABEL,
+  isClosedStage, listHrefOf, stageLabel,
+  type B2bInstallment, type B2bProject, type B2bProjectFile, type B2bProjectQuote, type B2bUserOption,
 } from "@/lib/b2b/project";
+import { QUOTE_STATUS_LABEL, QUOTE_STATUS_TONE, editableStatus, tierOfStatus } from "@/lib/b2b/quotation";
+import { reviewedTiers, stageEnteredAt, stepPassedAt, stepSkipped } from "@/lib/b2b/project-view";
 import StageBadge from "@/components/b2b/project/StageBadge";
-import ProjectStepCard, { type StepState } from "@/components/b2b/project/ProjectStepCard";
+import ProjectStepper, { StepProgressMobile, type StepState, type StepView } from "@/components/b2b/project/ProjectStepper";
+import NextStepCard, { TierBar, type NextItem } from "@/components/b2b/project/NextStepCard";
+import StepHistoryCard from "@/components/b2b/project/StepHistoryCard";
+import ExecutionBoard from "@/components/b2b/project/ExecutionBoard";
+import MoreMenu, { type MoreItem } from "@/components/b2b/project/MoreMenu";
 import BoqOptionsTable from "@/components/b2b/project/BoqOptionsTable";
 import ActivityList from "@/components/b2b/project/ActivityList";
 import ProjectFormModal from "@/components/b2b/project/ProjectFormModal";
@@ -25,26 +32,51 @@ import ProjectFileList from "@/components/b2b/project/ProjectFileList";
 import InstallmentTable from "@/components/b2b/project/InstallmentTable";
 import { openAuthedFile } from "@/components/b2b/openAuthedFile";
 import QuoteList from "@/components/b2b/project/QuoteList";
-import MilestoneList from "@/components/b2b/project/MilestoneList";
-import PermitChecklist from "@/components/b2b/project/PermitChecklist";
 import { MilestoneModal, PermitModal } from "@/components/b2b/project/ExecutionModals";
 import { CreateContractModal } from "@/components/b2b/om/VisitModals";
-import { PERMITS, milestoneDef, type B2bMilestone, type B2bPermit, type MilestoneFile, type MilestoneKind } from "@/lib/b2b/execution";
+import {
+  MILESTONES, PERMITS, PERMIT_STATUS_LABEL, milestoneDef,
+  type B2bMilestone, type B2bPermit, type MilestoneFile, type MilestoneKind,
+} from "@/lib/b2b/execution";
 
-// หน้าโครงการ B2B — โครงเดียวกับหน้ารายละเอียดลีด (header ติดบน · แท็บ · รางขั้นซ้าย · การ์ดขั้น · Activity Log ขวา)
-// แผน docs/plan/20261015-07-b2b-project-flow.md · 01–05 ขาย/ได้งาน · 06–09 ดำเนินโครงการ (milestone + ขออนุญาต — เฟส 4)
-// ขั้นเปลี่ยนผ่าน /actions ที่เดียว (server ตรวจกติกา) · ทุกครั้งได้โครงการทั้งก้อนกลับมาแทนค่าเดิม
+// หน้าโครงการ B2B — แผน docs/plan/20261016-01-b2b-project-page-redesign.md (แบบ A + C · เฉพาะ B2B ไม่แตะหน้าลีด B2C)
+//   header ติดบน: ชื่อ + ตัวเลขหลัก + เมนู ⋯ · แถบขั้นแนวนอน (ขาย 01–05 / ดำเนินโครงการ 06–09) · แท็บ
+//   เนื้อหา: การ์ด "ขั้นต่อไป" (เช็กลิสต์ว่ายังขาดอะไร) + ของที่ใช้ทำงานขั้นนั้น · กดขั้นที่เสร็จบนแถบ = ดูย้อนหลัง
+//   ช่วง 06–09 ใช้ตารางงานคู่ขนาน (หน้างาน / ขออนุญาต / งวดเงิน) · มือถือ: แถบความคืบหน้า + ปุ่มหลักแถบท้ายจอ
+// โครงเดิม (รางขั้นซ้าย + การ์ดขั้นเรียงลงมา) อยู่ใน git ก่อน commit นี้ · ขั้นเปลี่ยนผ่าน /actions ที่เดียว (server ตรวจกติกา)
 
 type Tab = "workflow" | "info" | "boq" | "installments" | "timeline";
 type Modal = null | "edit" | "customer" | "lost" | "cancel" | "reopen" | "back_survey" | "schedule" | "record" | "new_boq" | "new_quote"
   | "won" | "contract" | "evidence" | "reject_inst" | "milestone" | "milestone_edit" | "permit" | "om_contract" | "survey_files";
 
+/** ชี้ขั้นที่ยังล็อกบนแถบขั้น → บอกว่าปลดเมื่อไร */
 const LOCKED_HINT: Record<number, string> = {
+  3200: "เริ่มเมื่อกด \"เริ่มทำราคาประมาณการ\"",
+  3300: "เริ่มเมื่อนัดวันสำรวจ",
+  3400: "เริ่มเมื่อบันทึกผลสำรวจ",
   3500: "ปลดเมื่อกด \"ได้งาน\" — เลือกใบเสนอราคาที่ส่งลูกค้าแล้ว",
   3600: "ปลดเมื่อบัญชียืนยันเงินงวด 1",
   3700: "ปลดเมื่อบันทึก \"ของเข้าหน้างาน\"",
   3800: "ปลดเมื่อติดตั้งเสร็จ 100% แล้วบันทึกยื่นขนานไฟ",
   3900: "ปลดเมื่อได้วันจ่ายไฟ (COD) แล้วกด \"เข้าขั้นส่งมอบ\"",
+};
+
+const btn = "inline-flex items-center justify-center h-9 px-4 rounded-lg border border-gray-200 bg-white text-sm font-semibold text-gray-700 hover:bg-gray-50 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed";
+const btnPrimary = "inline-flex items-center justify-center h-9 px-4 rounded-lg bg-active text-white text-sm font-semibold hover:bg-active-dark whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed";
+const btnSm = "inline-flex items-center h-8 px-3 rounded-lg text-xs font-semibold whitespace-nowrap disabled:opacity-40";
+const dl = "grid gap-x-6 gap-y-2 text-sm md:grid-cols-2";
+const dt = "text-xs text-gray-400";
+
+function TextLink({ href, children }: { href: string; children: ReactNode }) {
+  return <Link href={href} style={{ minHeight: 0 }} className="text-xs font-bold text-active hover:underline whitespace-nowrap">{children}</Link>;
+}
+
+/** ส่วนของขั้นปัจจุบัน — การ์ดขั้นต่อไป (title…inner) + เนื้อหาใต้การ์ด (body) */
+type Current = {
+  title: ReactNode; sub?: ReactNode; items?: NextItem[]; note?: ReactNode; actions?: ReactNode;
+  /** ปุ่มหลัก — จอใหญ่อยู่ท้ายการ์ด · มือถืออยู่แถบท้ายจอ */
+  primary?: ReactNode;
+  inner?: ReactNode; body?: ReactNode;
 };
 
 export default function B2bProjectPage({ params }: { params: Promise<{ id: string }> }) {
@@ -63,6 +95,8 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
   const [loadError, setLoadError] = useState("");
   const [users, setUsers] = useState<B2bUserOption[]>([]);
   const [tab, setTab] = useState<Tab>(() => (searchParams.get("tab") === "installments" ? "installments" : "workflow"));
+  // ขั้นที่กำลังดูย้อนหลัง — ผูกกับขั้นของโครงการตอนกด ⇒ โครงการขยับขั้นแล้วกลับมาที่ขั้นปัจจุบันเอง
+  const [sel, setSel] = useState<{ stage: number; step: number } | null>(null);
   const [inst, setInst] = useState<B2bInstallment | null>(null);
   const [instBusy, setInstBusy] = useState<number | null>(null);
   const [msKind, setMsKind] = useState<MilestoneKind | null>(null);
@@ -71,8 +105,9 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
   const [modal, setModal] = useState<Modal>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  // ความสูง header ติดบน — วัดสด (ตัดบรรทัดตามความยาวชื่อ/จอ) ใช้กับรางขั้น · Activity Log · scroll-mt ของการ์ด
+  // ความสูง header ติดบน — วัดสด (ตัดบรรทัดตามความยาวชื่อ/จอ) ใช้กับ Activity Log · scroll-mt ของเนื้อหา
   const headerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLElement>(null);
   const [hdrH, setHdrH] = useState(124);
 
   const load = useCallback(() => {
@@ -93,14 +128,6 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
     return () => ro.disconnect();
   }, [loaded]);
 
-  // เปิดหน้ามา → เลื่อนไปการ์ดขั้นปัจจุบัน (เผื่อความสูง header ติดบนด้วย scroll-mt ของการ์ด)
-  const activeStage = p?.stage;
-  useEffect(() => {
-    if (activeStage == null) return;
-    const t = setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 150);
-    return () => clearTimeout(t);
-  }, [activeStage]);
-
   if (activeRoles.length > 0 && !canUse) {
     return (
       <div>
@@ -113,11 +140,15 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
   if (!p) return <Loading />;
 
   const closed = isClosedStage(p.stage);
-  // ขั้นที่ใช้วาดราง/การ์ด — แพ้/ยกเลิก ใช้ขั้นก่อนปิด: ขั้นนั้น = "หยุดที่ขั้นนี้" (ไม่ใช่ Done) · ไม่มีขั้นไหน active
-  //   ปิดโครงการ (3950) = ทำครบทุกขั้น → ทุกการ์ด Done
+  // ขั้นที่ใช้วาดแถบขั้น — แพ้/ยกเลิก ใช้ขั้นก่อนปิด: ขั้นนั้น = "หยุดที่ขั้นนี้" (ไม่ใช่ Done) · ไม่มีขั้นไหน active
+  //   ปิดโครงการ (3950) = ทำครบทุกขั้น → ทุกขั้น Done
   const stopped = closed && p.stage !== B2B_STAGE.closed;
   const at = stopped ? (p.stage_before_close ?? B2B_STAGE.lead) : p.stage;
   const stateOf = (step: number): StepState => (step < at ? "done" : step > at ? "locked" : stopped ? "stopped" : "active");
+  const noOf = (step: number) => B2B_FLOW.findIndex((s) => s.step === step) + 1;
+  // ช่วง 06–09 ดูจากตารางงานคู่ขนานในหน้าขั้นปัจจุบัน (ไม่มีหน้าย้อนหลังแยก)
+  const boardInCurrent = at >= B2B_STAGE.permit;
+  const view = sel && sel.stage === p.stage ? sel.step : null;
 
   const openModal = (m: Modal) => { setError(""); setModal(m); };
   const run = async (fn: () => Promise<void>) => {
@@ -148,13 +179,21 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
     }
   };
 
-  const btn = "h-9 px-4 rounded-lg border border-gray-200 bg-white text-sm font-semibold text-gray-700 hover:bg-gray-50 whitespace-nowrap";
-  const btnPrimary = "h-9 px-4 rounded-lg bg-active text-white text-sm font-semibold hover:bg-active-dark whitespace-nowrap disabled:opacity-40";
-  const btnGhost = "h-9 px-2 text-sm font-semibold text-active hover:underline whitespace-nowrap";
-  const dl = "grid gap-x-6 gap-y-2 text-sm md:grid-cols-2";
-  const dt = "text-xs text-gray-400";
+  // กดขั้นบนแถบ: ขั้นที่เสร็จ = ดูย้อนหลัง · ขั้นปัจจุบัน = กลับ · ขั้น 06–09 = เลื่อนไปตารางงานคู่ขนาน
+  const selectStep = (step: number) => {
+    setTab("workflow");
+    if (step >= B2B_STAGE.permit && boardInCurrent) {
+      setSel(null);
+      requestAnimationFrame(() => document.getElementById("exec-board")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+      return;
+    }
+    setSel(stateOf(step) === "done" ? { stage: p.stage, step } : null);
+    requestAnimationFrame(() => contentRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
+
   const canEditBoq = canEdit && !closed && p.stage <= B2B_STAGE.confirm;
   const mapLink = p.latitude != null && p.longitude != null ? `https://www.google.com/maps?q=${p.latitude},${p.longitude}` : null;
+  const latestBoq = [...p.boqs].sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)))[0] ?? null;
 
   const infoGrid = (
     <dl className={dl}>
@@ -164,14 +203,11 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
       <div><dt className={dt}>ผู้ดูแล</dt><dd className="text-gray-800">{p.owner_name ?? "—"}</dd></div>
     </dl>
   );
-  const phaseNote = (text: string) => (
-    <div className="rounded-lg border border-dashed border-gray-300 bg-white/60 px-3 py-2 text-xs text-gray-500">{text}</div>
-  );
 
-  // ใบประมาณการอยู่การ์ดขั้น 02 · ใบยืนยันอยู่การ์ดขั้น 04
+  // ใบประมาณการ = ขั้น 02 · ใบยืนยัน = ขั้น 04
   const estimateQuotes = p.quotes.filter((q) => q.kind === "estimate");
   const confirmQuotes = p.quotes.filter((q) => q.kind === "confirmed");
-  // ── งวดเงิน (เฟส 3) ──
+  // ── งวดเงิน ──
   const sentQuotes = p.quotes.filter((q) => q.status === "sent");
   const instAction = async (it: B2bInstallment, action: "due" | "confirm" | "reject", reason?: string) => {
     setError(""); setInstBusy(it.id);
@@ -194,6 +230,8 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
     const ok = await confirm({ title: `งวด ${it.no} ถึงกำหนดวางบิล`, message: "ปกติงวดถึงกำหนดเองเมื่อบันทึกเหตุการณ์หน้างาน — ใช้ปุ่มนี้เมื่อเหตุการณ์ของงวดเกิดแล้วแต่ไม่ได้บันทึกในระบบ", confirmText: "ถึงกำหนด" });
     if (ok) await instAction(it, "due");
   };
+  const attachEvidence = (it: B2bInstallment) => { setInst(it); openModal("evidence"); };
+  const rejectEvidence = (it: B2bInstallment) => { setInst(it); openModal("reject_inst"); };
   const uploadEvidence = (v: { file: File | null; received_date: string; note: string }) => run(async () => {
     if (!inst) return;
     if (!v.file) throw new Error("กรุณาเลือกไฟล์หลักฐาน");
@@ -208,10 +246,10 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
   const installmentTable = (
     <InstallmentTable items={p.installments} contractValue={p.contract_value} vatPct={p.contract_vat_pct}
       canEdit={canEdit && !closed} canConfirm={canConfirm && !closed} busyId={instBusy}
-      onDue={(it) => void markDue(it)} onAttach={(it) => { setInst(it); openModal("evidence"); }}
-      onConfirm={(it) => void confirmPaid(it)} onReject={(it) => { setInst(it); openModal("reject_inst"); }} onView={viewEvidence} />
+      onDue={(it) => void markDue(it)} onAttach={attachEvidence}
+      onConfirm={(it) => void confirmPaid(it)} onReject={rejectEvidence} onView={viewEvidence} />
   );
-  // ── ดำเนินโครงการ (เฟส 4) ──
+  // ── ดำเนินโครงการ ──
   const canExec = canEdit && !closed;
   const canPermit = canExec && p.stage >= B2B_STAGE.won;
   const msOf = (k: MilestoneKind) => p.milestones.find((m) => m.kind === k);
@@ -268,13 +306,6 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
     const ok = await confirm({ title: "เข้าขั้นส่งมอบ", message: "ขนานไฟเรียบร้อยแล้ว — ต่อไปนัดส่งมอบงาน + Training ลูกค้า", confirmText: "เข้าขั้นส่งมอบ" });
     if (ok) await act({ action: "to_handover" }, "โครงการอยู่ขั้นส่งมอบแล้ว");
   };
-  const milestoneList = (step: number) => (
-    <MilestoneList step={step} milestones={p.milestones} stage={p.stage} canEdit={canExec} onRecord={openRecord}
-      onEdit={(m) => { setMsEdit(m); openModal("milestone_edit"); }} onUndo={(m) => void undoMilestone(m)} onFile={viewMilestoneFile} />
-  );
-  const permitList = (only?: B2bPermit["kind"][]) => (
-    <PermitChecklist permits={p.permits} only={only} canEdit={canPermit} onEdit={(x) => { setPermit(x); openModal("permit"); }} onFile={viewPermitFile} />
-  );
   const doneOn = (k: MilestoneKind, label: string) => { const m = msOf(k); return m ? `${label} ${formatThaiDate(m.done_date)}` : undefined; };
   const permitsOk = p.permits.filter((x) => x.status === "approved" || x.status === "not_required").length;
   // สัญญา O&M (แผน 20261015-09) — สร้างเองตอนปิดโครงการ · กดสร้างเองได้หลังบันทึกส่งมอบ (ใบไม่มี O&M / งวดสุดท้ายยังค้าง)
@@ -306,7 +337,7 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
     load();
     toast({ message: `แนบไฟล์สำรวจ ${v.files.length} ไฟล์แล้ว`, variant: "success" });
   });
-  // บันทึกผล (ขยับขั้น) ก่อน แล้วค่อยอัปโหลดไฟล์ — ไฟล์ไม่ผ่าน ผลสำรวจยังอยู่ แนบซ้ำที่การ์ดขั้น 03 ได้
+  // บันทึกผล (ขยับขั้น) ก่อน แล้วค่อยอัปโหลดไฟล์ — ไฟล์ไม่ผ่าน ผลสำรวจยังอยู่ แนบซ้ำที่ขั้น 03 ได้
   const recordSurvey = (v: { survey_date: string; note: string; files: File[] }) => run(async () => {
     const r = await apiFetch(`/api/b2b/projects/${p.id}/actions`, { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "record_survey", survey_date: v.survey_date, note: v.note }) });
@@ -327,10 +358,11 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
     catch (e) { toast({ message: e instanceof Error && e.message ? e.message : "ลบไม่สำเร็จ", variant: "danger" }); }
   };
 
-  const wonButton = (
-    <button type="button" className={btnPrimary} disabled={sentQuotes.length === 0}
+  const wonButton = (primary: boolean) => (
+    <button type="button" className={primary ? btnPrimary : btn} disabled={sentQuotes.length === 0}
       title={sentQuotes.length ? undefined : "ต้องมีใบเสนอราคาที่อนุมัติครบ 3 ชั้นและส่งลูกค้าแล้ว"} onClick={() => openModal("won")}>ได้งาน</button>
   );
+  const newBoqButton = canEditBoq && <button type="button" className={btnPrimary} onClick={() => openModal("new_boq")}>+ BOQ ขนาดใหม่</button>;
 
   const createQuote = (boqId: number) => run(async () => {
     if (!boqId) throw new Error("กรุณาเลือก BOQ");
@@ -338,174 +370,338 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
     router.push(`/b2b/quotations/${r.id}`);
   });
 
-  // ── การ์ดขั้น ──
-  const steps: Record<number, { summary?: ReactNode; body?: ReactNode }> = {
+  // ── เช็กลิสต์ใบเสนอราคา (ขั้น 02 ใบประมาณการ · ขั้น 04 ใบยืนยัน) — ใบที่ขยับล่าสุดแทนความคืบหน้า (API เรียงใหม่ก่อน) ──
+  const quoteFlow = (quotes: B2bProjectQuote[], kindLabel: string) => {
+    const q = quotes[0] ?? null;
+    const tier = q ? tierOfStatus(q.status) : null;
+    const passed = q ? reviewedTiers(q.status) : 0;
+    const sent = quotes.some((x) => x.status === "sent");
+    const open = (text: string) => q && <Link href={`/b2b/quotations/${q.id}`} className={btnPrimary}>{text}</Link>;
+    const items: NextItem[] = [
+      {
+        key: "quote", state: !q || editableStatus(q.status) ? "todo" : "ok", title: `ออกใบ${kindLabel}`,
+        detail: q
+          ? <>{q.doc_no} Rev {q.revision} <span className={`ml-1 inline-flex rounded-full px-2 text-xxs font-bold ${QUOTE_STATUS_TONE[q.status]}`}>{QUOTE_STATUS_LABEL[q.status]}</span>{quotes.length > 1 ? ` · ทั้งหมด ${quotes.length} ใบ` : ""}</>
+          : "เลือก BOQ ตัวเลือกที่จะเสนอ",
+        action: q ? <TextLink href={`/b2b/quotations/${q.id}`}>เปิดใบ</TextLink> : undefined,
+      },
+      {
+        key: "review", state: passed === 3 ? "ok" : tier ? "pending" : "wait", title: "ผู้ตรวจสอบ 3 ชั้นอนุมัติ",
+        detail: tier ? `รอผู้ตรวจสอบชั้น ${tier}` : q?.status === "changes_required" ? "ส่งกลับแก้ — แก้ใบแล้วส่งอนุมัติใหม่" : undefined,
+        action: <TierBar done={passed} />,
+      },
+      { key: "sent", state: sent ? "ok" : "wait", title: "ส่งลูกค้า", detail: sent ? "ส่งแล้ว — รอลูกค้าตอบรับ" : "อนุมัติครบแล้วส่งจากหน้าใบเสนอราคา" },
+    ];
+    const title = sent ? null
+      : !q ? `ต่อไป: ออกใบ${kindLabel}`
+      : q.status === "changes_required" ? `ต่อไป: แก้ใบ${kindLabel}ที่ถูกส่งกลับ แล้วส่งอนุมัติใหม่`
+      : q.status === "draft" ? `ต่อไป: ส่งใบ${kindLabel}ให้ผู้ตรวจสอบอนุมัติ`
+      : tier ? `รอผู้ตรวจสอบชั้น ${tier} อนุมัติใบ${kindLabel}`
+      : q.status === "approved" ? `ต่อไป: ส่งใบ${kindLabel}ให้ลูกค้า` : null;
+    const primary = !canEdit || sent ? null
+      : !q ? (p.boqs.length > 0 && <button type="button" className={btnPrimary} onClick={() => openModal("new_quote")}>+ สร้างใบเสนอราคา</button>)
+      : editableStatus(q.status) ? open("เปิดใบเพื่อส่งอนุมัติ")
+      : q.status === "approved" ? open("เปิดใบเพื่อส่งลูกค้า") : null;
+    return { items, title, primary };
+  };
+  const boqItem = (title: string, emptyHint: string): NextItem => latestBoq
+    ? {
+      key: "boq", state: "ok", title,
+      detail: `${p.boqs.length > 1 ? `${p.boqs.length} ตัวเลือก · ล่าสุด ` : ""}${latestBoq.doc_no} Rev ${latestBoq.revision}${latestBoq.capacity_wp ? ` · ${formatTHB(latestBoq.capacity_wp / 1000, { decimals: 2 })} kWp` : ""}`,
+      action: <TextLink href={`/b2b/boq/${latestBoq.id}`}>เปิด BOQ</TextLink>,
+    }
+    : { key: "boq", state: "todo", title, detail: emptyHint };
+  /** ยังไม่มี BOQ — ข้อของใบเสนอราคายังไม่ถึง */
+  const afterBoq = (items: NextItem[]) => (latestBoq ? items : items.map((it) => ({ ...it, state: "wait" as const })));
+
+  // ── เนื้อหาย้อนหลังของขั้นขาย (กดจากแถบขั้น) + บรรทัดสรุป ──
+  const surveyInfo = (
+    <>
+      <dl className={dl}>
+        <div><dt className={dt}>วันนัดสำรวจ</dt><dd className="text-gray-800">{p.survey_date ? formatThaiDate(p.survey_date, { weekday: true }) : "ยังไม่ได้นัด"}</dd></div>
+        <div><dt className={dt}>ผู้สำรวจ</dt><dd className="text-gray-800">{p.surveyor_name ?? "—"}</dd></div>
+      </dl>
+      {p.survey_done_at && p.survey_note && (
+        <div><div className={dt}>ผลสำรวจ</div><p className="text-sm text-gray-800 whitespace-pre-line">{p.survey_note}</p></div>
+      )}
+    </>
+  );
+  const surveyFileList = (
+    <ProjectFileList title="รูป/ไฟล์ผลสำรวจ" files={surveyFiles} canEdit={canEdit && !closed}
+      onAdd={() => openModal("survey_files")} onView={viewProjectFile} onRemove={(f) => void removeProjectFile(f)} />
+  );
+  const wonQuote = p.quotes.find((x) => x.id === p.won_quote_id) ?? null;
+  const contractInfo = (withButton: boolean) => (
+    <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-3">
+      <dl className={dl}>
+        <div><dt className={dt}>ใบที่ได้งาน</dt><dd className="text-gray-800">{wonQuote ? <Link href={`/b2b/quotations/${wonQuote.id}`} className="text-primary hover:underline">{wonQuote.doc_no} Rev {wonQuote.revision}</Link> : "—"}</dd></div>
+        <div><dt className={dt}>มูลค่าสัญญา</dt><dd className="text-gray-800 tabular-nums">{p.contract_value != null ? `${formatTHB(p.contract_value, { decimals: 2 })} บาท (ก่อน VAT)` : "—"}</dd></div>
+        <div><dt className={dt}>เลข PO / สัญญา</dt><dd className="text-gray-800">{p.contract_no ?? "—"}</dd></div>
+        <div><dt className={dt}>วันลงนาม</dt><dd className={p.contract_date ? "text-gray-800" : "text-amber-700 font-semibold"}>{p.contract_date ? formatThaiDate(p.contract_date) : "ยังไม่ได้บันทึก"}</dd></div>
+        {p.om_years != null && <div><dt className={dt}>O&amp;M ที่รวมในราคา</dt><dd className="text-gray-800">{p.om_years} ปี · ปีละ {p.om_visits_per_year ?? "—"} ครั้ง</dd></div>}
+      </dl>
+      {withButton && canEdit && !closed && (
+        <div className="flex justify-end">
+          <button type="button" className={btn} onClick={() => openModal("contract")}>{p.contract_date ? "แก้สัญญา / PO" : "บันทึกสัญญา / PO"}</button>
+        </div>
+      )}
+    </div>
+  );
+  const steps: Record<number, { summary?: ReactNode; history?: ReactNode }> = {
     3100: {
       summary: `${p.customer.name}${p.contact_name ? ` · ${p.contact_name}` : ""}${p.location ? ` · ${p.location}` : ""}`,
-      body: (
-        <>
-          {infoGrid}
-          {canEdit && stateOf(3100) === "active" && (
-            <div className="flex flex-wrap justify-end gap-2 pt-1">
-              <button type="button" className={btn} onClick={() => openModal("schedule")}>ข้ามไปนัดสำรวจ</button>
-              <button type="button" className={btnPrimary} onClick={() => void moveTo(B2B_STAGE.estimate, "เริ่มทำ BOQ ราคาประมาณการ (Google Maps) — เพิ่มได้หลายขนาด")}>เริ่มทำราคาประมาณการ</button>
-            </div>
-          )}
-        </>
-      ),
+      history: infoGrid,
     },
     3200: {
       summary: p.boqs.length ? `BOQ ${p.boqs.length} ตัวเลือก${estimateQuotes.length ? ` · ใบประมาณการ ${estimateQuotes.length} ใบ` : ""}` : "ข้ามขั้นนี้",
-      body: (
-        <>
-          <BoqOptionsTable boqs={p.boqs} canAdd={canEditBoq} onAdd={() => openModal("new_boq")} />
-          <QuoteList quotes={estimateQuotes} canAdd={canEdit && stateOf(3200) === "active"} onAdd={() => openModal("new_quote")} />
-          {canEdit && stateOf(3200) === "active" && (
-            <>
-              {phaseNote("ใบประมาณการต้องผ่านผู้ตรวจสอบ 3 ชั้นก่อนส่งลูกค้า · ลูกค้าสนใจแล้ว → นัดสำรวจเพื่อยืนยันราคา")}
-              <div className="flex flex-wrap justify-end gap-2">
-                <button type="button" className={btnGhost} style={{ minHeight: 0 }} onClick={() => void moveTo(B2B_STAGE.confirm, "ข้ามการสำรวจ ไปขั้นราคายืนยัน — ใช้เมื่อมีข้อมูลหน้างานพอแล้ว (เช่น ลูกค้าส่งแบบหลังคา)")}>ข้ามสำรวจ</button>
-                {sentQuotes.length > 0 && <button type="button" className={btn} onClick={() => openModal("won")}>ได้งานจากใบประมาณการ</button>}
-                <button type="button" className={btnPrimary} onClick={() => openModal("schedule")}>ลูกค้าสนใจ · นัดสำรวจ</button>
-              </div>
-            </>
-          )}
-        </>
-      ),
+      history: <><BoqOptionsTable boqs={p.boqs} canAdd={canEditBoq} onAdd={() => openModal("new_boq")} /><QuoteList title="ใบประมาณการ" quotes={estimateQuotes} canAdd={false} /></>,
     },
     3300: {
       summary: p.survey_done_at
         ? `สำรวจ ${formatThaiDate(p.survey_date)}${p.surveyor_name ? ` โดย ${p.surveyor_name}` : ""}${surveyFiles.length ? ` · ไฟล์ ${surveyFiles.length}` : ""}${p.survey_note ? ` · ${p.survey_note}` : ""}`
         : "ข้ามขั้นนี้",
-      body: (
-        <>
-          <dl className={dl}>
-            <div><dt className={dt}>วันนัดสำรวจ</dt><dd className="text-gray-800">{p.survey_date ? formatThaiDate(p.survey_date, { weekday: true }) : "ยังไม่ได้นัด"}</dd></div>
-            <div><dt className={dt}>ผู้สำรวจ</dt><dd className="text-gray-800">{p.surveyor_name ?? "—"}</dd></div>
-          </dl>
-          {p.survey_done_at && p.survey_note && (
-            <div><div className={dt}>ผลสำรวจ</div><p className="text-sm text-gray-800 whitespace-pre-line">{p.survey_note}</p></div>
-          )}
-          <ProjectFileList title="รูป/ไฟล์ผลสำรวจ" files={surveyFiles} canEdit={canEdit && !closed}
-            onAdd={() => openModal("survey_files")} onView={viewProjectFile} onRemove={(f) => void removeProjectFile(f)} />
-          {canEdit && stateOf(3300) === "active" && (
-            <div className="flex flex-wrap justify-end gap-2 pt-1">
-              <button type="button" className={btn} onClick={() => openModal("schedule")}>{p.survey_date ? "เลื่อนนัด" : "นัดสำรวจ"}</button>
-              <button type="button" className={btnPrimary} disabled={!p.survey_date} title={p.survey_date ? undefined : "นัดวันสำรวจก่อน"} onClick={() => openModal("record")}>บันทึกผลสำรวจ</button>
-            </div>
-          )}
-        </>
-      ),
+      history: <>{surveyInfo}{surveyFileList}</>,
     },
     3400: {
       summary: `BOQ ${p.boqs.length} ตัวเลือก${confirmQuotes.length ? ` · ใบยืนยัน ${confirmQuotes.length} ใบ` : ""}`,
-      body: (
-        <>
-          <BoqOptionsTable boqs={p.boqs} canAdd={canEditBoq} onAdd={() => openModal("new_boq")} />
-          <QuoteList quotes={confirmQuotes} canAdd={canEdit && stateOf(3400) === "active"} onAdd={() => openModal("new_quote")} />
-          {canEdit && stateOf(3400) === "active" && (
-            <>
-              {phaseNote("ทำ BOQ Rev ใหม่ตามผลสำรวจ แล้วออกใบเสนอราคายืนยัน · ลูกค้าต่อรอง = ออก Rev ใหม่ของใบ · ลูกค้าตอบรับใบที่ส่งแล้ว → ได้งาน")}
-              <div className="flex flex-wrap justify-end gap-2">
-                <button type="button" className={btnGhost} style={{ minHeight: 0 }} onClick={() => openModal("back_survey")}>ถอยไปสำรวจซ้ำ</button>
-                {wonButton}
-              </div>
-            </>
-          )}
-        </>
-      ),
+      history: <><BoqOptionsTable boqs={p.boqs} canAdd={canEditBoq} onAdd={() => openModal("new_boq")} /><QuoteList title="ใบเสนอราคายืนยัน" quotes={confirmQuotes} canAdd={false} /></>,
     },
     3500: {
       summary: p.contract_value != null
         ? `สัญญา${p.contract_no ? ` ${p.contract_no}` : ""} · ${formatTHB(p.contract_value, { decimals: 0 })} บาท (ก่อน VAT)${p.contract_date ? ` · ลงนาม ${formatThaiDate(p.contract_date)}` : ""}`
         : undefined,
-      body: (
-        <>
-          <dl className={dl}>
-            <div><dt className={dt}>ใบที่ได้งาน</dt><dd className="text-gray-800">{(() => { const q = p.quotes.find((x) => x.id === p.won_quote_id); return q ? <Link href={`/b2b/quotations/${q.id}`} className="text-primary hover:underline">{q.doc_no} Rev {q.revision}</Link> : "—"; })()}</dd></div>
-            <div><dt className={dt}>มูลค่าสัญญา</dt><dd className="text-gray-800 tabular-nums">{p.contract_value != null ? `${formatTHB(p.contract_value, { decimals: 2 })} บาท (ก่อน VAT)` : "—"}</dd></div>
-            <div><dt className={dt}>เลข PO / สัญญา</dt><dd className="text-gray-800">{p.contract_no ?? "—"}</dd></div>
-            <div><dt className={dt}>วันลงนาม</dt><dd className={p.contract_date ? "text-gray-800" : "text-amber-700 font-semibold"}>{p.contract_date ? formatThaiDate(p.contract_date) : "ยังไม่ได้บันทึก"}</dd></div>
-            {p.om_years != null && <div><dt className={dt}>O&amp;M ที่รวมในราคา</dt><dd className="text-gray-800">{p.om_years} ปี · ปีละ {p.om_visits_per_year ?? "—"} ครั้ง</dd></div>}
-          </dl>
-          {stateOf(3500) === "active" && installmentTable}
-          {canEdit && !closed && (
-            <div className="flex flex-wrap justify-end gap-2">
-              <button type="button" className={btn} onClick={() => openModal("contract")}>{p.contract_date ? "แก้สัญญา / PO" : "บันทึกสัญญา / PO"}</button>
-            </div>
-          )}
-        </>
-      ),
+      history: contractInfo(true),
     },
-    // ตารางงวดเงินอยู่การ์ดขั้นปัจจุบันการ์ดเดียว (ดูทั้งหมดได้ที่แท็บงวดเงิน)
-    3600: {
-      summary: `${doneOn("procured", "สั่งของครบ") ?? "ยังไม่บันทึกสั่งของครบ"} · ขออนุญาตเรียบร้อย ${permitsOk}/${PERMITS.length}`,
-      body: (
-        <>
-          {permitList()}
-          {milestoneList(3600)}
-          {stateOf(3600) === "active" && installmentTable}
-          {canExec && stateOf(3600) === "active" && (
-            <>
-              {phaseNote("Purchase บันทึก \"สั่งของครบ\" ได้จากเมนูจัดซื้อ (เห็นงบต้นทุนจาก BOQ ที่ได้งาน) · ขออนุญาตทำคู่ขนานไปได้จนส่งมอบ · ของถึงหน้างานแล้ว → เข้าขั้นติดตั้ง")}
-              <div className="flex justify-end">
-                <button type="button" className={btnPrimary} onClick={() => openRecord("materials_arrived")}>ของเข้าหน้างาน</button>
-              </div>
-            </>
-          )}
-        </>
-      ),
-    },
-    3700: {
-      summary: doneOn("install_done", "ติดตั้งเสร็จ"),
-      body: (
-        <>
-          {milestoneList(3700)}
-          {stateOf(3700) === "active" && installmentTable}
-          {canExec && stateOf(3700) === "active" && (
-            <>
-              {phaseNote("\"แผงส่งครบ 100%\" กับ \"ติดตั้งเสร็จ 100%\" ทำให้งวดที่ผูกไว้ถึงกำหนดวางบิลเอง · ติดตั้งเสร็จแล้ว → ยื่นขนานไฟ")}
-              <div className="flex justify-end">
-                <button type="button" className={btnPrimary} disabled={!msOf("install_done")} title={msOf("install_done") ? undefined : "บันทึกติดตั้งเสร็จ 100% ก่อน"}
-                  onClick={() => openRecord("gridtie_submitted")}>ยื่นขนานไฟ</button>
-              </div>
-            </>
-          )}
-        </>
-      ),
-    },
-    3800: {
-      summary: doneOn("cod", "จ่ายไฟ (COD)"),
-      body: (
-        <>
-          {permitList(["utility"])}
-          {milestoneList(3800)}
-          {stateOf(3800) === "active" && installmentTable}
-          {canExec && stateOf(3800) === "active" && (
-            <div className="flex justify-end">
-              <button type="button" className={btnPrimary} disabled={!msOf("cod")} title={msOf("cod") ? undefined : "บันทึกวันจ่ายไฟ (COD) ก่อน"}
-                onClick={() => void toHandover()}>เข้าขั้นส่งมอบ</button>
-            </div>
-          )}
-        </>
-      ),
-    },
-    3900: {
-      summary: doneOn("handover", "ส่งมอบ"),
-      body: (
-        <>
-          {milestoneList(3900)}
-          <dl className={dl}>
-            <div><dt className={dt}>รับประกันงานติดตั้ง</dt><dd className="text-gray-800">{msOf("handover") ? `เริ่มนับ ${formatThaiDate(msOf("handover")!.done_date)}` : "เริ่มนับจากวันส่งมอบ"}</dd></div>
-            {p.om_years != null && <div><dt className={dt}>O&amp;M ที่รวมในราคา</dt><dd className="text-gray-800">{p.om_years} ปี · ปีละ {p.om_visits_per_year ?? "—"} ครั้ง</dd></div>}
-          </dl>
-          {omBlock}
-          {stateOf(3900) === "active" && installmentTable}
-          {canExec && stateOf(3900) === "active" && phaseNote("โครงการปิดเองเมื่อบันทึกส่งมอบแล้ว และบัญชียืนยันรับเงินครบทุกงวด — สัญญา O&M + ตารางเข้างานสร้างเองตอนปิด")}
-        </>
-      ),
-    },
+    3600: { summary: `${doneOn("procured", "สั่งของครบ") ?? "ยังไม่บันทึกสั่งของครบ"} · ขออนุญาตเรียบร้อย ${permitsOk}/${PERMITS.length}` },
+    3700: { summary: doneOn("install_done", "ติดตั้งเสร็จ") },
+    3800: { summary: doneOn("cod", "จ่ายไฟ (COD)") },
+    3900: { summary: doneOn("handover", "ส่งมอบ") },
   };
+
+  // ── ขั้นปัจจุบัน: การ์ดขั้นต่อไป + เนื้อหา ──
+  type ExecNext = { kind: MilestoneKind | null; toHandover?: boolean };
+  const execNext = (): ExecNext => {
+    if (p.stage === B2B_STAGE.permit) return { kind: msOf("materials_arrived") ? null : "materials_arrived" };
+    if (p.stage === B2B_STAGE.install) {
+      const k = MILESTONES.find((d) => d.step === B2B_STAGE.install && !msOf(d.kind))?.kind;
+      return { kind: k ?? (msOf("gridtie_submitted") ? null : "gridtie_submitted") };
+    }
+    if (p.stage === B2B_STAGE.gridtie) return msOf("cod") ? { kind: null, toHandover: true } : { kind: msOf("gridtie_submitted") ? "cod" : "gridtie_submitted" };
+    if (p.stage === B2B_STAGE.handover) return { kind: msOf("handover") ? null : "handover" };
+    return { kind: null };
+  };
+  const exec: ExecNext = p.stage >= B2B_STAGE.permit && p.stage <= B2B_STAGE.handover ? execNext() : { kind: null };
+  const board = (
+    <ExecutionBoard p={p} stateOf={stateOf} dateOf={(s) => stepPassedAt(p, s)} nextKind={exec.kind}
+      canExec={canExec} canPermit={canPermit} canEdit={canEdit && !closed} canConfirm={canConfirm && !closed} busyId={instBusy}
+      onRecord={openRecord} onEditMilestone={(m) => { setMsEdit(m); openModal("milestone_edit"); }} onUndoMilestone={(m) => void undoMilestone(m)}
+      onMilestoneFile={viewMilestoneFile} onPermit={(x) => { setPermit(x); openModal("permit"); }} onPermitFile={viewPermitFile}
+      onAttach={attachEvidence} onConfirm={(it) => void confirmPaid(it)} onReject={rejectEvidence} onViewEvidence={viewEvidence}
+      onAllInstallments={p.installments.length > 0 ? () => setTab("installments") : undefined} />
+  );
+
+  const current = ((): Current | null => {
+    if (closed) return null;
+    switch (p.stage) {
+      case B2B_STAGE.lead:
+        return {
+          title: "ต่อไป: ทำราคาประมาณการ หรือนัดสำรวจ",
+          sub: "ลูกค้าให้เข้าดูหน้างานได้เลย → ข้ามไปนัดสำรวจ",
+          inner: infoGrid,
+          actions: canEdit && <button type="button" className={btn} onClick={() => openModal("schedule")}>ข้ามไปนัดสำรวจ</button>,
+          primary: canEdit && <button type="button" className={btnPrimary} onClick={() => void moveTo(B2B_STAGE.estimate, "เริ่มทำ BOQ ราคาประมาณการ (Google Maps) — เพิ่มได้หลายขนาด")}>เริ่มทำราคาประมาณการ</button>,
+        };
+      case B2B_STAGE.estimate: {
+        const qf = quoteFlow(estimateQuotes, "ประมาณการ");
+        const scheduleIsPrimary = !!latestBoq && !qf.primary;
+        const schedule = (primary: boolean) => <button type="button" className={primary ? btnPrimary : btn} onClick={() => openModal("schedule")}>ลูกค้าสนใจ · นัดสำรวจ</button>;
+        return {
+          title: !latestBoq ? "ต่อไป: ทำ BOQ ราคาประมาณการ" : qf.title ?? "ต่อไป: ลูกค้าสนใจ → นัดสำรวจเพื่อยืนยันราคา",
+          sub: "ลูกค้าสนใจแล้วนัดสำรวจได้เลย ไม่ต้องรอครบทุกข้อ",
+          items: [boqItem("BOQ ราคาประมาณการ", "ทำจาก Google Maps · เพิ่มได้หลายขนาด"), ...afterBoq(qf.items)],
+          actions: canEdit && (sentQuotes.length > 0 || !scheduleIsPrimary) && <>
+            {sentQuotes.length > 0 && <button type="button" className={btn} onClick={() => openModal("won")}>ได้งานจากใบประมาณการ</button>}
+            {!scheduleIsPrimary && schedule(false)}
+          </>,
+          primary: canEdit && (!latestBoq ? newBoqButton : scheduleIsPrimary ? schedule(true) : qf.primary),
+          body: <>
+            <BoqOptionsTable boqs={p.boqs} canAdd={canEditBoq} onAdd={() => openModal("new_boq")} />
+            <QuoteList title="ใบประมาณการ" quotes={estimateQuotes} canAdd={canEdit} onAdd={() => openModal("new_quote")} />
+          </>,
+        };
+      }
+      case B2B_STAGE.survey: {
+        const hasDate = !!p.survey_date;
+        const future = p.sub === B2B_SURVEY_SUB.scheduled;
+        return {
+          title: !hasDate ? "ต่อไป: นัดวันสำรวจ" : future ? `นัดสำรวจ ${formatThaiDate(p.survey_date, { weekday: true })}` : "ต่อไป: บันทึกผลสำรวจ",
+          sub: hasDate ? "สำรวจแล้วบันทึกผล แนบรูป/ไฟล์ไปพร้อมกันได้ → ไปขั้นราคายืนยัน" : undefined,
+          items: [
+            { key: "date", state: hasDate ? "ok" : "todo", title: "นัดวันสำรวจ",
+              detail: hasDate ? `${formatThaiDate(p.survey_date, { weekday: true })}${p.surveyor_name ? ` · ${p.surveyor_name}` : ""}` : "เลือกวัน + ผู้สำรวจ" },
+            { key: "record", state: hasDate && !future ? "todo" : "wait", title: "สำรวจหน้างาน แล้วบันทึกผล",
+              detail: future ? "ถึงวันนัดแล้วบันทึกผล" : !hasDate ? undefined : p.survey_note ? `ผลครั้งก่อน: ${p.survey_note}` : undefined },
+          ],
+          actions: canEdit && hasDate && <button type="button" className={btn} onClick={() => openModal("schedule")}>เลื่อนนัด</button>,
+          primary: canEdit && (hasDate
+            ? <button type="button" className={btnPrimary} onClick={() => openModal("record")}>บันทึกผลสำรวจ</button>
+            : <button type="button" className={btnPrimary} onClick={() => openModal("schedule")}>นัดสำรวจ</button>),
+          body: surveyFileList,
+        };
+      }
+      case B2B_STAGE.confirm: {
+        const qf = quoteFlow(confirmQuotes, "เสนอราคายืนยัน");
+        const canWin = sentQuotes.length > 0;
+        return {
+          title: canWin ? "ต่อไป: ลูกค้าตอบรับ → กด \"ได้งาน\"" : !latestBoq ? "ต่อไป: ทำ BOQ ตามผลสำรวจ" : qf.title ?? "ต่อไป: ออกใบเสนอราคายืนยัน",
+          sub: "ลูกค้าต่อรอง = ออก Rev ใหม่ของใบ",
+          items: [
+            p.survey_done_at
+              ? { key: "survey", state: "ok", title: "บันทึกผลสำรวจ", detail: `${formatThaiDate(p.survey_date)}${p.survey_note ? ` · ${p.survey_note}` : ""}` }
+              : { key: "survey", state: "skip", title: "ข้ามสำรวจ" },
+            boqItem("BOQ ตามผลสำรวจ", "ทำ BOQ Rev ใหม่ตามผลสำรวจ"),
+            ...afterBoq(qf.items),
+          ],
+          note: canWin ? undefined : "🔒 กด \"ได้งาน\" ได้เมื่อมีใบที่อนุมัติครบ 3 ชั้นและส่งลูกค้าแล้ว",
+          actions: canEdit && !canWin && wonButton(false),
+          primary: canEdit && (canWin ? wonButton(true) : !latestBoq ? newBoqButton : qf.primary),
+          body: <>
+            <BoqOptionsTable boqs={p.boqs} canAdd={canEditBoq} onAdd={() => openModal("new_boq")} />
+            <QuoteList title="ใบเสนอราคายืนยัน" quotes={confirmQuotes} canAdd={canEdit} onAdd={() => openModal("new_quote")} />
+            {estimateQuotes.length > 0 && <QuoteList title="ใบประมาณการ (ขั้น 02)" quotes={estimateQuotes} canAdd={false} />}
+          </>,
+        };
+      }
+      case B2B_STAGE.won: {
+        const i1 = p.installments.find((x) => x.no === 1) ?? null;
+        return {
+          title: !p.contract_date ? "ต่อไป: บันทึกสัญญา / PO" : i1?.status === "due" ? "ต่อไป: แนบหลักฐานรับเงินงวด 1"
+            : i1?.status === "submitted" ? "รอบัญชียืนยันเงินงวด 1" : "รอรับเงินงวด 1",
+          sub: "บัญชียืนยันเงินงวด 1 แล้ว โครงการเข้าขั้นขออนุญาต + จัดซื้อเอง",
+          items: [
+            { key: "won", state: "ok", title: "ได้งาน",
+              detail: `${wonQuote ? `${wonQuote.doc_no} Rev ${wonQuote.revision} · ` : ""}${p.contract_value != null ? `${formatTHB(p.contract_value, { decimals: 2 })} บาท (ก่อน VAT)` : ""}`,
+              action: wonQuote ? <TextLink href={`/b2b/quotations/${wonQuote.id}`}>เปิดใบ</TextLink> : undefined },
+            { key: "contract", state: p.contract_date ? "ok" : "todo", title: "บันทึกสัญญา / PO",
+              detail: p.contract_date ? `${p.contract_no ?? "ไม่มีเลข PO"} · ลงนาม ${formatThaiDate(p.contract_date)}` : "เลข PO / สัญญา + วันลงนาม" },
+            ...(i1 ? [{
+              key: "i1", state: i1.status === "paid" ? "ok" : i1.status === "submitted" ? "pending" : p.contract_date ? "todo" : "wait",
+              title: `รับเงินงวด 1 · ${i1.pct}%`,
+              detail: `${formatTHB(i1.total, { decimals: 2 })} บาท (รวม VAT) · ${INSTALLMENT_STATUS_LABEL[i1.status]}${i1.status === "due" && i1.reject_note ? ` · บัญชีตีกลับ: ${i1.reject_note}` : ""}`,
+            } satisfies NextItem] : []),
+          ],
+          actions: ((canConfirm && i1?.status === "submitted") || (canEdit && p.contract_date)) && <>
+            {canConfirm && i1?.status === "submitted" && <button type="button" className={btn} onClick={() => rejectEvidence(i1)}>ตีกลับ…</button>}
+            {canEdit && p.contract_date && <button type="button" className={btn} onClick={() => openModal("contract")}>แก้สัญญา / PO</button>}
+          </>,
+          primary: canEdit && !p.contract_date ? <button type="button" className={btnPrimary} onClick={() => openModal("contract")}>บันทึกสัญญา / PO</button>
+            : canEdit && i1?.status === "due" ? <button type="button" className={btnPrimary} onClick={() => attachEvidence(i1)}>แนบหลักฐานรับเงินงวด 1</button>
+            : canConfirm && i1?.status === "submitted" ? <button type="button" className={btnPrimary} disabled={instBusy === i1.id} onClick={() => void confirmPaid(i1)}>ยืนยันรับเงินงวด 1</button>
+            : null,
+          body: <>{contractInfo(false)}{installmentTable}</>,
+        };
+      }
+      case B2B_STAGE.permit: case B2B_STAGE.install: case B2B_STAGE.gridtie: case B2B_STAGE.handover: {
+        const def = exec.kind ? milestoneDef(exec.kind)! : null;
+        const inst = def?.trigger ? p.installments.find((i) => i.trigger_key === def.trigger) : undefined;
+        const items: NextItem[] = [];
+        if (!msOf("procured")) {
+          items.push({ key: "procured", state: "pending", title: "รอ Purchase บันทึก \"สั่งของครบ\"", detail: "Purchase เห็นงบต้นทุนจาก BOQ ที่ได้งานในเมนูจัดซื้อ",
+            action: canExec && <button type="button" className={`${btnSm} border border-gray-200 text-gray-600 hover:bg-gray-50`} onClick={() => openRecord("procured")}>บันทึกเอง</button> });
+        }
+        for (const it of p.installments) {
+          if (it.status === "due") {
+            items.push({ key: `i${it.id}`, state: "todo", title: `งวด ${it.no} ถึงกำหนดวางบิล`,
+              detail: `${formatTHB(it.total, { decimals: 2 })} บาท (รวม VAT)${it.reject_note ? ` · บัญชีตีกลับ: ${it.reject_note}` : ""}`,
+              action: canEdit && <button type="button" className={`${btnSm} bg-active text-white hover:bg-active-dark`} onClick={() => attachEvidence(it)}>แนบหลักฐาน</button> });
+          } else if (it.status === "submitted") {
+            items.push({ key: `i${it.id}`, state: "pending", title: `รอบัญชียืนยันเงินงวด ${it.no}`,
+              detail: `${formatTHB(it.total, { decimals: 2 })} บาท · แนบหลักฐาน ${formatThaiDate(it.submitted_at)}`,
+              action: canConfirm && <button type="button" className={`${btnSm} bg-emerald-500 text-white hover:bg-emerald-600`} disabled={instBusy === it.id} onClick={() => void confirmPaid(it)}>ยืนยันรับเงิน</button> });
+          }
+        }
+        const outstanding = p.permits.filter((x) => x.status === "pending" || x.status === "submitted");
+        if (outstanding.length) {
+          items.push({ key: "permits", state: outstanding.some((x) => x.status === "submitted") ? "pending" : "wait", title: `ขออนุญาตเรียบร้อย ${permitsOk}/${PERMITS.length}`,
+            detail: outstanding.map((x) => `${PERMITS.find((d) => d.kind === x.kind)!.short}: ${PERMIT_STATUS_LABEL[x.status]}`).join(" · ") });
+        }
+        const sub = def
+          ? [def.moveTo && def.moveTo > p.stage && `บันทึกแล้วโครงการเข้าขั้น${stageLabel(def.moveTo)}`,
+            inst && `งวด ${inst.no} (${inst.pct}% · ${formatTHB(inst.total, { decimals: 2 })} บาท รวม VAT) ถึงกำหนดวางบิลเอง`, def.hint].filter(Boolean).join(" · ")
+          : exec.toHandover ? "ขนานไฟเรียบร้อย — นัดส่งมอบงาน + Training ลูกค้า"
+          : "รับเงินครบทุกงวดแล้วโครงการปิดเอง · สัญญา O&M + ตารางเข้างานสร้างตอนปิด";
+        return {
+          title: def ? `ต่อไป: บันทึก "${def.label}"` : exec.toHandover ? "ต่อไป: เข้าขั้นส่งมอบ" : "รอรับเงินงวดที่เหลือ",
+          sub,
+          items,
+          primary: canExec && (def ? <button type="button" className={btnPrimary} onClick={() => openRecord(def.kind)}>บันทึก{def.label}</button>
+            : exec.toHandover ? <button type="button" className={btnPrimary} onClick={() => void toHandover()}>เข้าขั้นส่งมอบ</button> : null),
+          body: <>
+            {board}
+            {p.stage === B2B_STAGE.handover && (
+              <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-3">
+                <dl className={dl}>
+                  <div><dt className={dt}>รับประกันงานติดตั้ง</dt><dd className="text-gray-800">{msOf("handover") ? `เริ่มนับ ${formatThaiDate(msOf("handover")!.done_date)}` : "เริ่มนับจากวันส่งมอบ"}</dd></div>
+                  {p.om_years != null && <div><dt className={dt}>O&amp;M ที่รวมในราคา</dt><dd className="text-gray-800">{p.om_years} ปี · ปีละ {p.om_visits_per_year ?? "—"} ครั้ง</dd></div>}
+                </dl>
+                {omBlock}
+              </div>
+            )}
+          </>,
+        };
+      }
+    }
+    return null;
+  })();
+
+  const stepViews: StepView[] = B2B_FLOW.map((s, i) => {
+    const state = stateOf(s.step);
+    return {
+      step: s.step, no: i + 1, label: s.label, short: s.short, state,
+      date: state === "done" ? stepPassedAt(p, s.step) : null,
+      skipped: state === "done" && stepSkipped(p, s.step),
+      hint: LOCKED_HINT[s.step],
+      summary: steps[s.step]?.summary,
+    };
+  });
+  const historyCard = (step: number, opts: { stoppedHere?: boolean } = {}) => {
+    const v = stepViews[noOf(step) - 1];
+    return (
+      <StepHistoryCard no={v.no} label={v.label} stopped={opts.stoppedHere} date={v.date} skipped={v.skipped} summary={steps[step]?.summary}
+        onBack={opts.stoppedHere ? undefined : () => selectStep(at)}>
+        {steps[step]?.history}
+      </StepHistoryCard>
+    );
+  };
+
+  // ── ตัวเลขหลักบน header — ช่วงขาย: BOQ ล่าสุด · หลังได้งาน: BOQ ที่ได้งาน + มูลค่าสัญญา + เงินที่รับแล้ว ──
+  const kpiBoq = p.boqs.find((b) => b.id === p.won_boq_id) ?? latestBoq;
+  const paid = p.installments.filter((i) => i.status === "paid");
+  const kpis: { k: string; v: ReactNode; tone?: string }[] = [];
+  if (kpiBoq?.capacity_wp) kpis.push({ k: "ขนาดระบบ", v: <>{formatTHB(kpiBoq.capacity_wp / 1000, { decimals: 2 })} <small>kWp</small></> });
+  if (p.contract_value != null) {
+    kpis.push({ k: "มูลค่าสัญญา (ก่อน VAT)", v: formatTHB(p.contract_value, { decimals: 2 }) });
+    if (p.installments.length) {
+      kpis.push({ k: "รับเงินแล้ว", tone: "text-emerald-600", v: <>{+paid.reduce((s, i) => s + i.pct, 0).toFixed(2)}% <small>{paid.length}/{p.installments.length} งวด</small></> });
+    }
+  } else if (kpiBoq) {
+    if (kpiBoq.total_sale) kpis.push({ k: p.boqs.length > 1 ? "ราคาขาย · BOQ ล่าสุด" : "ราคาขาย (ก่อน VAT)", v: formatTHB(kpiBoq.total_sale, { decimals: 2 }) });
+    kpis.push({ k: "Margin", v: `${kpiBoq.margin_pct}%` });
+  }
+  const kpiValue = "tabular-nums whitespace-nowrap [&_small]:text-xxs [&_small]:font-normal [&_small]:text-gray-500";
+
+  const moreGroups: MoreItem[][] = !canEdit || closed ? [] : [
+    [
+      { key: "edit", label: "แก้ข้อมูลโครงการ", onClick: () => openModal("edit") },
+      ...(p.stage === B2B_STAGE.estimate ? [{ key: "skip_survey", label: "ข้ามสำรวจ", hint: "ไปขั้นราคายืนยันเลย — มีข้อมูลหน้างานพอแล้ว",
+        onClick: () => void moveTo(B2B_STAGE.confirm, "ข้ามการสำรวจ ไปขั้นราคายืนยัน — ใช้เมื่อมีข้อมูลหน้างานพอแล้ว (เช่น ลูกค้าส่งแบบหลังคา)") }] : []),
+      ...(p.stage === B2B_STAGE.confirm ? [{ key: "back_survey", label: "ถอยไปสำรวจซ้ำ", hint: "กลับขั้นสำรวจแล้วนัดวันใหม่", onClick: () => openModal("back_survey") }] : []),
+    ],
+    [
+      ...(p.stage <= B2B_LOSABLE_MAX_STAGE ? [{ key: "lost", label: "แพ้งาน", danger: true, onClick: () => openModal("lost") }] : []),
+      { key: "cancel", label: "ยกเลิกโครงการ", danger: true, onClick: () => openModal("cancel") },
+    ],
+  ];
 
   const tabBtn = (t: Tab, label: string, extra = "") => (
     <button key={t} type="button" onClick={() => setTab(t)}
@@ -516,42 +712,59 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
 
   return (
     <div className="min-h-full flex flex-col bg-gray-50" style={{ "--hdr": `${hdrH}px` } as CSSProperties}>
-      {/* header ติดบน — แบบหน้าลีด: คอลัมน์ไอคอนกว้างเท่ารางขั้น (เส้นแนวตั้งต่อกัน) | ชื่อ + ป้ายขั้น + ข้อมูลย่อ | ปุ่ม */}
+      {/* header ติดบน: ชื่อ + ป้ายขั้น + ข้อมูลย่อ | ตัวเลขหลัก | ⋯ · แถบขั้น · แท็บ */}
       <div ref={headerRef} className="bg-white border-b border-gray-200 sticky top-0 z-40" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
-        <div className="flex items-stretch">
+        <div className="flex items-center gap-2 md:gap-3 px-1 md:px-5 py-2.5">
           <button type="button" onClick={() => router.push(listHrefOf(p.stage, moduleKey))} style={{ minHeight: 0 }}
-            className="md:hidden self-center ml-1 p-1.5 rounded-full text-gray-600 hover:bg-gray-200 shrink-0" aria-label="กลับ">
+            className="md:hidden p-1.5 rounded-full text-gray-600 hover:bg-gray-200 shrink-0" aria-label="กลับ">
             <ChevronLeftIcon className="w-5 h-5" strokeWidth={2.5} />
           </button>
-          <div className="max-md:hidden w-20 shrink-0 border-r border-gray-200 flex items-center justify-center py-2">
-            <span className="w-12 h-12 rounded-full bg-teal-50 flex items-center justify-center text-2xl">🏭</span>
-          </div>
-          <div className="flex-1 min-w-0 px-3 md:px-4 py-2.5">
+          <span className="max-md:hidden w-11 h-11 shrink-0 rounded-full bg-teal-50 flex items-center justify-center text-2xl">🏭</span>
+          <div className="flex-1 min-w-0">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <Link href={listHrefOf(p.stage, moduleKey)} className="max-md:hidden text-gray-400 hover:text-gray-600" aria-label="กลับ"><ChevronLeftIcon className="w-5 h-5" strokeWidth={2.5} /></Link>
               <h1 className="text-lg font-bold text-gray-900 leading-tight">{p.name}</h1>
-              <StageBadge stage={p.stage} sub={p.sub} surveyDate={p.survey_date} />
+              {/* มือถือดูขั้นจากแถบความคืบหน้าแทน */}
+              <StageBadge stage={p.stage} sub={p.sub} surveyDate={p.survey_date} className="max-md:hidden" />
             </div>
             <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-gray-500">
               <span>{p.code}</span>
               <span>{p.customer.name}</span>
+              {p.contract_no && <span className="max-md:hidden">สัญญา <b className="font-medium text-gray-700">{p.contract_no}</b></span>}
               {p.owner_name && <span>ผู้ดูแล <b className="font-medium text-gray-700">{p.owner_name}</b></span>}
-              {p.boq_capacity_wp ? <span>BOQ ล่าสุด <b className="font-medium text-gray-700">{formatTHB(p.boq_capacity_wp / 1000, { decimals: 2 })} kWp</b></span> : null}
-              {p.boq_total_sale ? <span><b className="font-medium text-gray-700">{formatTHB(p.boq_total_sale, { decimals: 0 })}</b> บาท (ก่อน VAT)</span> : null}
             </div>
           </div>
-          <div className="flex items-center gap-2 px-3 md:px-4 shrink-0">
-            {!canEdit ? null : closed ? (
-              p.stage !== B2B_STAGE.closed && <button type="button" className={btnPrimary} onClick={() => openModal("reopen")}>เปิดกลับ</button>
-            ) : (
-              <>
-                {p.stage <= B2B_LOSABLE_MAX_STAGE && <button type="button" className={`${btn} max-md:hidden`} onClick={() => openModal("lost")}>แพ้งาน</button>}
-                <button type="button" className={`${btn} max-md:hidden`} onClick={() => openModal("cancel")}>ยกเลิก</button>
-              </>
-            )}
+          {kpis.length > 0 && (
+            <div className="max-lg:hidden flex shrink-0 rounded-xl border border-gray-200 divide-x divide-gray-200">
+              {kpis.map((x) => (
+                <div key={x.k} className="px-4 py-1 leading-tight">
+                  <div className="text-xxs text-gray-500 whitespace-nowrap">{x.k}</div>
+                  <div className={`text-base font-medium ${x.tone ?? "text-gray-900"} ${kpiValue}`}>{x.v}</div>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex items-center gap-2 shrink-0 pr-2 md:pr-0">
+            {canEdit && stopped && <button type="button" className={btnPrimary} onClick={() => openModal("reopen")}>เปิดกลับ</button>}
+            <MoreMenu groups={moreGroups} />
           </div>
         </div>
-        <div className="flex overflow-x-auto border-t border-gray-100 md:pl-20">
+        <div className="md:hidden px-3 pb-2">
+          <StepProgressMobile steps={stepViews} onSelect={selectStep}
+            caption={p.stage === B2B_STAGE.closed ? "ปิดโครงการแล้ว" : stopped ? `${stageLabel(p.stage)} · ตอนขั้น ${stageLabel(at)}` : undefined} />
+        </div>
+        {kpis.length > 0 && (
+          <div className="lg:hidden flex gap-2 overflow-x-auto px-3 md:px-5 pb-2.5">
+            {kpis.map((x) => (
+              <div key={x.k} className="shrink-0 rounded-lg border border-gray-200 px-2.5 py-0.5 leading-tight">
+                <div className="text-xxs text-gray-500 whitespace-nowrap">{x.k}</div>
+                <div className={`text-sm font-medium ${x.tone ?? "text-gray-900"} ${kpiValue}`}>{x.v}</div>
+              </div>
+            ))}
+          </div>
+        )}
+        <ProjectStepper steps={stepViews} selected={view} onSelect={selectStep} />
+        <div className="flex overflow-x-auto border-t border-gray-100 md:px-2">
           {tabBtn("workflow", "Workflow")}
           {tabBtn("info", "ข้อมูลโครงการ")}
           {tabBtn("boq", `BOQ (${p.boqs.length})`)}
@@ -561,53 +774,31 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
       </div>
 
       <div className="flex-1 flex min-h-0">
-        {/* รางขั้นติดใต้ header ระหว่างเลื่อนการ์ด (self-start ให้ sticky ทำงานในแถว flex) */}
-        {tab === "workflow" && (
-          <aside className="hidden md:flex w-20 shrink-0 self-start sticky overflow-y-auto border-r border-gray-200 bg-gray-50/40 flex-col py-3 px-1.5 gap-1.5"
-            style={{ top: hdrH, maxHeight: `calc(100vh - ${hdrH}px)` }}>
-            {B2B_FLOW.map((s, i) => {
-              const st = stateOf(s.step);
-              const cur = st === "active" || st === "stopped";
-              return (
-                <button key={s.step} type="button" disabled={st === "locked"}
-                  onClick={() => document.getElementById(`step-${i + 1}`)?.scrollIntoView({ behavior: "smooth", block: "start" })}
-                  className={`flex flex-col items-center gap-0.5 py-2 rounded-lg transition-colors ${
-                    st === "stopped" ? "bg-gray-400 text-white"
-                    : cur ? "bg-active text-white"
-                    : st === "done" ? "bg-white text-gray-700 border border-gray-200 hover:border-active hover:text-active"
-                    : "text-gray-300 cursor-not-allowed"}`}>
-                  <span className="text-xxs font-bold tabular-nums leading-none">{String(i + 1).padStart(2, "0")}</span>
-                  <span className="text-[10px] font-semibold leading-tight text-center px-1">{s.short}</span>
-                  {st === "done" && <span className="text-emerald-500 text-xs leading-none">✓</span>}
-                </button>
-              );
-            })}
-          </aside>
-        )}
-
-        <main className="flex-1 min-w-0 p-3 md:p-4 space-y-3 pb-24 md:pb-6">
-          {p.stage === B2B_STAGE.closed && (
+        <main ref={contentRef} className="flex-1 min-w-0 p-3 md:p-4 space-y-3 pb-6 scroll-mt-[calc(var(--hdr,124px)+12px)]">
+          {tab === "workflow" && p.stage === B2B_STAGE.closed && (
             <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
               <b>ปิดโครงการแล้ว</b> — ส่งมอบงานและรับเงินครบทุกงวด{p.closed_at ? ` · ${formatThaiDate(p.closed_at)}` : ""}
               {p.om_contract_id != null && <> · <Link href={`/b2b/om/contracts/${p.om_contract_id}`} className="font-semibold underline">สัญญา O&amp;M →</Link></>}
             </div>
           )}
-          {stopped && (
+          {tab === "workflow" && stopped && (
             <div className={`rounded-xl border px-4 py-3 text-sm ${p.stage === B2B_STAGE.lost ? "border-red-200 bg-red-50 text-red-700" : "border-gray-200 bg-white text-gray-600"}`}>
               <b>{stageLabel(p.stage)}</b> ตอนอยู่ขั้น {stageLabel(at)}{p.closed_at ? ` · ${formatThaiDate(p.closed_at)}` : ""}
               {p.close_reason && <div className="mt-0.5">{p.close_reason}</div>}
             </div>
           )}
 
-          {tab === "workflow" && B2B_FLOW.map((s, i) => {
-            const st = stateOf(s.step);
-            const c = steps[s.step];
-            return (
-              <ProjectStepCard key={s.step} no={i + 1} title={s.label} state={st} summary={c?.summary} lockedHint={LOCKED_HINT[s.step]}>
-                {c?.body}
-              </ProjectStepCard>
-            );
-          })}
+          {tab === "workflow" && (view != null ? historyCard(view) : current ? (
+            <>
+              <NextStepCard no={noOf(p.stage)} label={stageLabel(p.stage)} enteredAt={stageEnteredAt(p)} title={current.title} sub={current.sub}
+                items={current.items} note={current.note} actions={current.actions} primary={current.primary}>
+                {current.inner}
+              </NextStepCard>
+              {current.body}
+            </>
+          ) : boardInCurrent ? (
+            <>{board}{p.stage === B2B_STAGE.closed && omBlock}</>
+          ) : stopped ? historyCard(at, { stoppedHere: true }) : null)}
 
           {tab === "info" && (
             <div className="space-y-3">
@@ -637,10 +828,6 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
                   {p.note && <div className="md:col-span-2"><dt className={dt}>หมายเหตุ</dt><dd className="text-gray-800 whitespace-pre-line">{p.note}</dd></div>}
                 </dl>
               </section>
-              {canEdit && <div className="flex gap-2 md:hidden">
-                {!closed && p.stage <= B2B_LOSABLE_MAX_STAGE && <button type="button" className={btn} onClick={() => openModal("lost")}>แพ้งาน</button>}
-                {!closed && <button type="button" className={btn} onClick={() => openModal("cancel")}>ยกเลิกโครงการ</button>}
-              </div>}
             </div>
           )}
 
@@ -662,6 +849,13 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
           </div>
         </aside>
       </div>
+
+      {/* มือถือ: ปุ่มหลักของขั้นติดท้ายจอ (sticky bottom-0 = ลอยเหนือแถบล่างพอดี เพราะ main ของ layout เผื่อ pb-20 ไว้แล้ว) */}
+      {tab === "workflow" && view == null && current?.primary && (
+        <div className="md:hidden sticky bottom-0 z-30 flex border-t border-gray-200 bg-white px-3 py-2 *:h-11 *:flex-1">
+          {current.primary}
+        </div>
+      )}
 
       {modal === "edit" && <ProjectFormModal initial={p} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); toast({ message: "บันทึกข้อมูลโครงการแล้ว", variant: "success" }); }} />}
       {modal === "customer" && (

@@ -7,7 +7,7 @@ import type { B2bProjectQuote } from "@/lib/b2b/project";
 import { QUOTE_KIND_LABEL, QUOTE_STATUS_LABEL, QUOTE_STATUS_TONE } from "@/lib/b2b/quotation";
 
 // ใบเสนอราคาของโครงการ (Rev ล่าสุดของแต่ละเลขที่) — ในการ์ดขั้นราคาประมาณการ/ราคายืนยัน · กดแถวไปหน้าใบ
-export default function QuoteList({ quotes, canAdd, onAdd }: { quotes: B2bProjectQuote[]; canAdd: boolean; onAdd?: () => void }) {
+export default function QuoteList({ quotes, canAdd, onAdd, title = "ใบเสนอราคา" }: { quotes: B2bProjectQuote[]; canAdd: boolean; onAdd?: () => void; title?: string }) {
   const num = "px-3 py-2 text-right tabular-nums whitespace-nowrap";
   // เวลาอ้างอิงป้าย "หมดอายุ" — จับครั้งเดียวตอนแสดง (render ต้องให้ผลเดิมทุกครั้ง)
   const [now] = useState(() => Date.now());
@@ -20,7 +20,7 @@ export default function QuoteList({ quotes, canAdd, onAdd }: { quotes: B2bProjec
   return (
     <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
       <div className="flex items-center gap-2 border-b border-gray-200 bg-gray-50 px-3 py-2">
-        <h3 className="text-sm font-bold text-gray-900 whitespace-nowrap">ใบเสนอราคา</h3>
+        <h3 className="text-sm font-bold text-gray-900 whitespace-nowrap">{title}</h3>
         <span className="max-md:hidden text-xs text-gray-400">อนุมัติ 3 ชั้นก่อนส่งลูกค้า · ต่อรอง = ออก Rev ใหม่</span>
         {canAdd && onAdd && (
           <button type="button" onClick={onAdd} className="ml-auto h-8 px-3 rounded-lg border border-gray-200 bg-white text-sm font-semibold text-gray-700 hover:bg-gray-50 whitespace-nowrap">+ สร้างใบเสนอราคา</button>

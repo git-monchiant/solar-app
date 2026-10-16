@@ -1,0 +1,938 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup: หน้าโครงการ B2B 3 แบบ</title>
+<style>
+  /* ฟอนต์ของแอป (public/fonts) — เปิดไฟล์นี้จากในโปรเจกต์ · DB Heavent ไม่มี 600 ⇒ ใช้ 500/700 */
+  @font-face{font-family:'DB Heavent';src:url(../../../public/fonts/db_heavent_li_v3.2-webfont.woff) format('woff');font-weight:300}
+  @font-face{font-family:'DB Heavent';src:url(../../../public/fonts/db_heavent_v3.2-webfont.woff) format('woff');font-weight:400}
+  @font-face{font-family:'DB Heavent';src:url(../../../public/fonts/db_heavent_med_v3.2-webfont.woff) format('woff');font-weight:500}
+  @font-face{font-family:'DB Heavent';src:url(../../../public/fonts/db_heavent_bd_v3.2-webfont.woff) format('woff');font-weight:700}
+  :root{
+    --primary:#1ed0c7;--active:#8b5cf6;--active-light:#f5f3ff;--vio-d:#6d28d9;--navy:#1e3a8a;
+    --g50:#f9fafb;--g100:#f3f4f6;--g200:#e5e7eb;--g300:#d1d5db;--g400:#9ca3af;--g500:#6b7280;--g600:#4b5563;--g700:#374151;--g800:#1f2937;--g900:#111827;
+    --em:#059669;--em2:#10b981;--em-bg:#ecfdf5;--amber:#b45309;--amber2:#f59e0b;--amber-bg:#fffbeb;--red:#dc2626;--red-bg:#fef2f2;--blue:#1d4ed8;--blue-bg:#eff6ff;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  [hidden]{display:none!important}
+  body{background:#d9dde3;font-family:'DB Heavent',sans-serif;color:var(--g800);font-size:17px;line-height:1.45;padding:24px 16px 64px}
+  button{font:inherit;cursor:pointer;color:inherit;background:none;border:0}
+  ul,ol{list-style:none}
+  .num{font-variant-numeric:tabular-nums}
+  .muted{color:var(--g500)} .b{font-weight:700} .m{font-weight:500} .vio{color:var(--vio-d)}
+  .wrap{max-width:1320px;margin:0 auto}
+
+  /* ── ส่วนอธิบาย mockup ── */
+  .intro{background:#fff;border-radius:12px;padding:16px 20px;margin-bottom:10px}
+  .intro h1{font-size:26px;color:var(--navy);line-height:1.2}
+  .intro p{color:var(--g600)}
+  .cmp{width:100%;border-collapse:collapse;margin-top:10px;font-size:15px}
+  .cmp th,.cmp td{padding:6px 10px;border-bottom:1px solid var(--g100);text-align:left;vertical-align:top}
+  .cmp thead th{font-size:14px;color:var(--g700);font-weight:700;background:var(--g50)}
+  .cmp tbody th{font-weight:500;color:var(--g500);width:230px}
+  .switch{position:sticky;top:0;z-index:50;display:flex;gap:6px;background:#d9dde3;padding:10px 0;flex-wrap:wrap}
+  .switch button{background:#fff;border:1px solid var(--g300);border-radius:999px;padding:5px 16px;font-weight:700;font-size:16px;color:var(--g600)}
+  .switch button.on{background:var(--navy);border-color:var(--navy);color:#fff}
+  .rec{display:inline-block;background:#e8912a;color:#fff;border-radius:999px;font-size:12px;padding:0 8px;margin-left:4px;vertical-align:middle;line-height:18px}
+  .view{display:none}.view.on{display:block}
+  .notes{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+  .notes > div{background:#fff;border-radius:10px;padding:10px 14px;font-size:15px;color:var(--g600)}
+  .notes h4{font-size:15px;color:var(--g800)}
+  .notes ul{list-style:disc;margin-left:18px}
+  .scroll{overflow-x:auto;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,.12)}
+  .new{outline:2px dashed #e8912a;outline-offset:3px;border-radius:8px}
+
+  /* ── ชิ้นส่วนกลาง ── */
+  .pill{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:1px 10px;font-size:13px;font-weight:700;white-space:nowrap}
+  .p-active{background:var(--active-light);color:var(--vio-d)} .p-em{background:var(--em-bg);color:var(--em)} .p-amber{background:var(--amber-bg);color:var(--amber)}
+  .p-gray{background:var(--g100);color:var(--g500)} .p-blue{background:var(--blue-bg);color:var(--blue)}
+  .btn{height:36px;padding:0 14px;border-radius:8px;border:1px solid var(--g200);background:#fff;color:var(--g700);font-size:15px;font-weight:700;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+  .btn-active{background:var(--active);border-color:var(--active);color:#fff}
+  .btn-ghost{border-color:transparent;color:var(--active);padding:0 8px;background:none}
+  .btn.icon{width:38px;padding:0;justify-content:center;font-size:20px;letter-spacing:1px}
+  .btn.sm{height:30px;font-size:14px;padding:0 10px}
+  .btn[disabled]{opacity:.45;cursor:not-allowed}
+  .lnk{color:var(--active);font-weight:700;font-size:14px;white-space:nowrap}
+  .eyebrow{font-size:13px;font-weight:700;color:var(--active);letter-spacing:.04em}
+  .eyebrow.g{color:var(--em)}
+
+  /* ── โครงแอป ── */
+  .app{display:flex;min-width:1240px;background:var(--g50);min-height:880px}
+  .side{width:56px;background:var(--navy);flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:16px;padding:16px 0}
+  .side i{width:22px;height:22px;border:2px solid rgba(219,234,254,.5);border-radius:6px}
+  .side i.on{background:rgba(255,255,255,.15);border-color:#fff}
+  .side hr{width:28px;border:0;border-top:1px solid rgba(255,255,255,.15)}
+  .main{flex:1;display:flex;flex-direction:column;min-width:0}
+  .body{flex:1;display:flex;min-height:0}
+  .center{flex:1;padding:16px 20px;display:flex;flex-direction:column;gap:12px;min-width:0}
+  .stack{display:flex;flex-direction:column;gap:12px}
+
+  /* header แบบใหม่ (A / C) */
+  .hdr{background:#fff;border-bottom:1px solid var(--g200)}
+  .h1row{display:flex;align-items:center;gap:14px;padding:12px 20px}
+  .h-ico{width:46px;height:46px;border-radius:50%;background:#ccfbf1;display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0}
+  .h-txt{flex:1;min-width:0}
+  .h-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .h-title .back{color:var(--g400);font-size:24px;line-height:1;font-weight:700}
+  .h-title h2{font-size:24px;line-height:1.15;color:var(--g900)}
+  .h-meta{font-size:14px;color:var(--g500);display:flex;gap:2px 12px;flex-wrap:wrap}
+  .h-meta b{font-weight:500;color:var(--g700)}
+  .kpis{display:flex;border:1px solid var(--g200);border-radius:12px;overflow:hidden;flex-shrink:0}
+  .kpi{padding:5px 16px;min-width:112px}
+  .kpi+.kpi{border-left:1px solid var(--g200)}
+  .kpi .k{font-size:13px;color:var(--g500);line-height:1.2}
+  .kpi .v{font-size:22px;font-weight:500;color:var(--g900);line-height:1.2;font-variant-numeric:tabular-nums}
+  .kpi .v small{font-size:13px;color:var(--g500);font-weight:400}
+  .kpi.good .v{color:var(--em)}
+  .more{position:relative}
+  .menu{position:absolute;right:0;top:44px;background:#fff;border:1px solid var(--g200);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.14);width:230px;padding:6px;display:none;z-index:30}
+  .menu.open{display:block}
+  .menu a{display:block;padding:7px 10px;border-radius:6px;font-size:15px;color:var(--g700);cursor:pointer}
+  .menu a:hover{background:var(--g50)}
+  .menu a.red{color:var(--red)}
+  .menu small{display:block;font-size:12.5px;color:var(--g400);line-height:1.2}
+  .menu hr{border:0;border-top:1px solid var(--g100);margin:4px 0}
+
+  /* แถบขั้นแนวนอน */
+  .stepper{display:flex;gap:24px;padding:2px 20px 12px;border-top:1px solid var(--g100)}
+  .phase{min-width:0}
+  .ph-l{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--g400);margin:8px 0 8px;letter-spacing:.04em}
+  .ph-l::after{content:'';flex:1;height:1px;background:var(--g200)}
+  .ph-l .c{font-weight:400}
+  .phase.now .ph-l{color:var(--vio-d)} .phase.now .ph-l::after{background:#ddd6fe}
+  .phase.fin .ph-l{color:var(--em)}
+  .steps{display:flex}
+  .s{flex:1;position:relative;text-align:center;padding:0 2px}
+  .s::before{content:'';position:absolute;top:14px;left:calc(-50% + 20px);right:calc(50% + 20px);height:2px;background:var(--g200);border-radius:2px}
+  .s:first-child::before{display:none}
+  .s.done::before,.s.cur::before{background:var(--em2)}
+  .s .dot{width:30px;height:30px;margin:0 auto;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;position:relative;z-index:1}
+  .s.done .dot{background:var(--em2);color:#fff}
+  .s.cur .dot{background:var(--active);color:#fff;box-shadow:0 0 0 5px #ede9fe}
+  .s.lock .dot{background:#fff;color:var(--g400);border:2px solid var(--g200)}
+  .s .lb{display:block;font-size:15px;font-weight:700;line-height:1.15;margin-top:7px;color:var(--g700)}
+  .s.lock .lb{color:var(--g400);font-weight:500}
+  .s.cur .lb{color:var(--vio-d)}
+  .s .sm{display:block;font-size:12.5px;color:var(--g400);line-height:1.3}
+  .s.cur .sm{color:var(--active);font-weight:700}
+  [data-hist] .s.done,[data-hist] .s.cur{cursor:pointer}
+  [data-hist] .s.done:hover .lb{color:var(--active)}
+  .s.sel .dot{box-shadow:0 0 0 5px #a7f3d0}
+  .s.sel .lb{color:var(--em)}
+  .s .tip{position:absolute;top:calc(100% + 2px);left:50%;transform:translateX(-50%);background:var(--g800);color:#fff;font-size:13px;line-height:1.3;padding:5px 9px;border-radius:6px;white-space:nowrap;display:none;z-index:20}
+  .s.lock:hover .tip{display:block}
+  .s.lock{cursor:help}
+
+  .tabs{display:flex;border-top:1px solid var(--g100);padding-left:20px}
+  .tab{padding:10px 16px;font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--g500);border-bottom:2px solid transparent}
+  .tab.on{color:var(--active);border-color:var(--active)}
+
+  /* การ์ด "ขั้นต่อไป" */
+  .next{background:#fff;border:1px solid #ddd6fe;border-radius:16px;box-shadow:0 2px 8px rgba(139,92,246,.08);overflow:hidden}
+  .next-h{display:flex;gap:12px;align-items:flex-start;padding:14px 18px 10px;background:linear-gradient(180deg,var(--active-light),#fff)}
+  .next-h h3{font-size:22px;line-height:1.25;color:var(--g900)}
+  .next-h .sub{font-size:15px;color:var(--g600)}
+  .aging{margin-left:auto;text-align:right;font-size:13.5px;color:var(--g500);white-space:nowrap;line-height:1.3}
+  .aging b{display:block;font-size:20px;font-weight:500;color:var(--g800)}
+  .check{padding:2px 18px 4px}
+  .check li{display:flex;align-items:center;gap:12px;padding:9px 0;border-top:1px solid var(--g100)}
+  .check li:first-child{border-top:0}
+  .check i{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-style:normal;font-size:13px;font-weight:700;flex-shrink:0}
+  .check .ok i{background:var(--em-bg);color:var(--em)}
+  .check .todo i{background:var(--active);color:#fff}
+  .check .wait i{background:#fff;border:2px solid var(--g200);color:var(--g400)}
+  .check .tx{flex:1;min-width:0;line-height:1.3}
+  .check .tx b{display:block;font-weight:700}
+  .check .ok .tx b,.check .wait .tx b{color:var(--g500);font-weight:500}
+  .check .tx small{font-size:14px;color:var(--g400)}
+  .check .todo{background:var(--active-light);margin:0 -18px;padding:10px 18px;border-top-color:#ede9fe}
+  .check .todo .tx b{color:var(--vio-d)}
+  .tri{display:flex;gap:4px;align-items:center;font-size:13px;color:var(--g400)}
+  .tri span{width:38px;height:6px;border-radius:99px;background:var(--g200)}
+  .next-f{display:flex;align-items:center;gap:10px;justify-content:flex-end;padding:10px 18px;border-top:1px solid var(--g100);background:var(--g50)}
+  .lockline{font-size:14.5px;color:var(--g500);margin-right:auto}
+  .waiting{font-size:14.5px;color:var(--amber);margin-right:auto;background:var(--amber-bg);border:1px solid #fde68a;border-radius:8px;padding:3px 10px}
+
+  /* บล็อก/ตาราง */
+  .blk{background:#fff;border:1px solid var(--g200);border-radius:12px;overflow:hidden}
+  .blk-h{display:flex;align-items:center;gap:8px;padding:9px 14px;border-bottom:1px solid var(--g100);font-weight:700;font-size:16px}
+  .blk-h small{font-weight:400;color:var(--g400);font-size:14px}
+  .blk-h .r{margin-left:auto;display:flex;gap:6px;align-items:center}
+  .blk-sub{padding:6px 14px;font-size:13px;font-weight:700;color:var(--g400);background:var(--g50);border-bottom:1px solid var(--g100);border-top:1px solid var(--g100)}
+  table.t{width:100%;border-collapse:collapse;font-size:15px}
+  table.t th{text-align:left;font-size:13px;color:var(--g500);font-weight:500;padding:6px 12px;border-bottom:1px solid var(--g100);white-space:nowrap}
+  table.t td{padding:8px 12px;border-bottom:1px solid var(--g100);vertical-align:middle}
+  table.t tr:last-child td{border-bottom:0}
+  table.t .r{text-align:right;font-variant-numeric:tabular-nums}
+  table.t td small{display:block;color:var(--g400);font-size:13px}
+  .empty{padding:14px;text-align:center;color:var(--g400);font-size:15px}
+  dl.dl{display:grid;grid-template-columns:1fr 1fr;gap:10px 28px;font-size:16px}
+  dl.dl dt{font-size:13px;color:var(--g400)}
+  dl.dl .full{grid-column:1/-1}
+
+  /* ดูขั้นย้อนหลัง (A) */
+  .hist{background:#fff;border:1px solid var(--g200);border-radius:16px;overflow:hidden}
+  .hist-h{display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--g100);background:linear-gradient(180deg,var(--em-bg),#fff)}
+  .hist-h .ok{width:32px;height:32px;border-radius:50%;background:var(--em2);color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;flex-shrink:0}
+  .hist-h h3{font-size:21px;line-height:1.2}
+  .hist-b{padding:14px 18px;display:flex;flex-direction:column;gap:12px}
+  .hist-h .btn{margin-left:auto}
+
+  /* Activity log แบบใหม่ */
+  .log{width:310px;border-left:1px solid var(--g200);background:#fff;flex-shrink:0}
+  .log-h{padding:10px 14px;font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--g500);border-bottom:1px solid var(--g100)}
+  .compose{display:flex;gap:6px;padding:10px 14px}
+  .compose input{flex:1;min-width:0;height:34px;border:1px solid var(--g200);border-radius:8px;padding:0 10px;font:inherit;font-size:14px;color:var(--g500)}
+  .chips{display:flex;gap:5px;padding:0 14px 8px;border-bottom:1px solid var(--g100);flex-wrap:wrap}
+  .chip{font-size:13px;border:1px solid var(--g200);border-radius:999px;padding:0 9px;color:var(--g500);white-space:nowrap}
+  .chip.on{background:var(--g800);border-color:var(--g800);color:#fff}
+  .day{padding:10px 14px 2px;font-size:13px;font-weight:700;color:var(--g400)}
+  .ev{display:flex;gap:10px;padding:6px 14px 8px;position:relative}
+  .ev::before{content:'';position:absolute;left:28px;top:38px;bottom:-6px;width:2px;background:var(--g100)}
+  .evs .ev:last-child::before{display:none}
+  .ev .ic{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;background:var(--g100);position:relative;z-index:1}
+  .ev .ic.v{background:var(--active-light)} .ev .ic.g{background:var(--em-bg)} .ev .ic.bl{background:var(--blue-bg)} .ev .ic.a{background:var(--amber-bg)}
+  .ev .tx{flex:1;min-width:0;font-size:14.5px;line-height:1.35;color:var(--g600)}
+  .ev .tx b{font-weight:700;color:var(--g800)}
+  .ev .w{font-size:12.5px;color:var(--g400)}
+  .ev .mv{display:inline-block;margin-top:3px;font-size:12.5px;background:var(--active-light);color:var(--vio-d);border-radius:6px;padding:0 7px}
+
+  /* ── แบบ B (ใกล้ของเดิม) ── */
+  .hdr-top{display:flex;align-items:stretch}
+  .hdr-ico{width:80px;border-right:1px solid var(--g200);display:flex;align-items:center;justify-content:center;padding:8px 0}
+  .hdr-ico span{width:46px;height:46px;border-radius:50%;background:#ccfbf1;display:flex;align-items:center;justify-content:center;font-size:24px}
+  .hdr-txt{flex:1;padding:10px 16px;min-width:0}
+  .hdr-txt h2{font-size:22px;line-height:1.2;display:flex;align-items:center;gap:8px}
+  .hdr-meta{display:flex;flex-wrap:wrap;gap:2px 14px;font-size:14px;color:var(--g500);margin-top:2px}
+  .hdr-meta b{color:var(--g800);font-weight:500}
+  .hdr-act{display:flex;align-items:center;gap:8px;padding:0 16px}
+  .tl{position:relative;display:flex;flex-direction:column;gap:6px}
+  .tl::before{content:'';position:absolute;left:27px;top:20px;bottom:20px;width:2px;background:var(--g200)}
+  .tl > *{position:relative}
+  .tl-row{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--g200);border-radius:12px;padding:8px 14px;cursor:pointer}
+  .tl-row:hover{border-color:var(--g300)}
+  .tl-row .okc{width:26px;height:26px;border-radius:50%;background:var(--em2);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0}
+  .tl-row .no{font-size:13px;font-weight:700;color:var(--g400);width:20px}
+  .tl-row .t{font-weight:700;width:150px;flex-shrink:0}
+  .tl-row .sm2{flex:1;color:var(--g500);font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .tl-row .d{font-size:14px;color:var(--g400);white-space:nowrap}
+  .tl-row .chev{color:var(--g400);transition:transform .15s;font-weight:700}
+  .tl-row.open{border-radius:12px 12px 0 0;border-bottom-color:var(--g100)}
+  .tl-row.open .chev{transform:rotate(90deg)}
+  .tl-body{display:none;background:#fff;border:1px solid var(--g200);border-top:0;border-radius:0 0 12px 12px;margin-top:-6px;padding:12px 16px 14px 64px}
+  .tl-row.open + .tl-body{display:block}
+  .cur-card{background:#fff;border:2px solid var(--active);border-radius:16px;overflow:hidden;box-shadow:0 2px 10px rgba(139,92,246,.12)}
+  .cur-h{display:flex;align-items:center;gap:12px;padding:12px 18px;background:var(--active-light)}
+  .no-box{width:40px;height:32px;border-radius:10px;background:var(--active);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex-shrink:0}
+  .cur-h h3{font-size:19px;line-height:1.15}
+  .cur-h .lbl{font-size:12.5px;font-weight:700;letter-spacing:.08em;color:var(--g400)}
+  .act-dot{font-size:13px;font-weight:700;letter-spacing:.08em;color:var(--active);white-space:nowrap}
+  .cur-b{padding:14px 18px;display:flex;flex-direction:column;gap:12px}
+  .phasenote{border:1px dashed var(--g300);border-radius:8px;padding:6px 12px;font-size:14px;color:var(--g500)}
+  .need{font-size:14.5px;color:var(--amber);padding:2px 8px}
+  .tl-lock{display:flex;align-items:center;gap:8px;flex-wrap:wrap;border:1px dashed var(--g300);background:var(--g50);border-radius:12px;padding:9px 14px;color:var(--g400);font-size:15px}
+  .tl-lock .lk{width:26px;height:26px;border-radius:50%;border:2px solid var(--g200);background:#fff;flex-shrink:0}
+  .tl-lock span{white-space:nowrap}
+  .old-log .le{padding:10px 14px;border-bottom:1px solid var(--g100);font-size:14px}
+  .old-log .le .w{color:var(--g400);font-size:13px}
+  .old-log .le b{display:block}
+  .old-log .le .mv{display:inline-block;margin-top:3px;font-size:12.5px;background:var(--g100);color:var(--g600);border-radius:999px;padding:0 8px}
+
+  /* ── แบบ C: ตารางงานคู่ขนาน ── */
+  .mx{display:grid;grid-template-columns:118px repeat(4,1fr);background:#fff}
+  .mx .hd{padding:8px 12px;font-size:14px;font-weight:700;color:var(--g500);background:var(--g50);border-bottom:1px solid var(--g200);border-left:1px solid var(--g100);line-height:1.25}
+  .mx .hd:first-child{border-left:0}
+  .mx .hd small{display:block;font-size:12.5px;font-weight:400}
+  .mx .hd.ok{color:var(--em)} .mx .hd.now{color:var(--vio-d);background:var(--active-light);box-shadow:inset 0 3px 0 var(--active)}
+  .mx .rl{padding:10px 12px;font-weight:700;font-size:15px;border-top:1px solid var(--g100);line-height:1.25}
+  .mx .rl small{display:block;font-weight:400;color:var(--g400);font-size:12.5px}
+  .mx .cell{padding:9px 10px;border-top:1px solid var(--g100);border-left:1px solid var(--g100);display:flex;flex-direction:column;gap:7px}
+  .mx .cell.now{background:#fcfbff}
+  .mx .row-h + .cell{border-top:0}
+  .it{display:flex;gap:7px;align-items:flex-start;font-size:14.5px;line-height:1.3}
+  .it > i{width:18px;height:18px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-style:normal;font-size:11px;font-weight:700;margin-top:1px}
+  .it.ok > i{background:var(--em2);color:#fff}
+  .it.now > i{background:var(--active);color:#fff}
+  .it.now{color:var(--vio-d);font-weight:700}
+  .it.wait > i{background:#fff;border:2px solid var(--g300)}
+  .it.wait{color:var(--g500)}
+  .it.pend > i{background:var(--amber2);color:#fff}
+  .it.na{color:var(--g400)} .it.na > i{background:var(--g100);color:var(--g400)}
+  .it small{display:block;color:var(--g400);font-size:12.5px;font-weight:400}
+  .it .tg{display:inline-block;font-size:11.5px;border-radius:999px;padding:0 6px;background:var(--blue-bg);color:var(--blue);font-weight:700;white-space:nowrap;margin-left:2px}
+  .it .act{margin-top:4px}
+  .cell .gap{font-size:13px;color:var(--g300)}
+  .money{padding:12px 16px}
+  .mbar{display:flex;height:14px;border-radius:99px;overflow:hidden;gap:2px;margin:8px 0 8px}
+  .mbar span{display:block}
+  .mleg{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;font-size:14px;color:var(--g500)}
+  .mleg div{border-left:3px solid var(--g200);padding-left:8px;line-height:1.3}
+  .mleg b{display:block;color:var(--g800);font-weight:500;font-size:15px;font-variant-numeric:tabular-nums}
+  .mleg .ok{border-color:var(--em2)} .mleg .pend{border-color:var(--amber2)}
+  .legend{display:flex;gap:12px;font-size:13px;color:var(--g500);font-weight:400}
+  .legend span{display:inline-flex;align-items:center;gap:4px}
+  .legend i{width:10px;height:10px;border-radius:50%;display:inline-block}
+
+  /* ── มือถือ ── */
+  .phones{display:flex;gap:36px;flex-wrap:wrap;justify-content:center;padding:6px 0 10px}
+  .ph-cap{text-align:center;font-weight:700;color:var(--g600);margin-bottom:8px;font-size:16px}
+  .phone{width:390px;height:820px;background:var(--g50);border-radius:40px;border:10px solid #111827;overflow:hidden;position:relative;display:flex;flex-direction:column;box-shadow:0 10px 30px rgba(0,0,0,.18)}
+  .m-hdr{background:#fff;border-bottom:1px solid var(--g200);padding:12px 14px 0}
+  .m-top{display:flex;align-items:center;gap:6px}
+  .m-top .back{font-size:24px;color:var(--g500);font-weight:700;line-height:1}
+  .m-top h2{font-size:21px;flex:1;line-height:1.2}
+  .m-sub{display:flex;align-items:center;gap:6px;font-size:13.5px;color:var(--g500);margin-top:2px}
+  .m-prog{display:block;margin:10px 0 8px;padding:8px 10px;border:1px solid #ede9fe;background:var(--active-light);border-radius:10px}
+  .m-prog .lbl{display:flex;justify-content:space-between;align-items:baseline;font-size:15px}
+  .seg{display:flex;gap:3px;margin-top:6px}
+  .seg span{flex:1;height:6px;border-radius:99px;background:#e4e0f5}
+  .seg span.ok{background:var(--em2)} .seg span.now{background:var(--active)}
+  .seg span.gap{flex:0 0 6px;background:none}
+  .m-kpis{display:flex;gap:6px;overflow:hidden;padding-bottom:10px}
+  .m-kpis div{border:1px solid var(--g200);border-radius:10px;padding:3px 10px;white-space:nowrap;font-size:12.5px;color:var(--g500);line-height:1.3}
+  .m-kpis b{display:block;font-size:17px;color:var(--g900);font-weight:500}
+  .m-tabs{display:flex;margin:0 -14px;border-top:1px solid var(--g100)}
+  .m-tabs span{flex:1;text-align:center;padding:8px 0;font-size:12.5px;font-weight:700;letter-spacing:.05em;color:var(--g500);border-bottom:2px solid transparent;text-transform:uppercase}
+  .m-tabs span.on{color:var(--active);border-color:var(--active)}
+  .m-body{flex:1;overflow:hidden;padding:10px;display:flex;flex-direction:column;gap:10px}
+  .m-body .next-h{padding:12px 14px 8px}
+  .m-body .next-h h3{font-size:19px}
+  .m-body .check{padding:0 14px 2px}
+  .m-body .check .todo{margin:0 -14px;padding:9px 14px}
+  .m-body .check li{padding:7px 0;gap:10px}
+  .m-body .check i{width:24px;height:24px}
+  .m-body .check .tx b{font-size:16px}
+  .m-boq{padding:10px 14px;font-size:14.5px}
+  .m-boq .r1{display:flex;align-items:center;gap:8px}
+  .m-boq .r1 b{font-size:17px}
+  .m-boq .r2{display:flex;gap:14px;margin-top:4px;color:var(--g500)}
+  .m-boq .r2 b{color:var(--g800);font-weight:500}
+  .m-act{position:absolute;left:0;right:0;bottom:64px;background:#fff;border-top:1px solid var(--g200);padding:8px 12px;display:flex;gap:8px;box-shadow:0 -4px 12px rgba(0,0,0,.05)}
+  .m-act .btn{height:44px;font-size:16px}
+  .m-act .grow{flex:1;justify-content:center}
+  .m-nav{position:absolute;left:0;right:0;bottom:0;height:64px;background:#fff;border-top:1px solid var(--g200);display:flex}
+  .m-nav div{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:12px;color:var(--g400);gap:3px}
+  .m-nav i{width:20px;height:20px;border:2px solid currentColor;border-radius:6px}
+  .m-nav .on{color:var(--navy);font-weight:700}
+  .dimmer{position:absolute;inset:0;background:rgba(17,24,39,.4);z-index:2}
+  .sheet{position:absolute;left:0;right:0;bottom:0;max-height:78%;background:#fff;border-radius:22px 22px 0 0;box-shadow:0 -10px 30px rgba(0,0,0,.2);padding:8px 16px 18px;z-index:3;overflow:hidden}
+  .sheet .grab{width:42px;height:5px;border-radius:9px;background:var(--g300);margin:0 auto 10px}
+  .sheet h4{font-size:19px;margin-bottom:2px}
+  .ms-ph{font-size:13px;font-weight:700;color:var(--g400);margin:8px 0 2px;letter-spacing:.04em}
+  .ms{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--g100);font-size:16px}
+  .ms .d0{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:700;flex-shrink:0}
+  .ms.done .d0{background:var(--em2);color:#fff}
+  .ms.cur .d0{background:var(--active);color:#fff}
+  .ms.lock .d0{border:2px solid var(--g200);color:var(--g400)}
+  .ms .nm{flex:1;min-width:0;line-height:1.25}
+  .ms .nm small{display:block;font-size:12.5px;color:var(--g400)}
+  .ms.lock{color:var(--g400)}
+  .ms.cur{color:var(--vio-d);font-weight:700}
+  .ms .dt{font-size:13px;color:var(--g400);white-space:nowrap}
+  .ms-b{margin:0 0 6px 34px;padding:8px 10px;background:var(--g50);border-radius:8px;font-size:14px;color:var(--g600);line-height:1.4}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="intro">
+    <h1>Mockup: หน้าโครงการ B2B · 3 แบบให้เลือก</h1>
+    <p>ข้อมูลตัวอย่างจากโครงการ PRJ2610-001 (A Solar Project) ณ ขั้น 04 · แบบ C ใช้โครงการเดียวกันแต่สมมติว่าเดินมาถึงขั้นติดตั้งแล้ว · กดสลับแบบที่แถบด้านล่าง</p>
+    <table class="cmp">
+      <thead><tr><th></th><th>A · แถบขั้น + ขั้นต่อไป ⭐</th><th>B · ไทม์ไลน์ย่อ</th><th>C · งานคู่ขนาน (ช่วง 06–09)</th></tr></thead>
+      <tbody>
+        <tr><th>เปิดหน้ามาเห็นงานที่ต้องทำ</th><td>บนสุดทันที</td><td>ครึ่งบนของจอ</td><td>บนสุดทันที</td></tr>
+        <tr><th>บอกว่ายังขาดอะไร</th><td>เช็กลิสต์ทีละข้อ</td><td>ข้อความข้างปุ่ม</td><td>ตาราง หน้างาน / เอกสาร / เงิน</td></tr>
+        <tr><th>หน้าตาเทียบหน้าลีด B2C</th><td>ต่างไป (ยกไปใช้ B2C ทีหลังได้)</td><td>ใกล้เดิมมาก</td><td>ต่างไป</td></tr>
+        <tr><th>ขนาดงานแก้</th><td>กลาง</td><td>เล็ก</td><td>กลาง · ใช้คู่กับ A</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="switch" role="tablist">
+    <button data-v="a" class="on">A · แถบขั้น + ขั้นต่อไป <span class="rec">แนะนำ</span></button>
+    <button data-v="b">B · ไทม์ไลน์ย่อ</button>
+    <button data-v="c">C · ช่วงดำเนินโครงการ (ใช้คู่กับ A)</button>
+    <button data-v="m">มือถือ (แบบ A)</button>
+  </div>
+
+  <!-- ═══════════════════════ แบบ A ═══════════════════════ -->
+  <section class="view on" id="v-a">
+    <div class="notes">
+      <div>
+        <h4>เปลี่ยนอะไร</h4>
+        <ul>
+          <li>แถบขั้นแนวนอนแบ่ง 2 ช่วง (ขาย / ดำเนินโครงการ) แทนรางซ้ายและการ์ดขั้นที่เสร็จแล้ว</li>
+          <li>การ์ด <b>"ขั้นต่อไป"</b> อยู่บนสุด: เช็กลิสต์บอกว่ายังขาดอะไรก่อนกด "ได้งาน"</li>
+          <li>ตัวเลขหลัก (kWp · ราคา · Margin) อยู่ที่ header · ปุ่มแพ้งาน/ยกเลิก/ถอยขั้นย้ายไปไว้ใน ⋯</li>
+          <li>Activity Log จัดกลุ่มตามวัน มีไอคอนตามประเภทและตัวกรอง</li>
+        </ul>
+      </div>
+      <div>
+        <h4>ลองกด</h4>
+        <ul>
+          <li>ขั้น 01–03 บนแถบ → ดูรายละเอียดขั้นที่ผ่านมา (แทนการพับ/กางการ์ด)</li>
+          <li>ชี้ที่ขั้น 05–09 → บอกว่าขั้นนั้นจะปลดเมื่อไร</li>
+          <li>ปุ่ม ⋯ มุมขวาบน</li>
+        </ul>
+        <h4 style="margin-top:6px">ข้อควรคิด</h4>
+        <ul><li>หน้าตาจะต่างจากหน้าลีด B2C ที่ยังใช้การ์ดแบบเดิม</li></ul>
+      </div>
+    </div>
+
+    <div class="scroll"><div class="app" data-hist>
+      <div class="side"><i></i><i class="on"></i><i></i><i></i><hr><i></i><i></i><i></i><i></i><hr><i></i></div>
+      <div class="main">
+        <div class="hdr">
+          <div class="h1row">
+            <div class="h-ico">🏭</div>
+            <div class="h-txt">
+              <div class="h-title"><span class="back">‹</span><h2>A Solar Project</h2><span class="pill p-active">ราคายืนยัน / ต่อรอง</span></div>
+              <div class="h-meta"><span>PRJ2610-001</span><span>บ. A</span><span>ผู้ติดต่อ <b>A</b></span><span>ผู้ดูแล <b>Admin</b></span></div>
+            </div>
+            <div class="kpis">
+              <div class="kpi"><div class="k">ขนาดระบบ</div><div class="v">70.00 <small>kWp</small></div></div>
+              <div class="kpi"><div class="k">ราคาขาย (ก่อน VAT)</div><div class="v">613,230.82</div></div>
+              <div class="kpi good"><div class="k">Margin</div><div class="v">15%</div></div>
+            </div>
+            <div class="more">
+              <button class="btn icon" data-menu>⋯</button>
+              <div class="menu">
+                <a>แก้ข้อมูลโครงการ</a>
+                <a>ถอยไปสำรวจซ้ำ<small>กลับขั้น 03 แล้วนัดวันใหม่</small></a>
+                <hr>
+                <a class="red">แพ้งาน</a>
+                <a class="red">ยกเลิกโครงการ</a>
+              </div>
+            </div>
+          </div>
+          <div class="stepper">
+            <div class="phase now" style="flex:5">
+              <div class="ph-l">ขาย <span class="c">01–05</span></div>
+              <ol class="steps">
+                <li class="s done" data-step="1"><span class="dot">✓</span><span class="lb">โอกาสขาย</span><span class="sm">16 ต.ค.</span></li>
+                <li class="s done" data-step="2"><span class="dot">✓</span><span class="lb">ราคาประมาณการ</span><span class="sm">16 ต.ค.</span></li>
+                <li class="s done" data-step="3"><span class="dot">✓</span><span class="lb">สำรวจหน้างาน</span><span class="sm">16 ต.ค.</span></li>
+                <li class="s cur" data-step="cur"><span class="dot">04</span><span class="lb">ราคายืนยัน / ต่อรอง</span><span class="sm">ตอนนี้</span></li>
+                <li class="s lock"><span class="dot">05</span><span class="lb">ได้งาน</span><span class="sm">&nbsp;</span><span class="tip">ปลดเมื่อลูกค้าตอบรับใบเสนอราคาที่ส่งแล้ว</span></li>
+              </ol>
+            </div>
+            <div class="phase" style="flex:4">
+              <div class="ph-l">ดำเนินโครงการ <span class="c">06–09</span></div>
+              <ol class="steps">
+                <li class="s lock"><span class="dot">06</span><span class="lb">ขออนุญาต + จัดซื้อ</span><span class="sm">&nbsp;</span><span class="tip">ปลดเมื่อบัญชียืนยันเงินงวด 1</span></li>
+                <li class="s lock"><span class="dot">07</span><span class="lb">ติดตั้ง</span><span class="sm">&nbsp;</span><span class="tip">ปลดเมื่อบันทึก "ของเข้าหน้างาน"</span></li>
+                <li class="s lock"><span class="dot">08</span><span class="lb">ขนานไฟ</span><span class="sm">&nbsp;</span><span class="tip">ปลดเมื่อติดตั้งเสร็จ 100% แล้วยื่นขนานไฟ</span></li>
+                <li class="s lock"><span class="dot">09</span><span class="lb">ส่งมอบ</span><span class="sm">&nbsp;</span><span class="tip">ปลดเมื่อได้วันจ่ายไฟ (COD)</span></li>
+              </ol>
+            </div>
+          </div>
+          <div class="tabs"><span class="tab on">Workflow</span><span class="tab">ข้อมูลโครงการ</span><span class="tab">BOQ (1)</span></div>
+        </div>
+
+        <div class="body">
+          <div class="center">
+
+            <!-- ขั้นปัจจุบัน -->
+            <div class="stack" data-pane="cur">
+              <div class="next">
+                <div class="next-h">
+                  <div>
+                    <div class="eyebrow">ขั้น 04 · ราคายืนยัน / ต่อรอง</div>
+                    <h3>ต่อไป: ออกใบเสนอราคายืนยันจาก BOQ ตามผลสำรวจ</h3>
+                  </div>
+                  <div class="aging"><b>วันนี้</b>เข้าขั้นนี้ 16 ต.ค. 00:28</div>
+                </div>
+                <ol class="check">
+                  <li class="ok"><i>✓</i><div class="tx"><b>บันทึกผลสำรวจ</b><small>16 ต.ค. 2569 · xxxxxxxxx</small></div></li>
+                  <li class="ok"><i>✓</i><div class="tx"><b>BOQ ตามผลสำรวจ</b><small>BOQ2610-001 Rev 0 · 70.00 kWp</small></div><a class="lnk">เปิด BOQ</a></li>
+                  <li class="todo"><i>3</i><div class="tx"><b>ออกใบเสนอราคายืนยัน</b><small>เลือก BOQ ตัวเลือกที่จะเสนอ</small></div><button class="btn btn-active">+ สร้างใบเสนอราคา</button></li>
+                  <li class="wait"><i>4</i><div class="tx"><b>ผู้ตรวจสอบ 3 ชั้นอนุมัติ</b></div><div class="tri"><span></span><span></span><span></span>&nbsp;0/3</div></li>
+                  <li class="wait"><i>5</i><div class="tx"><b>ส่งลูกค้า แล้วลูกค้าตอบรับ</b><small>ลูกค้าต่อรอง = ออก Rev ใหม่ของใบ</small></div></li>
+                </ol>
+                <div class="next-f">
+                  <span class="lockline">🔒 กด "ได้งาน" ได้เมื่อมีใบเสนอราคาที่ส่งลูกค้าแล้ว</span>
+                  <button class="btn btn-active" disabled>ได้งาน</button>
+                </div>
+              </div>
+
+              <div class="blk">
+                <div class="blk-h">BOQ ของโครงการ <small>เลือกได้หลายขนาด · แต่ละตัวมี Rev ของตัวเอง</small><span class="r"><button class="btn sm">+ BOQ ขนาดใหม่</button></span></div>
+                <table class="t">
+                  <thead><tr><th>ตัวเลือก</th><th>เลขที่ · Rev</th><th class="r">kWp</th><th class="r">ต้นทุน</th><th class="r">ราคาขาย (ก่อน VAT)</th><th class="r">Margin</th><th class="r">บาท/Wp</th><th>บันทึกล่าสุด</th></tr></thead>
+                  <tbody><tr><td class="b">70 kWp</td><td>BOQ2610-001 <span class="muted">Rev 0</span></td><td class="r">70.00</td><td class="r">521,246.20</td><td class="r b">613,230.82</td><td class="r">15%</td><td class="r">8.76</td><td>15 ต.ค. 2569<small>Admin</small></td></tr></tbody>
+                </table>
+              </div>
+
+              <div class="blk">
+                <div class="blk-h">ใบเสนอราคา <small>อนุมัติ 3 ชั้นก่อนส่งลูกค้า · ต่อรอง = ออก Rev ใหม่</small></div>
+                <div class="blk-sub" style="border-top:0">ใบยืนยัน (ขั้นนี้)</div>
+                <div class="empty">ยังไม่มีใบยืนยัน — สร้างจาก BOQ ตัวเลือกด้านบน</div>
+                <div class="blk-sub">ใบประมาณการ (จากขั้น 02)</div>
+                <table class="t">
+                  <tbody><tr><td>SSE-MS-RPPS-260001 <span class="muted">Rev 0</span></td><td>จาก BOQ2610-001 Rev 0 · 70 kWp</td><td><span class="pill p-gray">ร่าง</span></td><td class="r">613,230.82</td><td>16 ต.ค. 2569<small>Admin</small></td></tr></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- ดูย้อนหลัง: ขั้น 01 -->
+            <div class="stack" data-pane="1" hidden>
+              <div class="hist">
+                <div class="hist-h"><span class="ok">✓</span><div><div class="eyebrow g">ขั้น 01 · เสร็จ 16 ต.ค. 2569</div><h3>โอกาสขาย</h3></div><button class="btn" data-back>‹ กลับขั้นปัจจุบัน</button></div>
+                <div class="hist-b">
+                  <dl class="dl">
+                    <div><dt>บริษัทลูกค้า</dt><dd>บ. A</dd></div>
+                    <div><dt>ผู้ติดต่อ</dt><dd>A</dd></div>
+                    <div><dt>ที่ตั้ง</dt><dd>—</dd></div>
+                    <div><dt>ผู้ดูแล</dt><dd>Admin</dd></div>
+                    <div><dt>สร้างโครงการ</dt><dd>16 ต.ค. 2569 00:21 · Admin</dd></div>
+                  </dl>
+                </div>
+              </div>
+            </div>
+
+            <!-- ดูย้อนหลัง: ขั้น 02 -->
+            <div class="stack" data-pane="2" hidden>
+              <div class="hist">
+                <div class="hist-h"><span class="ok">✓</span><div><div class="eyebrow g">ขั้น 02 · เสร็จ 16 ต.ค. 2569</div><h3>ราคาประมาณการ</h3></div><button class="btn" data-back>‹ กลับขั้นปัจจุบัน</button></div>
+                <div class="hist-b">
+                  <div class="blk">
+                    <div class="blk-h">BOQ ตอนประมาณการ <small>1 ตัวเลือก</small></div>
+                    <table class="t"><tbody><tr><td class="b">70 kWp</td><td>BOQ2610-001 <span class="muted">Rev 0</span></td><td class="r">613,230.82</td><td class="r">15%</td></tr></tbody></table>
+                  </div>
+                  <div class="blk">
+                    <div class="blk-h">ใบประมาณการ <small>1 ใบ</small></div>
+                    <table class="t"><tbody><tr><td>SSE-MS-RPPS-260001 <span class="muted">Rev 0</span></td><td><span class="pill p-gray">ร่าง</span></td><td class="r">613,230.82</td><td>16 ต.ค. 2569</td></tr></tbody></table>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ดูย้อนหลัง: ขั้น 03 -->
+            <div class="stack" data-pane="3" hidden>
+              <div class="hist">
+                <div class="hist-h"><span class="ok">✓</span><div><div class="eyebrow g">ขั้น 03 · เสร็จ 16 ต.ค. 2569</div><h3>สำรวจหน้างาน</h3></div><button class="btn" data-back>‹ กลับขั้นปัจจุบัน</button></div>
+                <div class="hist-b">
+                  <dl class="dl">
+                    <div><dt>วันนัดสำรวจ</dt><dd>20 ต.ค. 2569</dd></div>
+                    <div><dt>สำรวจจริง</dt><dd>16 ต.ค. 2569 · Admin</dd></div>
+                    <div class="full"><dt>ผลสำรวจ</dt><dd>xxxxxxxxx</dd></div>
+                  </dl>
+                  <div class="blk"><div class="blk-h">รูป/ไฟล์ผลสำรวจ <span class="r"><button class="btn sm">+ แนบไฟล์</button></span></div><div class="empty">ยังไม่มีไฟล์</div></div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <aside class="log">
+            <div class="log-h">Activity Log</div>
+            <div class="compose"><input value="บันทึกการคุย / ความคืบหน้า…" readonly><button class="btn sm">บันทึก</button></div>
+            <div class="chips"><span class="chip on">ทั้งหมด</span><span class="chip">บันทึก</span><span class="chip">เปลี่ยนขั้น</span><span class="chip">เอกสาร</span></div>
+            <div class="day">วันนี้ · 16 ต.ค. 2569</div>
+            <div class="evs">
+              <div class="ev"><span class="ic g">🔍</span><div class="tx"><b>บันทึกผลสำรวจ</b> xxxxxxxxx<div class="w">00:28 · Admin</div><span class="mv">สำรวจ → ราคายืนยัน / ต่อรอง</span></div></div>
+              <div class="ev"><span class="ic bl">📅</span><div class="tx"><b>นัดสำรวจ</b> 20 ต.ค. 2569<div class="w">00:27 · Admin</div><span class="mv">ประมาณการ → สำรวจหน้างาน</span></div></div>
+              <div class="ev"><span class="ic v">📄</span><div class="tx"><b>สร้างใบประมาณการ</b> SSE-MS-RPPS-260001 จาก BOQ2610-001 Rev 0<div class="w">00:26 · Admin</div></div></div>
+              <div class="ev"><span class="ic">🧮</span><div class="tx"><b>เพิ่ม BOQ</b> BOQ2610-001 · 70 kWp<div class="w">00:23 · Admin</div></div></div>
+              <div class="ev"><span class="ic v">➜</span><div class="tx"><b>เปลี่ยนขั้น</b><div class="w">00:22 · Admin</div><span class="mv">โอกาสขาย → ราคาประมาณการ</span></div></div>
+              <div class="ev"><span class="ic a">✦</span><div class="tx"><b>สร้างโครงการ</b> PRJ2610-001<div class="w">00:21 · Admin</div></div></div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </div></div>
+  </section>
+
+  <!-- ═══════════════════════ แบบ B ═══════════════════════ -->
+  <section class="view" id="v-b">
+    <div class="notes">
+      <div>
+        <h4>เปลี่ยนอะไร <span class="muted" style="font-weight:400">(กรอบส้มประ = จุดที่ต่างจากเดิม)</span></h4>
+        <ul>
+          <li>ขั้นที่เสร็จแล้วเหลือแถวละบรรทัดเดียว กดเพื่อกางดูได้</li>
+          <li>ขั้นที่ยังล็อกรวมไว้บรรทัดเดียว · ตัดรางขั้นด้านซ้ายออก</li>
+          <li>ข้างปุ่ม "ได้งาน" บอกว่ายังขาดอะไร · มีป้าย "อยู่ขั้นนี้กี่วัน"</li>
+        </ul>
+      </div>
+      <div>
+        <h4>ข้อดี / ข้อควรคิด</h4>
+        <ul>
+          <li>แก้น้อย หน้าตายังเหมือนหน้าลีด B2C (ยกไปใช้กับ B2C ได้ง่าย)</li>
+          <li>ยังเรียงยาวแนวตั้ง · ช่วง 06–09 ที่งานเดินคู่ขนานจะยังอ่านยาก</li>
+          <li>ลองกดแถว 01–03 เพื่อกางดู</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="scroll"><div class="app">
+      <div class="side"><i></i><i class="on"></i><i></i><i></i><hr><i></i><i></i><i></i><i></i><hr><i></i></div>
+      <div class="main">
+        <div class="hdr">
+          <div class="hdr-top">
+            <div class="hdr-ico"><span>🏭</span></div>
+            <div class="hdr-txt">
+              <h2><span class="muted">‹</span> A Solar Project <span class="pill p-active">ราคายืนยัน / ต่อรอง</span></h2>
+              <div class="hdr-meta"><span>PRJ2610-001</span><span>บ. A</span><span>ผู้ดูแล <b>Admin</b></span><span>BOQ ล่าสุด <b>70.00 kWp</b></span><span><b>613,230.82</b> บาท (ก่อน VAT)</span></div>
+            </div>
+            <div class="hdr-act"><button class="btn">แพ้งาน</button><button class="btn">ยกเลิก</button></div>
+          </div>
+          <div class="tabs" style="padding-left:80px"><span class="tab on">Workflow</span><span class="tab">ข้อมูลโครงการ</span><span class="tab">BOQ (1)</span></div>
+        </div>
+
+        <div class="body">
+          <div class="center">
+            <div class="tl">
+              <div class="tl-row done new"><span class="okc">✓</span><span class="no">01</span><span class="t">โอกาสขาย</span><span class="sm2">บ. A · A</span><span class="d">16 ต.ค.</span><span class="chev">›</span></div>
+              <div class="tl-body"><dl class="dl"><div><dt>บริษัทลูกค้า</dt><dd>บ. A</dd></div><div><dt>ผู้ติดต่อ</dt><dd>A</dd></div><div><dt>ที่ตั้ง</dt><dd>—</dd></div><div><dt>ผู้ดูแล</dt><dd>Admin</dd></div></dl></div>
+
+              <div class="tl-row done"><span class="okc">✓</span><span class="no">02</span><span class="t">ราคาประมาณการ</span><span class="sm2">BOQ 1 ตัวเลือก · ใบประมาณการ 1 ใบ</span><span class="d">16 ต.ค.</span><span class="chev">›</span></div>
+              <div class="tl-body"><table class="t"><tbody><tr><td>BOQ2610-001 <span class="muted">Rev 0</span> · 70 kWp</td><td class="r">613,230.82</td></tr><tr><td>SSE-MS-RPPS-260001 <span class="muted">Rev 0</span> <span class="pill p-gray">ร่าง</span></td><td class="r">613,230.82</td></tr></tbody></table></div>
+
+              <div class="tl-row done"><span class="okc">✓</span><span class="no">03</span><span class="t">สำรวจหน้างาน</span><span class="sm2">สำรวจ 16 ต.ค. 2569 · xxxxxxxxx</span><span class="d">16 ต.ค.</span><span class="chev">›</span></div>
+              <div class="tl-body"><dl class="dl"><div><dt>วันนัดสำรวจ</dt><dd>20 ต.ค. 2569</dd></div><div><dt>สำรวจจริง</dt><dd>16 ต.ค. 2569 · Admin</dd></div><div class="full"><dt>ผลสำรวจ</dt><dd>xxxxxxxxx</dd></div></dl></div>
+
+              <div class="cur-card">
+                <div class="cur-h">
+                  <span class="no-box">04</span>
+                  <div style="flex:1"><div class="lbl">STEP 04</div><h3>ราคายืนยัน / ต่อรอง</h3></div>
+                  <span class="pill p-gray new">อยู่ขั้นนี้: วันนี้</span>
+                  <span class="act-dot">● ACTIVE</span>
+                </div>
+                <div class="cur-b">
+                  <div class="blk">
+                    <div class="blk-h">BOQ ของโครงการ <small>เลือกได้หลายขนาด · แต่ละตัวมี Rev ของตัวเอง</small><span class="r"><button class="btn sm">+ BOQ ขนาดใหม่</button></span></div>
+                    <table class="t">
+                      <thead><tr><th>ตัวเลือก</th><th>เลขที่ · Rev</th><th class="r">kWp</th><th class="r">ต้นทุน</th><th class="r">ราคาขาย (ก่อน VAT)</th><th class="r">Margin</th><th class="r">ขาย บาท/Wp</th><th>บันทึกล่าสุด</th></tr></thead>
+                      <tbody><tr><td class="b">70 kWp</td><td>BOQ2610-001 <span class="muted">Rev 0</span></td><td class="r">70.00</td><td class="r">521,246.20</td><td class="r">613,230.82</td><td class="r">15%</td><td class="r">8.76</td><td>15 ต.ค. 2569<small>Admin</small></td></tr></tbody>
+                    </table>
+                  </div>
+                  <div class="blk">
+                    <div class="blk-h">ใบเสนอราคา <small>อนุมัติ 3 ชั้นก่อนส่งลูกค้า · ต่อรอง = ออก Rev ใหม่</small><span class="r"><button class="btn sm">+ สร้างใบเสนอราคา</button></span></div>
+                    <div class="empty">ยังไม่มีใบเสนอราคา — เลือก BOQ ตัวเลือกที่จะเสนอ</div>
+                  </div>
+                  <div class="phasenote">ทำ BOQ Rev ใหม่ตามผลสำรวจ แล้วออกใบเสนอราคายืนยัน · ลูกค้าต่อรอง = ออก Rev ใหม่ของใบ · ลูกค้าตอบรับใบที่ส่งแล้ว → ได้งาน</div>
+                  <div style="display:flex;align-items:center;gap:8px">
+                    <button class="btn btn-ghost">ถอยไปสำรวจซ้ำ</button>
+                    <span style="flex:1"></span>
+                    <span class="need new">ยังขาด: ใบเสนอราคาที่อนุมัติ 3 ชั้นและส่งลูกค้าแล้ว</span>
+                    <button class="btn btn-active" disabled>ได้งาน</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="tl-lock new"><span class="lk"></span>ถัดไป <span>05 ได้งาน</span>›<span>06 ขออนุญาต + จัดซื้อ</span>›<span>07 ติดตั้ง</span>›<span>08 ขนานไฟ</span>›<span>09 ส่งมอบ</span></div>
+            </div>
+          </div>
+
+          <aside class="log old-log">
+            <div class="log-h">Activity Log</div>
+            <div class="compose" style="border-bottom:1px solid var(--g100)"><input value="บันทึกการคุย / ความคืบหน้า…" readonly><button class="btn sm">บันทึก</button></div>
+            <div class="le"><div class="w">16 ต.ค. 2569, 00:28 · Admin</div><b>บันทึกผลสำรวจ</b>xxxxxxxxx<br><span class="mv">สำรวจหน้างาน → ราคายืนยัน / ต่อรอง</span></div>
+            <div class="le"><div class="w">16 ต.ค. 2569, 00:27 · Admin</div><b>นัดสำรวจ</b>นัดสำรวจ 20 ต.ค. 2569<br><span class="mv">ราคาประมาณการ → สำรวจหน้างาน</span></div>
+            <div class="le"><div class="w">16 ต.ค. 2569, 00:26 · Admin</div><b>สร้างใบเสนอราคา</b>สร้างใบเสนอราคาประมาณการ SSE-MS-RPPS-260001 จาก BOQ2610-001 Rev 0</div>
+            <div class="le"><div class="w">16 ต.ค. 2569, 00:23 · Admin</div><b>เพิ่ม BOQ</b>เพิ่ม BOQ BOQ2610-001</div>
+            <div class="le"><div class="w">16 ต.ค. 2569, 00:22 · Admin</div><b>เปลี่ยนขั้น</b><span class="mv">โอกาสขาย → ราคาประมาณการ</span></div>
+            <div class="le"><div class="w">16 ต.ค. 2569, 00:21 · Admin</div><b>สร้างโครงการ</b>สร้างโครงการ PRJ2610-001</div>
+          </aside>
+        </div>
+      </div>
+    </div></div>
+  </section>
+
+  <!-- ═══════════════════════ แบบ C ═══════════════════════ -->
+  <section class="view" id="v-c">
+    <div class="notes">
+      <div>
+        <h4>แนวคิด</h4>
+        <ul>
+          <li>ช่วง 06–09 ไม่ได้เดินเป็นเส้นตรง: <b>หน้างาน · ขออนุญาต · งวดเงิน</b> เดินไปพร้อมกันและผูกกัน (แผงส่งครบ → งวด 2 ถึงกำหนด)</li>
+          <li>ตารางนี้คือเนื้อหาของแบบ A เมื่อโครงการเข้าช่วงดำเนินโครงการ · แถบขั้นด้านบนยังเหมือนเดิม</li>
+          <li>แถบเงินด้านล่างตอบคำถาม "เก็บเงินได้เท่าไรแล้ว" ได้ในจอเดียว</li>
+        </ul>
+      </div>
+      <div>
+        <h4>ข้อมูลสมมติ / ข้อควรคิด</h4>
+        <ul>
+          <li>โครงการเดียวกัน สมมติว่าเป็นวันที่ 12 พ.ย. 2569 และอยู่ขั้นติดตั้ง · งวดเงิน 30/30/35/5 ตามแม่แบบ SSE</li>
+          <li>บนมือถือตารางกว้างเกินไป ต้องเปลี่ยนเป็นรายการทีละแถว (หน้างาน / เอกสาร / เงิน)</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="scroll"><div class="app">
+      <div class="side"><i></i><i class="on"></i><i></i><i></i><hr><i></i><i></i><i></i><i></i><hr><i></i></div>
+      <div class="main">
+        <div class="hdr">
+          <div class="h1row">
+            <div class="h-ico">🏭</div>
+            <div class="h-txt">
+              <div class="h-title"><span class="back">‹</span><h2>A Solar Project</h2><span class="pill p-blue">ติดตั้ง · กำลังติดตั้ง</span></div>
+              <div class="h-meta"><span>PRJ2610-001</span><span>บ. A</span><span>สัญญา <b>PO-2569-018</b></span><span>ผู้ดูแล <b>Admin</b></span></div>
+            </div>
+            <div class="kpis">
+              <div class="kpi"><div class="k">ขนาดระบบ</div><div class="v">70.00 <small>kWp</small></div></div>
+              <div class="kpi"><div class="k">มูลค่าสัญญา (ก่อน VAT)</div><div class="v">613,230.82</div></div>
+              <div class="kpi good"><div class="k">รับเงินแล้ว</div><div class="v">30% <small>1 / 4 งวด</small></div></div>
+            </div>
+            <div class="more">
+              <button class="btn icon" data-menu>⋯</button>
+              <div class="menu"><a>แก้ข้อมูลโครงการ</a><a>บันทึกสัญญา / PO</a><hr><a class="red">ยกเลิกโครงการ</a></div>
+            </div>
+          </div>
+          <div class="stepper">
+            <div class="phase fin" style="flex:5">
+              <div class="ph-l">ขาย ✓ <span class="c">01–05</span></div>
+              <ol class="steps">
+                <li class="s done"><span class="dot">✓</span><span class="lb">โอกาสขาย</span><span class="sm">16 ต.ค.</span></li>
+                <li class="s done"><span class="dot">✓</span><span class="lb">ราคาประมาณการ</span><span class="sm">16 ต.ค.</span></li>
+                <li class="s done"><span class="dot">✓</span><span class="lb">สำรวจหน้างาน</span><span class="sm">16 ต.ค.</span></li>
+                <li class="s done"><span class="dot">✓</span><span class="lb">ราคายืนยัน / ต่อรอง</span><span class="sm">18 ต.ค.</span></li>
+                <li class="s done"><span class="dot">✓</span><span class="lb">ได้งาน</span><span class="sm">22 ต.ค.</span></li>
+              </ol>
+            </div>
+            <div class="phase now" style="flex:4">
+              <div class="ph-l">ดำเนินโครงการ <span class="c">06–09</span></div>
+              <ol class="steps">
+                <li class="s done"><span class="dot">✓</span><span class="lb">ขออนุญาต + จัดซื้อ</span><span class="sm">3 พ.ย.</span></li>
+                <li class="s cur"><span class="dot">07</span><span class="lb">ติดตั้ง</span><span class="sm">ตอนนี้</span></li>
+                <li class="s lock"><span class="dot">08</span><span class="lb">ขนานไฟ</span><span class="sm">&nbsp;</span><span class="tip">ปลดเมื่อติดตั้งเสร็จ 100% แล้วยื่นขนานไฟ</span></li>
+                <li class="s lock"><span class="dot">09</span><span class="lb">ส่งมอบ</span><span class="sm">&nbsp;</span><span class="tip">ปลดเมื่อได้วันจ่ายไฟ (COD)</span></li>
+              </ol>
+            </div>
+          </div>
+          <div class="tabs"><span class="tab on">Workflow</span><span class="tab">ข้อมูลโครงการ</span><span class="tab">BOQ (1)</span><span class="tab">งวดเงิน</span></div>
+        </div>
+
+        <div class="body">
+          <div class="center">
+            <div class="next">
+              <div class="next-h">
+                <div>
+                  <div class="eyebrow">ขั้น 07 · ติดตั้ง</div>
+                  <h3>ต่อไป: บันทึก "ติดตั้งเสร็จ 100%"</h3>
+                  <div class="sub">บันทึกแล้วงวด 3 (35% · 229,654.95 บาท รวม VAT) จะถึงกำหนดวางบิลเอง</div>
+                </div>
+                <div class="aging"><b>9 วัน</b>เข้าขั้นนี้ 3 พ.ย.</div>
+              </div>
+              <div class="next-f">
+                <span class="waiting">⏳ รอบัญชียืนยันเงินงวด 2 · แนบหลักฐานแล้ว 8 พ.ย.</span>
+                <button class="btn">+ แนบรูปหน้างาน</button>
+                <button class="btn btn-active">บันทึกติดตั้งเสร็จ 100%</button>
+              </div>
+            </div>
+
+            <div class="blk">
+              <div class="blk-h">ภาพรวมช่วงดำเนินโครงการ
+                <span class="r legend"><span><i style="background:var(--em2)"></i>เสร็จ</span><span><i style="background:var(--active)"></i>ทำต่อไป</span><span><i style="background:var(--amber2)"></i>รอคนอื่น</span><span><i style="border:2px solid var(--g300);background:#fff"></i>ยังไม่ถึง</span></span>
+              </div>
+              <div class="mx">
+                <div class="hd"></div>
+                <div class="hd ok">06 ขออนุญาต + จัดซื้อ<small>เสร็จ 3 พ.ย.</small></div>
+                <div class="hd now">07 ติดตั้ง<small>ตอนนี้ · 9 วัน</small></div>
+                <div class="hd">08 ขนานไฟ<small>&nbsp;</small></div>
+                <div class="hd">09 ส่งมอบ<small>&nbsp;</small></div>
+
+                <div class="rl">🔧 หน้างาน<small>milestone</small></div>
+                <div class="cell">
+                  <div class="it ok"><i>✓</i><div>สั่งของครบ<small>28 ต.ค. · Purchase</small></div></div>
+                </div>
+                <div class="cell now">
+                  <div class="it ok"><i>✓</i><div>ของเข้าหน้างาน<small>3 พ.ย.</small></div></div>
+                  <div class="it ok"><i>✓</i><div>แผงส่งครบ 100% <span class="tg">งวด 2</span><small>5 พ.ย.</small></div></div>
+                  <div class="it ok"><i>✓</i><div>เริ่มติดตั้ง<small>6 พ.ย.</small></div></div>
+                  <div class="it now"><i>●</i><div>ติดตั้งเสร็จ 100% <span class="tg">งวด 3</span></div></div>
+                </div>
+                <div class="cell">
+                  <div class="it wait"><i></i><div>ยื่นขนานไฟ</div></div>
+                  <div class="it wait"><i></i><div>ได้วันจ่ายไฟ (COD)</div></div>
+                </div>
+                <div class="cell">
+                  <div class="it wait"><i></i><div>ส่งมอบ + Training <span class="tg">งวด 4</span><small>เริ่มนับรับประกัน</small></div></div>
+                </div>
+
+                <div class="rl">📑 ขออนุญาต<small>ทำคู่ขนานได้</small></div>
+                <div class="cell">
+                  <div class="it ok"><i>✓</i><div>แจ้งท้องถิ่น<small>ได้แล้ว 30 ต.ค.</small></div></div>
+                  <div class="it na"><i>–</i><div>ดัดแปลงอาคาร<small>ไม่ต้องใช้</small></div></div>
+                </div>
+                <div class="cell now"><span class="gap">—</span></div>
+                <div class="cell">
+                  <div class="it pend"><i>…</i><div>ผลพิจารณา กฟภ.<small>ยื่น 25 ต.ค. · รอผล</small></div></div>
+                </div>
+                <div class="cell"><span class="gap">—</span></div>
+
+                <div class="rl">💰 งวดเงิน<small>รวม VAT</small></div>
+                <div class="cell">
+                  <div class="it ok"><i>✓</i><div>งวด 1 · 30%<small>196,847.10 · รับแล้ว 22 ต.ค.</small></div></div>
+                </div>
+                <div class="cell now">
+                  <div class="it pend"><i>…</i><div>งวด 2 · 30%<small>196,847.10 · รอบัญชียืนยัน</small></div></div>
+                  <div class="it wait"><i></i><div>งวด 3 · 35%<small>229,654.95 · ถึงกำหนดเมื่อติดตั้งเสร็จ</small></div></div>
+                </div>
+                <div class="cell"><span class="gap">—</span></div>
+                <div class="cell">
+                  <div class="it wait"><i></i><div>งวด 4 · 5%<small>32,807.83 · เมื่อส่งมอบ</small></div></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="blk money">
+              <div style="display:flex;align-items:baseline;gap:10px"><b>เงินที่รับแล้ว</b><span class="num" style="font-size:22px;font-weight:500">196,847.10</span><span class="muted">จาก 656,156.98 บาท (รวม VAT)</span></div>
+              <div class="mbar"><span style="flex:30;background:var(--em2)"></span><span style="flex:30;background:var(--amber2)"></span><span style="flex:35;background:var(--g200)"></span><span style="flex:5;background:var(--g200)"></span></div>
+              <div class="mleg">
+                <div class="ok">งวด 1 · ลงนามสัญญา<b>196,847.10 ✓</b></div>
+                <div class="pend">งวด 2 · แผงส่งครบ<b>196,847.10 รอบัญชี</b></div>
+                <div>งวด 3 · ติดตั้งเสร็จ<b>229,654.95</b></div>
+                <div>งวด 4 · ส่งมอบ<b>32,807.83</b></div>
+              </div>
+            </div>
+          </div>
+
+          <aside class="log">
+            <div class="log-h">Activity Log</div>
+            <div class="compose"><input value="บันทึกการคุย / ความคืบหน้า…" readonly><button class="btn sm">บันทึก</button></div>
+            <div class="chips"><span class="chip on">ทั้งหมด</span><span class="chip">หน้างาน</span><span class="chip">เงิน</span><span class="chip">เอกสาร</span></div>
+            <div class="day">8 พ.ย. 2569</div>
+            <div class="evs"><div class="ev"><span class="ic a">💰</span><div class="tx"><b>แนบหลักฐานงวด 2</b> 196,847.10 บาท ส่งให้บัญชีแล้ว<div class="w">14:10 · Admin</div></div></div></div>
+            <div class="day">6 พ.ย. 2569</div>
+            <div class="evs"><div class="ev"><span class="ic bl">🔧</span><div class="tx"><b>เริ่มติดตั้ง</b> ทีมเข้าหน้างาน 6 คน<div class="w">09:05 · Admin</div></div></div></div>
+            <div class="day">5 พ.ย. 2569</div>
+            <div class="evs"><div class="ev"><span class="ic g">📦</span><div class="tx"><b>แผงส่งครบ 100%</b> · งวด 2 ถึงกำหนดวางบิล<div class="w">16:40 · Admin</div></div></div></div>
+            <div class="day">3 พ.ย. 2569</div>
+            <div class="evs"><div class="ev"><span class="ic g">🚚</span><div class="tx"><b>ของเข้าหน้างาน</b><div class="w">10:20 · Admin</div><span class="mv">ขออนุญาต + จัดซื้อ → ติดตั้ง</span></div></div></div>
+            <div class="day">30 ต.ค. 2569</div>
+            <div class="evs"><div class="ev"><span class="ic">📑</span><div class="tx"><b>ได้หนังสือแจ้งท้องถิ่น</b><div class="w">11:00 · Admin</div></div></div></div>
+            <div class="day">28 ต.ค. 2569</div>
+            <div class="evs"><div class="ev"><span class="ic">🛒</span><div class="tx"><b>สั่งของครบ</b> ตามงบ BOQ<div class="w">15:30 · Purchase</div></div></div></div>
+          </aside>
+        </div>
+      </div>
+    </div></div>
+  </section>
+
+  <!-- ═══════════════════════ มือถือ ═══════════════════════ -->
+  <section class="view" id="v-m">
+    <div class="notes">
+      <div>
+        <h4>แบบ A บนจอ 390px</h4>
+        <ul>
+          <li>แถบขั้นแนวนอนย่อเหลือแถบความคืบหน้า "ขั้น 4/9" · กดแล้วขึ้นแผ่นล่างรายการทุกขั้น (ภาพขวา)</li>
+          <li>ปุ่มหลักของขั้นอยู่แถบท้ายจอ (sticky bottom-0 เหนือแถบล่าง) · ปุ่มรองอยู่ใน ⋯</li>
+          <li>ตัวเลขหลักเป็นการ์ดเล็ก เลื่อนซ้ายขวาได้</li>
+        </ul>
+      </div>
+      <div>
+        <h4>หมายเหตุ</h4>
+        <ul>
+          <li>แถบล่างเป็นตัวอย่าง ของจริงเป็นไปตาม role ที่ใช้อยู่ (ไม่เปลี่ยน)</li>
+          <li>ตาราง BOQ บนมือถือเปลี่ยนเป็นการ์ดทีละตัวเลือก</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="phones">
+      <div>
+        <div class="ph-cap">หน้าแรกที่เปิด</div>
+        <div class="phone">
+          <div class="m-hdr">
+            <div class="m-top"><span class="back">‹</span><h2>A Solar Project</h2><button class="btn icon sm" style="width:34px">⋯</button></div>
+            <div class="m-sub">PRJ2610-001 · บ. A · Admin</div>
+            <div class="m-prog">
+              <div class="lbl"><span><b class="vio">ขั้น 4/9</b> ราคายืนยัน / ต่อรอง</span><span class="lnk">ทุกขั้น ›</span></div>
+              <div class="seg"><span class="ok"></span><span class="ok"></span><span class="ok"></span><span class="now"></span><span></span><span class="gap"></span><span></span><span></span><span></span><span></span></div>
+            </div>
+            <div class="m-kpis"><div>ขนาดระบบ<b>70.00 kWp</b></div><div>ราคาขาย (ก่อน VAT)<b>613,230.82</b></div><div>Margin<b style="color:var(--em)">15%</b></div></div>
+            <div class="m-tabs"><span class="on">Workflow</span><span>ข้อมูล</span><span>BOQ</span><span>Timeline</span></div>
+          </div>
+          <div class="m-body">
+            <div class="next">
+              <div class="next-h"><div><div class="eyebrow">ต่อไป</div><h3>ออกใบเสนอราคายืนยัน</h3></div><div class="aging"><b style="font-size:16px">วันนี้</b>ในขั้นนี้</div></div>
+              <ol class="check">
+                <li class="ok"><i>✓</i><div class="tx"><b>บันทึกผลสำรวจ</b></div></li>
+                <li class="ok"><i>✓</i><div class="tx"><b>BOQ ตามผลสำรวจ</b></div></li>
+                <li class="todo"><i>3</i><div class="tx"><b>ออกใบเสนอราคายืนยัน</b><small>กดปุ่มด้านล่าง</small></div></li>
+                <li class="wait"><i>4</i><div class="tx"><b>ผู้ตรวจสอบ 3 ชั้น · 0/3</b></div></li>
+                <li class="wait"><i>5</i><div class="tx"><b>ส่งลูกค้า → ได้งาน</b></div></li>
+              </ol>
+            </div>
+            <div class="blk">
+              <div class="blk-h">BOQ ของโครงการ<span class="r"><button class="btn sm">+ ขนาดใหม่</button></span></div>
+              <div class="m-boq">
+                <div class="r1"><b>70 kWp</b><span class="pill p-gray">Rev 0</span><span class="muted" style="margin-left:auto">BOQ2610-001</span></div>
+                <div class="r2"><span>ขาย <b>613,230.82</b></span><span>Margin <b>15%</b></span><span><b>8.76</b> บ./Wp</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="m-act"><button class="btn icon" style="height:44px;width:44px">⋯</button><button class="btn btn-active grow">+ สร้างใบเสนอราคา</button></div>
+          <div class="m-nav"><div class="on"><i></i>หน้าแรก</div><div><i></i>โครงการ</div><div><i></i>ปฏิทิน</div><div><i></i>อนุมัติ</div><div><i></i>ฉัน</div></div>
+        </div>
+      </div>
+
+      <div>
+        <div class="ph-cap">กด "ทุกขั้น" → แผ่นล่าง</div>
+        <div class="phone">
+          <div class="m-hdr">
+            <div class="m-top"><span class="back">‹</span><h2>A Solar Project</h2><button class="btn icon sm" style="width:34px">⋯</button></div>
+            <div class="m-sub">PRJ2610-001 · บ. A · Admin</div>
+            <div class="m-prog">
+              <div class="lbl"><span><b class="vio">ขั้น 4/9</b> ราคายืนยัน / ต่อรอง</span><span class="lnk">ทุกขั้น ›</span></div>
+              <div class="seg"><span class="ok"></span><span class="ok"></span><span class="ok"></span><span class="now"></span><span></span><span class="gap"></span><span></span><span></span><span></span><span></span></div>
+            </div>
+          </div>
+          <div class="dimmer"></div>
+          <div class="sheet">
+            <div class="grab"></div>
+            <h4>ขั้นของโครงการ</h4>
+            <div class="ms-ph">ขาย</div>
+            <div class="ms done"><span class="d0">✓</span><span class="nm">01 โอกาสขาย</span><span class="dt">16 ต.ค.</span></div>
+            <div class="ms done"><span class="d0">✓</span><span class="nm">02 ราคาประมาณการ</span><span class="dt">16 ต.ค.</span></div>
+            <div class="ms done" style="border-bottom:0"><span class="d0">✓</span><span class="nm">03 สำรวจหน้างาน</span><span class="dt">16 ต.ค. ˅</span></div>
+            <div class="ms-b">สำรวจ 16 ต.ค. 2569 โดย Admin<br>ผลสำรวจ: xxxxxxxxx · รูป/ไฟล์ 0</div>
+            <div class="ms cur"><span class="d0">04</span><span class="nm">ราคายืนยัน / ต่อรอง</span><span class="dt" style="color:var(--active)">ตอนนี้</span></div>
+            <div class="ms lock"><span class="d0">05</span><span class="nm">ได้งาน<small>ปลดเมื่อลูกค้าตอบรับใบที่ส่งแล้ว</small></span></div>
+            <div class="ms-ph">ดำเนินโครงการ</div>
+            <div class="ms lock"><span class="d0">06</span><span class="nm">ขออนุญาต + จัดซื้อ<small>ปลดเมื่อบัญชียืนยันเงินงวด 1</small></span></div>
+            <div class="ms lock"><span class="d0">07</span><span class="nm">ติดตั้ง</span></div>
+            <div class="ms lock"><span class="d0">08</span><span class="nm">ขนานไฟ</span></div>
+            <div class="ms lock" style="border-bottom:0"><span class="d0">09</span><span class="nm">ส่งมอบ</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+  // สลับแบบ (จำไว้ใน #hash — เปิดลิงก์ index.html#c ได้ตรงแบบ)
+  const views = ['a', 'b', 'c', 'm'];
+  const show = (v) => {
+    document.querySelectorAll('.switch button').forEach((b) => b.classList.toggle('on', b.dataset.v === v));
+    document.querySelectorAll('.view').forEach((s) => s.classList.toggle('on', s.id === 'v-' + v));
+  };
+  document.querySelectorAll('.switch button').forEach((b) => b.addEventListener('click', () => { show(b.dataset.v); history.replaceState(null, '', '#' + b.dataset.v); }));
+  const h = location.hash.slice(1);
+  if (views.includes(h)) show(h);
+
+  // ปุ่ม ⋯
+  document.querySelectorAll('[data-menu]').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); b.nextElementSibling.classList.toggle('open'); }));
+  document.addEventListener('click', () => document.querySelectorAll('.menu.open').forEach((m) => m.classList.remove('open')));
+
+  // แบบ A: กดขั้นบนแถบ → ดูรายละเอียดขั้นนั้น
+  document.querySelectorAll('[data-hist]').forEach((app) => {
+    const pane = (key) => {
+      app.querySelectorAll('[data-pane]').forEach((p) => { p.hidden = p.dataset.pane !== key; });
+      app.querySelectorAll('.s').forEach((s) => s.classList.toggle('sel', key !== 'cur' && s.dataset.step === key));
+    };
+    app.querySelectorAll('.s.done, .s.cur').forEach((s) => s.addEventListener('click', () => pane(s.dataset.step)));
+    app.querySelectorAll('[data-back]').forEach((b) => b.addEventListener('click', () => pane('cur')));
+  });
+
+  // แบบ B: กดแถวขั้นที่เสร็จ → กาง/พับ
+  document.querySelectorAll('.tl-row.done').forEach((r) => r.addEventListener('click', () => r.classList.toggle('open')));
+</script>
+</body>
+</html>
