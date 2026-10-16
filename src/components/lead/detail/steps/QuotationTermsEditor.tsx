@@ -72,6 +72,7 @@ export default function QuotationTermsEditor({
   om,
   validDays,
   onChange,
+  master,
 }: {
   value: QuotationTermTree | null;
   profile: QuotationTermsProfile;
@@ -79,12 +80,20 @@ export default function QuotationTermsEditor({
   om: QuotationOmSettings;
   validDays: number;
   onChange: (next: QuotationTermTree | null) => void;
+  /** ชุด Master ของใบประเภทอื่นแทนชุดมาตรฐานงานขาย — ใบ O&M ส่งชุดจาก Package O&M มา (แผน 20261002-07)
+   *  ไม่ส่ง = ใช้ชุดมาตรฐานงานขายตาม profile แบบเดิมทุกอย่าง */
+  master?: QuotationTermTree;
 }) {
   const tree = useMemo(
-    () => value ?? seedQuotationTermTree(profile, legacyTermsText),
-    [value, profile, legacyTermsText],
+    () => value ?? master ?? seedQuotationTermTree(profile, legacyTermsText),
+    [value, master, profile, legacyTermsText],
   );
-  const standardLines = useMemo(() => getStandardQuotationTermLines(tree.profile), [tree.profile]);
+  const standardLines = useMemo(
+    () => master
+      ? new Map(master.sections.flatMap((section) => section.lines.map((line) => [line.key, line] as const)))
+      : getStandardQuotationTermLines(tree.profile),
+    [master, tree.profile],
+  );
 
   // เลขข้อ — ใช้ตัวเดียวกับที่ PDF ไล่ จะได้ตรงกันเสมอ
   const numbering = useMemo(
@@ -219,7 +228,8 @@ export default function QuotationTermsEditor({
     sectionKind?: QuotationTermSection["kind"],
   ) => (typed === textOf(raw, lineKey, sectionKind) ? raw : typed);
 
-  const profileMismatch = tree.profile !== profile;
+  // ชุด master ของใบประเภทอื่นไม่มีเรื่องชุดติดตั้งใหม่/ติดตั้งเพิ่ม
+  const profileMismatch = !master && tree.profile !== profile;
 
   // หัวข้อที่หุบอยู่ — ค่าเริ่มต้นกางหมด เพื่อไม่ให้ของที่แก้ไว้หายไปจากสายตา
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -228,7 +238,7 @@ export default function QuotationTermsEditor({
 
   // ชุดมาตรฐานของโปรไฟล์นี้ — ใช้ทั้งหาว่าบรรทัดที่ถูกลบเคยอยู่หัวข้อไหน
   // และใช้คืนค่าเฉพาะหัวข้อ
-  const standardTree = useMemo(() => seedQuotationTermTree(tree.profile), [tree.profile]);
+  const standardTree = useMemo(() => master ?? seedQuotationTermTree(tree.profile), [master, tree.profile]);
 
   /** คืนค่าเฉพาะหัวข้อนี้ — เอาชื่อและบรรทัดมาตรฐานกลับมาให้ครบตามลำดับเดิม
       แต่ "ไม่ลบ" บรรทัดที่ผู้ใช้เพิ่มเองทิ้ง (ต่อท้ายไว้) เพราะการกดคืนค่า

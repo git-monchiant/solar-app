@@ -1,12 +1,15 @@
 "use client";
 import { DownloadIcon } from "@/components/ui/icons";
+import { useDialog } from "@/components/ui/Dialog";
+import Dropdown from "@/components/ui/Dropdown";
+import { formatNumber } from "@/lib/utils/formatters";
 
 import { apiFetch, getUserIdHeader } from "@/lib/api";
 import { getWithTtl, setWithTtl, TWO_HOURS_MS } from "@/lib/storage-ttl";
 import { useEffect, useMemo, useState } from "react";
 import Header from "@/components/layout/Header";
 import { useMe } from "@/lib/roles";
-import { useDialog } from "@/components/ui/Dialog";
+import Loading from "@/components/ui/Loading";
 
 interface DevData {
   funnel: {
@@ -78,7 +81,7 @@ export default function DashboardDevPage() {
   }, [dateFrom, dateTo, filterMode]);
 
   if (!me) return null;
-  if (loading) return <div className="flex items-center justify-center h-full py-20"><div className="w-10 h-10 border-3 border-gray-200 border-t-primary rounded-full animate-spin" /></div>;
+  if (loading) return <Loading />;
   if (!data) return <div className="text-center py-12 text-gray-400 text-sm">Unable to load data</div>;
 
   const today = new Date().toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" });
@@ -92,12 +95,10 @@ export default function DashboardDevPage() {
           rightContent={
             <div className="flex items-center gap-2">
               <div className="hidden md:flex items-center gap-1 text-xs text-gray-500">
-                <select value={filterMode} onChange={e => setFilterMode(e.target.value as "created" | "activity")}
-                  className="h-8 px-2 rounded-lg bg-white border border-gray-200 text-xs text-gray-700 focus:outline-none focus:border-gray-300"
-                  title="เลือกเงื่อนไขฟิลเตอร์">
-                  <option value="created">วันที่สร้างลีด</option>
-                  <option value="activity">กิจกรรม</option>
-                </select>
+                <Dropdown className="w-36" value={filterMode} onChange={v => { if (v) setFilterMode(v as "created" | "activity"); }} options={[
+                  { value: "created", label: "วันที่สร้างลีด" },
+                  { value: "activity", label: "กิจกรรม" },
+                ]} />
                 <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
                   className="h-8 px-2 rounded-lg bg-white border border-gray-200 text-xs text-gray-700 focus:outline-none focus:border-gray-300"
                   title="ช่วงวันที่ (จาก)" />
@@ -124,7 +125,7 @@ export default function DashboardDevPage() {
                     if (dateTo)   qs.set("to",   dateTo);
                     qs.set("mode", filterMode);
                     const res = await fetch(`/api/report/dashboard-pdf?${qs.toString()}`, { headers: { ...getUserIdHeader() } });
-                    if (!res.ok) { dialog.alert({ message: "ดาวน์โหลด PDF ไม่สำเร็จ", variant: "danger" }); return; }
+                    if (!res.ok) { dialog.alert({ title: "โหลดไม่สำเร็จ", message: "ดาวน์โหลด PDF ไม่สำเร็จ", variant: "danger" }); return; }
                     const blob = await res.blob();
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement("a");
@@ -470,7 +471,7 @@ function HorizontalFunnel({ funnel }: { funnel: DevData["funnel"] }) {
               style={{
                 clipPath: `polygon(0% ${topL}%, 100% ${topR}%, 100% ${botR}%, 0% ${botL}%)`,
               }}
-              title={`${s.label}: ${s.value.toLocaleString("en")}`}
+              title={`${s.label}: ${formatNumber(s.value)}`}
             />
           );
         })}
@@ -488,7 +489,7 @@ function HorizontalFunnel({ funnel }: { funnel: DevData["funnel"] }) {
                 {s.label}
               </div>
               <div className="text-base md:text-lg font-bold font-mono tabular-nums text-gray-900 mt-0.5">
-                {s.value.toLocaleString("en")}
+                {formatNumber(s.value)}
               </div>
               {conv !== null && (
                 <div className="text-xxs text-gray-400 font-normal">

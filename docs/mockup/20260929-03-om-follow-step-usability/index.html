@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ขั้นติดตาม O&amp;M ใช้ง่ายขึ้น</title>
+<style>
+  @font-face { font-family: "DB Heavent"; src: url("../../../public/fonts/db_heavent_v3.2-webfont.woff") format("woff"); font-weight: 400; }
+  @font-face { font-family: "DB Heavent"; src: url("../../../public/fonts/db_heavent_med_v3.2-webfont.woff") format("woff"); font-weight: 500 600; }
+  @font-face { font-family: "DB Heavent"; src: url("../../../public/fonts/db_heavent_bd_v3.2-webfont.woff") format("woff"); font-weight: 700 800; }
+  :root {
+    --gray-50:#f9fafb; --gray-100:#f3f4f6; --gray-200:#e5e7eb; --gray-300:#d1d5db; --gray-400:#9ca3af;
+    --gray-500:#6b7280; --gray-600:#4b5563; --gray-700:#374151; --gray-900:#111827;
+    --active:#8b5cf6; --active-dark:#7c3aed; --active-light:#f5f3ff; --primary:#1ed0c7;
+    --emerald-50:#ecfdf5; --emerald-500:#10b981; --emerald-600:#059669; --emerald-700:#047857;
+    --amber-50:#fffbeb; --amber-200:#fde68a; --amber-600:#d97706; --amber-700:#b45309; --amber-900:#78350f;
+    --red-50:#fef2f2; --red-200:#fecaca; --red-400:#f87171; --red-500:#ef4444; --red-600:#dc2626;
+    --navy:#1e3a8a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { font-family: "DB Heavent", "Noto Sans Thai", -apple-system, "Segoe UI", sans-serif; background: var(--gray-100);
+         color: var(--gray-900); padding: 28px 20px 64px; font-size: 22px; line-height: 1.35; }
+  .wrap { max-width: 1240px; margin: 0 auto; }
+  header.page .meta { font-size: 18px; color: var(--gray-500); }
+  header.page h1 { font-size: 32px; margin: 2px 0 6px; }
+  header.page p { margin: 0; color: var(--gray-600); max-width: 90ch; }
+  section { margin-top: 36px; }
+  h2 { font-size: 18px; text-transform: uppercase; letter-spacing: .08em; color: var(--gray-500); margin: 0 0 2px; }
+  .sub { margin: 0 0 12px; color: var(--gray-600); font-size: 20px; max-width: 95ch; }
+  .n { display: inline-flex; width: 26px; height: 26px; border-radius: 99px; background: var(--active); color: #fff;
+       font-size: 17px; font-weight: 700; align-items: center; justify-content: center; margin-right: 6px; vertical-align: 2px; }
+
+  .frame { background: #fff; border: 1px solid var(--gray-300); border-radius: 14px; overflow: hidden; }
+  .row { display: flex; }
+  .rail { width: 80px; border-right: 1px solid var(--gray-200); background: rgb(249 250 251 / .4); padding: 12px 6px;
+          display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
+  .rail div { display: flex; flex-direction: column; align-items: center; padding: 8px 0; border-radius: 8px; line-height: 1.1; }
+  .rail b { font-size: 18px; } .rail span { font-size: 14px; text-align: center; padding: 0 4px; }
+  .rail .on { background: var(--active); color: #fff; }
+  .rail .skip { border: 1px dashed var(--gray-200); color: var(--gray-300); background: #fff; }
+  .rail .lock { color: var(--gray-300); }
+  .main { flex: 1; padding: 12px 16px 16px; min-width: 0; }
+  .log { width: 260px; border-left: 1px solid var(--gray-200); background: rgb(249 250 251 / .3); padding: 14px; flex-shrink: 0; font-size: 18px; color: var(--gray-500); }
+
+  .card { border-radius: 16px; overflow: hidden; }
+  .card.active { background: var(--active-light); border: 1px solid var(--active); box-shadow: 0 0 0 1px rgb(139 92 246 / .2); }
+  .card.dash { background: var(--gray-50); border: 1px dashed var(--gray-200); }
+  .card.done { background: #fff; border: 1px solid var(--gray-300); }
+  .ch { display: flex; align-items: center; gap: 12px; padding: 16px 20px; }
+  .ic { width: 40px; height: 32px; border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .active .ic { background: var(--active); color: #fff; }
+  .dash .ic { background: #fff; color: var(--gray-300); box-shadow: inset 0 0 0 1px var(--gray-200); }
+  .done .ic { background: var(--emerald-500); color: #fff; }
+  .ic svg { width: 20px; height: 20px; }
+  .kick { font-size: 20px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--gray-400); line-height: 1; }
+  .dash .kick { color: var(--gray-300); }
+  .ttl { font-size: 24px; font-weight: 700; margin-top: 4px; line-height: 1.1; }
+  .dash .ttl { color: var(--gray-400); }
+  .badge { margin-left: auto; font-size: 20px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--active); display: flex; align-items: center; gap: 6px; }
+  .badge i { width: 8px; height: 8px; border-radius: 9px; background: var(--active); display: inline-block; }
+  .badge.gray { color: var(--gray-400); }
+  .cb { padding: 12px 20px 20px; border-top: 1px solid var(--gray-100); }
+
+  .sec { border-radius: 8px; background: rgb(255 255 255 / .6); border: 1px solid rgb(139 92 246 / .15); padding: 12px; }
+  .lbl { font-size: 20px; color: var(--gray-500); display: block; margin-bottom: 6px; }
+  .req { color: var(--red-500); }
+  .grp { display: flex; align-items: center; gap: 6px; font-size: 18px; font-weight: 600; margin: 2px 0 6px; }
+  .grp.ok { color: var(--emerald-600); } .grp.no { color: var(--red-500); }
+  .grp svg { width: 16px; height: 16px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { height: 32px; padding: 0 12px; border-radius: 8px; font-size: 18px; font-weight: 600; border: 1px solid var(--gray-200);
+          background: #fff; color: var(--gray-600); display: inline-flex; align-items: center; white-space: nowrap; }
+  .chip.on { background: var(--active); color: #fff; border-color: var(--active); box-shadow: 0 1px 2px rgb(139 92 246 / .2); }
+  .chip.dis { opacity: .4; }
+  .chip small { font-size: 18px; margin-left: 6px; color: var(--gray-400); font-weight: 600; }
+  .chip.on small { color: rgb(255 255 255 / .8); }
+  .chip small.full { color: var(--red-600); font-weight: 700; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .gap { height: 12px; }
+  .input { height: 32px; border: 1px solid var(--gray-200); border-radius: 8px; background: #fff; padding: 0 12px; font-size: 20px;
+           color: var(--gray-400); display: flex; align-items: center; }
+
+  .slider { position: relative; display: flex; justify-content: center; gap: 4px; padding: 4px 36px; overflow: hidden; }
+  .slider .d { width: 56px; flex-shrink: 0; padding: 8px 0; border-radius: 12px; display: flex; flex-direction: column; align-items: center; color: var(--gray-500); line-height: 1.1; }
+  .slider .d span { font-size: 18px; font-weight: 600; } .slider .d b { font-size: 28px; }
+  .slider .d.we { color: var(--red-400); }
+  .slider .d.sel { color: var(--active); border: 2px solid var(--active); background: rgb(139 92 246 / .1); }
+  .slider .d.blank { visibility: hidden; }
+  .slider .arr { position: absolute; top: 50%; transform: translateY(-50%); width: 32px; height: 32px; border-radius: 99px; background: #fff;
+                 border: 1px solid var(--gray-200); box-shadow: 0 1px 3px rgb(0 0 0 / .1); display: flex; align-items: center; justify-content: center; color: var(--gray-500); font-size: 18px; }
+  .slider .arr.l { left: 0; } .slider .arr.r { right: 0; }
+  .hint { font-size: 18px; color: var(--gray-400); margin-top: 4px; }
+
+  .strip { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; border: 1px solid; }
+  .strip.pick { background: var(--active-light); border-color: rgb(139 92 246 / .2); }
+  .strip.pick .k { font-size: 18px; color: rgb(139 92 246 / .7); } .strip.pick .v { font-size: 22px; font-weight: 700; color: var(--active); }
+  .strip.warn { background: var(--amber-50); border-color: var(--amber-200); color: var(--amber-900); font-size: 20px; }
+  .strip svg { width: 18px; height: 18px; flex-shrink: 0; }
+
+  /* แถบสรุปการโทร (ข้อ 3) */
+  .sum { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 0; padding: 8px 12px; border-radius: 8px; background: #fff;
+         border: 1px solid var(--gray-200); font-size: 20px; color: var(--gray-600); margin-bottom: 12px; }
+  .sum > svg { width: 18px; height: 18px; color: var(--gray-400); margin-right: 8px; }
+  .sum .dot { color: var(--gray-300); margin: 0 8px; }
+  .sum b { color: var(--gray-900); }
+  .pill { display: inline-flex; padding: 0 8px; border-radius: 99px; font-size: 17px; font-weight: 700; color: #fff; margin: 0 4px; line-height: 22px; }
+  .sum .nx { margin-left: auto; font-weight: 700; }
+  .sum .late { color: var(--red-600); } .sum .today { color: var(--amber-700); } .sum .fut { color: var(--gray-600); }
+  .sum.warnrow { border-color: var(--amber-200); background: var(--amber-50); }
+  .sum .warnt { color: var(--amber-700); font-weight: 700; }
+
+  .note { margin-top: 12px; border-radius: 8px; background: var(--gray-50); border: 1px solid var(--gray-200); padding: 8px 12px; font-size: 20px; color: var(--gray-600); }
+  .actions { margin-top: 12px; display: flex; justify-content: flex-end; }
+  .btn { height: 44px; width: 256px; border-radius: 8px; background: var(--active); color: #fff; font-size: 22px; font-weight: 600;
+         display: flex; align-items: center; justify-content: center; }
+  .btn.off { opacity: .5; }
+
+  .callout { margin-top: 10px; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }
+  .callout div { background: #fff; border: 1px solid var(--gray-200); border-radius: 10px; padding: 10px 12px; font-size: 19px; color: var(--gray-600); }
+  .callout b { color: var(--gray-900); }
+
+  /* มือถือ */
+  .phones { display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-start; }
+  .phone { width: 390px; height: 844px; border: 1px solid var(--gray-300); border-radius: 28px; background: #fff; overflow: hidden; position: relative; flex-shrink: 0; }
+  .phone .dev { background: #ef4444; color: #fff; font-size: 16px; font-weight: 700; letter-spacing: .1em; text-align: center; line-height: 22px; }
+  .phone .hd { display: flex; align-items: center; gap: 8px; padding: 10px 12px 8px 6px; border-bottom: 1px solid var(--gray-100); }
+  .phone .hd .nm { font-size: 26px; font-weight: 700; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .phone .hd .mt { font-size: 18px; color: var(--gray-600); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .phone .call { width: 36px; height: 36px; border-radius: 99px; background: var(--primary); flex-shrink: 0; margin-left: auto; }
+  .phone .tabs { display: flex; gap: 4px; padding: 0 12px; border-bottom: 1px solid var(--gray-200); font-size: 20px; font-weight: 600; letter-spacing: .06em; }
+  .phone .tabs div { padding: 10px 12px; color: var(--gray-500); }
+  .phone .tabs .on { color: var(--active); border-bottom: 2px solid var(--active); }
+  .phone .body { position: absolute; top: 118px; bottom: 136px; left: 0; right: 0; overflow: hidden; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .phone .card .ch { padding: 12px 14px; }
+  .phone .card .cb { padding: 10px 14px 14px; }
+  .phone .kick { font-size: 18px; } .phone .ttl { font-size: 22px; }
+  .phone .sum .nx { margin-left: 0; }
+  .phone .bar { position: absolute; left: 0; right: 0; bottom: 80px; height: 56px; border-top: 1px solid var(--gray-100); background: #fff; padding: 8px 12px; display: flex; }
+  .phone .bar div { flex: 1; border-radius: 12px; background: var(--gray-100); display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 22px; font-weight: 600; }
+  .phone .nav { position: absolute; left: 0; right: 0; bottom: 0; height: 80px; border-top: 1px solid var(--gray-200); display: flex; justify-content: space-around; align-items: center; font-size: 18px; font-weight: 600; color: var(--gray-600); }
+  .ann { flex: 1; min-width: 280px; font-size: 20px; color: var(--gray-600); }
+  .ann li { margin-bottom: 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="page">
+  <div class="meta">แผน 20260929-03 · หน้า /om/services/[house] · ข้อมูลตัวอย่าง (วันนี้ อ. 29 ก.ย. 2569)</div>
+  <h1>ขั้นติดตาม O&amp;M ใช้ง่ายขึ้น แบบฝั่งขาย</h1>
+  <p>4 จุดที่ปรับ: <span class="n">1</span>เลือกวันนัดด้วยแถบวัน + ช่วงเวลาที่เห็นคิว <span class="n">2</span>ปุ่มผลแบ่งกลุ่ม ไม่ล้น
+     <span class="n">3</span>แถบสรุปการโทรรอบนี้ <span class="n">4</span>มือถือไม่มีราง + แถบ Note ล่าง · ช่วงเวลา/ความจุเป็นค่าจริงจากหน้าตั้งค่า (4 ช่วง · ช่วงละ 6 คิว)</p>
+</header>
+
+<!-- ───────── A. Desktop ตกลงนัด ───────── -->
+<section>
+  <h2>A · Desktop — เลือก "ตกลงนัด"</h2>
+  <p class="sub">ราง STEPS / แท็บ / Activity Log คงเดิม เปลี่ยนเฉพาะเนื้อในการ์ดขั้น 01</p>
+  <div class="frame">
+    <div class="row">
+      <div class="rail">
+        <div class="on"><b>01</b><span>ติดตาม</span></div>
+        <div class="skip"><b>02</b><span>เสนอราคา<br>ข้าม</span></div>
+        <div class="skip"><b>03</b><span>ชำระเงิน<br>ข้าม</span></div>
+        <div class="lock"><b>04</b><span>นัดหมาย</span></div>
+        <div class="lock"><b>05</b><span>เข้างาน</span></div>
+        <div class="lock"><b>06</b><span>ปิดงาน</span></div>
+      </div>
+      <div class="main">
+        <div class="card active">
+          <div class="ch">
+            <div class="ic"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z"/></svg></div>
+            <div><div class="kick">Step 01 · O&amp;M</div><div class="ttl">ติดตาม — บันทึกการโทร</div></div>
+            <div class="badge"><i></i>Active</div>
+          </div>
+          <div class="cb">
+            <!-- ③ แถบสรุป -->
+            <div class="sum">
+              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              <span class="n">3</span>โทรรอบนี้ <b>&nbsp;2&nbsp;</b> ครั้ง<span class="dot">·</span>ไม่รับสาย <b>&nbsp;1/3</b>
+              <span class="dot">·</span>ล่าสุด<span class="pill" style="background:#6b7280">ไม่รับสาย</span>25 ก.ย. โดย สมชาย
+              <span class="nx late">นัดโทรใหม่ 28 ก.ย. (เลยกำหนด)</span>
+            </div>
+
+            <div class="sec">
+              <label class="lbl">ผลการโทรครั้งนี้ <span class="req">*</span></label>
+              <!-- ② 2 กลุ่ม -->
+              <div class="two">
+                <div>
+                  <div class="grp ok"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z"/></svg><span class="n">2</span>ติดต่อได้</div>
+                  <div class="chips"><span class="chip on">ตกลงนัด</span><span class="chip">ขอเลื่อน</span><span class="chip">ปฏิเสธ ไม่เอา</span></div>
+                </div>
+                <div>
+                  <div class="grp no"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 3.75L18 6m0 0l2.25 2.25M18 6l2.25-2.25M18 6l-2.25 2.25m1.5 13.5c-8.284 0-15-6.716-15-15V4.5A2.25 2.25 0 014.5 2.25h1.372c.516 0 .966.351 1.091.852l1.106 4.423c.11.44-.054.902-.417 1.173l-1.293.97a1.062 1.062 0 00-.38 1.21 12.035 12.035 0 007.143 7.143c.441.162.928-.004 1.21-.38l.97-1.293a1.125 1.125 0 011.173-.417l4.423 1.106c.5.125.852.575.852 1.091V19.5a2.25 2.25 0 01-2.25 2.25h-2.25z"/></svg>ติดต่อไม่ได้</div>
+                  <div class="chips"><span class="chip">ไม่รับสาย</span><span class="chip">เบอร์ผิด</span></div>
+                </div>
+              </div>
+
+              <div class="gap"></div>
+              <!-- ① แถบวัน + ช่วงเวลา -->
+              <label class="lbl"><span class="n">1</span>วันนัด <span class="req">*</span></label>
+              <div class="slider" data-sel="2026-10-01" data-min="2026-09-29" data-n="13"></div>
+              <div class="gap"></div>
+              <label class="lbl">ช่วงเวลา <span style="color:var(--gray-400)">· คิวที่ใช้ / ความจุ</span> <span class="req">*</span></label>
+              <div class="chips">
+                <span class="chip">09:00–10:30<small>2/6</small></span>
+                <span class="chip">10:30–12:00<small class="full">6/6</small></span>
+                <span class="chip on">13:00–14:30<small>0/6</small></span>
+                <span class="chip">14:30–16:00<small>1/6</small></span>
+              </div>
+              <div class="gap"></div>
+              <div class="strip pick">
+                <svg fill="none" viewBox="0 0 24 24" stroke="var(--active)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25"/></svg>
+                <div><div class="k">นัดเป็น</div><div class="v">พฤ. 1 ต.ค. 2569 13:00–14:30</div></div>
+              </div>
+              <div class="gap"></div>
+              <label class="lbl">โน้ต</label>
+              <div class="input">เช่น ลูกค้าไม่อยู่บ้านช่วงเช้า</div>
+              <div class="note">กดบันทึกแล้ว <b>สร้างใบงาน</b> ขั้น <b>นัดหมาย</b> (รอยืนยันนัด) พร้อมวันเวลาที่เลือก การ์ดจะย้ายออกจากแท็บติดตาม</div>
+            </div>
+            <div class="actions"><div class="btn">บันทึกการโทร</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="log">ACTIVITY LOG · 2<br><br>…ประวัติเดิม…</div>
+    </div>
+  </div>
+  <div class="callout">
+    <div><span class="n">1</span><b>แถบวัน</b> = ตัวเดียวกับ Follow-up ฝั่งขาย เริ่มที่พรุ่งนี้ · เลื่อนได้ 60 วันตามหน้าตั้งค่า · <b>ช่วงเวลา</b> ย้ายมาจากปุ่ม Reschedule (ช่องเต็มเลขแดง ยังกดได้)</div>
+    <div><span class="n">2</span>ปุ่มแบ่ง <b>ติดต่อได้ / ติดต่อไม่ได้</b> แบบ modal Follow-up · ปุ่มกว้างตามข้อความ ไม่ล้นที่ 1440 · ป้ายในประวัติยังเป็น "รับสาย · ตกลงนัด" เหมือนเดิม</div>
+    <div><span class="n">3</span>สรุปการโทร <b>รอบนี้</b> (หลังล้างล่าสุด) ชุดเดียวกับการ์ดในรายการ — ไม่ต้องไล่ Activity Log</div>
+  </div>
+</section>
+
+<!-- ───────── B. ขอเลื่อน ───────── -->
+<section>
+  <h2>B · Desktop — เลือก "ขอเลื่อน" (นัดโทรใหม่)</h2>
+  <p class="sub">เลือกวันที่ระบบจะตั้งให้ไว้ก่อน (+30 วัน) แก้ได้ — เดิมช่องว่างแล้วระบบตั้งให้เอง คนกดไม่เห็นว่าวันไหน · "ไม่รับสาย" เหมือนกันแต่ค่าเริ่ม +3 วัน</p>
+  <div class="frame" style="padding:16px; background:var(--active-light)">
+    <div class="sec">
+      <label class="lbl">ผลการโทรครั้งนี้ <span class="req">*</span></label>
+      <div class="two">
+        <div><div class="grp ok">ติดต่อได้</div><div class="chips"><span class="chip">ตกลงนัด</span><span class="chip on">ขอเลื่อน</span><span class="chip">ปฏิเสธ ไม่เอา</span></div></div>
+        <div><div class="grp no">ติดต่อไม่ได้</div><div class="chips"><span class="chip">ไม่รับสาย</span><span class="chip">เบอร์ผิด</span></div></div>
+      </div>
+      <div class="gap"></div>
+      <label class="lbl">นัดโทรใหม่</label>
+      <div class="slider" data-sel="2026-10-29" data-min="2026-09-29" data-n="13"></div>
+      <div class="hint">ค่าเริ่มต้น +30 วันตามหน้าตั้งค่า (ขอเลื่อน) — เลือกวันอื่นได้</div>
+      <div class="gap"></div>
+      <label class="lbl">โน้ต</label>
+      <div class="input">เช่น ลูกค้าไม่อยู่บ้านช่วงเช้า</div>
+      <div class="note">สร้างใบงานขั้น <b>ติดตาม</b> พร้อมวันนัดโทรใหม่ ยังอยู่แท็บเดิมแต่จะไม่โผล่ซ้ำจนถึงวันนัด</div>
+    </div>
+    <div class="actions"><div class="btn">บันทึกการโทร</div></div>
+  </div>
+</section>
+
+<!-- ───────── C. แถบสรุป 4 แบบ ───────── -->
+<section>
+  <h2>C · แถบสรุปการโทร — 4 สถานะ</h2>
+  <p class="sub">สีนัดโทรใหม่แบบ "นัดติดตามครั้งถัดไป" หน้า lead: เลยกำหนด แดง · วันนี้ ส้ม · ยังไม่ถึง เทา · ไม่รับสายเหลืออีก 1 ครั้งก่อนตกแท็บติดต่อไม่ได้ = ทั้งแถบส้ม</p>
+  <div class="frame" style="padding:16px">
+    <div class="sum">ยังไม่เคยโทรรอบนี้</div>
+    <div class="sum">โทรรอบนี้ <b>&nbsp;1&nbsp;</b> ครั้ง<span class="dot">·</span>ไม่รับสาย <b>&nbsp;0/3</b><span class="dot">·</span>ล่าสุด<span class="pill" style="background:#f59e0b">ขอเลื่อน</span>12 ก.ย. โดย สมชาย<span class="nx fut">นัดโทรใหม่ 12 ต.ค.</span></div>
+    <div class="sum">โทรรอบนี้ <b>&nbsp;2&nbsp;</b> ครั้ง<span class="dot">·</span>ไม่รับสาย <b>&nbsp;1/3</b><span class="dot">·</span>ล่าสุด<span class="pill" style="background:#6b7280">ไม่รับสาย</span>26 ก.ย. โดย สมชาย<span class="nx today">นัดโทรใหม่ วันนี้</span></div>
+    <div class="sum warnrow">โทรรอบนี้ <b>&nbsp;3&nbsp;</b> ครั้ง<span class="dot">·</span>ไม่รับสาย <b>&nbsp;2/3</b><span class="dot">·</span><span class="warnt">อีก 1 ครั้งจะย้ายไปแท็บติดต่อไม่ได้</span><span class="nx late">นัดโทรใหม่ 28 ก.ย. (เลยกำหนด)</span></div>
+  </div>
+</section>
+
+<!-- ───────── D. มือถือ ───────── -->
+<section>
+  <h2>D · มือถือ 390 — ไม่มีราง · เรียงการ์ด · แถบ Note ล่าง</h2>
+  <p class="sub">แบบหน้า lead บนมือถือ · desktop ยังเปิดทีละการ์ดจากรางเหมือนเดิม</p>
+  <div class="phones">
+    <div class="phone">
+      <div class="dev">DEVELOPMENT / SOLARDB_V3</div>
+      <div class="hd">
+        <span style="font-size:26px;color:var(--gray-600)">‹</span>
+        <div style="min-width:0;flex:1"><div class="nm">1/13 – สุปรีชา วรัญณาน</div><div class="mt">เสนา อเวนิว 2 รังสิต · 0916982086 · สิทธิ์เหลือ 4</div></div>
+        <div class="call"></div>
+      </div>
+      <div class="tabs"><div class="on">≡ WORKFLOW</div><div>ⓘ</div><div>▭</div><div>▣</div><div>▦</div></div>
+      <div class="body">
+        <div class="card active">
+          <div class="ch"><div class="ic"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z"/></svg></div>
+            <div style="min-width:0"><div class="kick">Step 01 · O&amp;M</div><div class="ttl">ติดตาม — บันทึกการโทร</div></div>
+            <div class="badge"><i></i></div></div>
+          <div class="cb">
+            <div class="sum">โทรรอบนี้ <b>&nbsp;2&nbsp;</b> ครั้ง<span class="dot">·</span>ไม่รับสาย <b>&nbsp;1/3</b><br><span class="nx late">นัดโทรใหม่ 28 ก.ย. (เลยกำหนด)</span></div>
+            <div class="sec">
+              <label class="lbl">ผลการโทรครั้งนี้ <span class="req">*</span></label>
+              <div class="grp ok">ติดต่อได้</div>
+              <div class="chips"><span class="chip">ตกลงนัด</span><span class="chip">ขอเลื่อน</span><span class="chip">ปฏิเสธ ไม่เอา</span></div>
+              <div class="grp no" style="margin-top:8px">ติดต่อไม่ได้</div>
+              <div class="chips"><span class="chip">ไม่รับสาย</span><span class="chip">เบอร์ผิด</span></div>
+            </div>
+            <div class="actions"><div class="btn off" style="width:100%">เลือกผลการโทร</div></div>
+          </div>
+        </div>
+        <div class="card dash"><div class="ch"><div class="ic"></div><div><div class="kick">Step 02 · O&amp;M</div><div class="ttl">เสนอราคา</div></div><div class="badge gray">ข้าม</div></div></div>
+        <div class="card dash"><div class="ch"><div class="ic"></div><div><div class="kick">Step 03 · O&amp;M</div><div class="ttl">ชำระเงิน</div></div><div class="badge gray">ข้าม</div></div></div>
+        <div class="card dash"><div class="ch"><div class="ic"></div><div><div class="kick">Step 04 · O&amp;M</div><div class="ttl">นัดหมาย</div></div></div></div>
+      </div>
+      <div class="bar"><div>✎ Note</div></div>
+      <div class="nav"><span>HOME</span><span>ปฏิทิน</span><span>ติดตาม</span><span>ทั้งหมด</span><span>อนุมัติ</span></div>
+    </div>
+    <ol class="ann">
+      <li><b>ราง STEPS ซ่อนบนมือถือ</b> (<code>hidden md:flex</code> แบบหน้า lead) — การ์ดเต็มความกว้าง ชื่อขั้นไม่ตกบรรทัด</li>
+      <li><b>เรียงทุกขั้นต่อกัน</b> — ขั้นที่ปิดแล้วพับเหลือบรรทัดสรุป (กดกางได้) · ข้าม/ยังไม่ถึง เป็นหัวการ์ดเส้นประ ⇒ ขั้นที่ทำอยู่อยู่บนสุดเสมอ ไม่ต้อง auto-scroll</li>
+      <li><b>แถบ Note ติดจอเหนือเมนูล่าง</b> (<code>above-nav</code> คลาสเดียวกับหน้า lead) · ปุ่ม Note ในแถบแท็บซ่อนบนมือถือ — เดิมโดนตัดขอบขวา</li>
+      <li>แถบสรุปการโทรบนมือถือขึ้นบรรทัดใหม่ตอนแคบ · ยังไม่เลือกผล = ปุ่มบันทึกขึ้น "เลือกผลการโทร" แบบฝั่งขาย (เดิมเลือก "ตกลงนัด" ไว้ให้)</li>
+    </ol>
+  </div>
+</section>
+
+</div>
+<script>
+  // วาดแถบวันแบบ DateSlider — ชื่อวัน th-TH ตัวเดียวกับของจริง · วันที่เลือกอยู่กลาง · ก่อนวันเริ่ม = ช่องว่าง
+  document.querySelectorAll(".slider").forEach((el) => {
+    const sel = new Date(el.dataset.sel + "T00:00:00"), min = new Date(el.dataset.min + "T00:00:00");
+    const n = Number(el.dataset.n), half = Math.floor(n / 2);
+    let html = '<span class="arr l">‹</span>';
+    for (let i = -half; i <= half; i++) {
+      const d = new Date(sel); d.setDate(d.getDate() + i);
+      const cls = ["d", d < min ? "blank" : "", i === 0 ? "sel" : "", (d.getDay() === 0 || d.getDay() === 6) ? "we" : ""].join(" ");
+      html += `<div class="${cls}"><span>${d.toLocaleDateString("th-TH", { weekday: "short" })}</span><b>${d.getDate()}</b></div>`;
+    }
+    el.innerHTML = html + '<span class="arr r">›</span>';
+  });
+</script>
+</body>
+</html>

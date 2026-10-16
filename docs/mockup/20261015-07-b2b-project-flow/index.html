@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup: โครงการ B2B</title>
+<style>
+  /* ฟอนต์ของแอป (public/fonts) — เปิดไฟล์นี้จากในโปรเจกต์ · DB Heavent ไม่มี 600 ⇒ ใช้ 500/700 */
+  @font-face{font-family:'DB Heavent';src:url(../../../public/fonts/db_heavent_li_v3.2-webfont.woff) format('woff');font-weight:300}
+  @font-face{font-family:'DB Heavent';src:url(../../../public/fonts/db_heavent_v3.2-webfont.woff) format('woff');font-weight:400}
+  @font-face{font-family:'DB Heavent';src:url(../../../public/fonts/db_heavent_med_v3.2-webfont.woff) format('woff');font-weight:500}
+  @font-face{font-family:'DB Heavent';src:url(../../../public/fonts/db_heavent_bd_v3.2-webfont.woff) format('woff');font-weight:700}
+  :root{
+    --primary:#1ed0c7;--active:#8b5cf6;--active-light:#f5f3ff;--navy:#1e3a8a;
+    --g50:#f9fafb;--g100:#f3f4f6;--g200:#e5e7eb;--g300:#d1d5db;--g400:#9ca3af;--g500:#6b7280;--g600:#4b5563;--g700:#374151;--g800:#1f2937;--g900:#111827;
+    --em:#059669;--em-bg:#ecfdf5;--amber:#b45309;--amber-bg:#fffbeb;--red:#dc2626;--red-bg:#fef2f2;--blue:#1d4ed8;--blue-bg:#eff6ff;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#d9dde3;font-family:'DB Heavent',sans-serif;color:var(--g800);font-size:17px;line-height:1.45;padding:24px 16px 64px}
+  button{font:inherit;cursor:pointer}
+  .num{font-variant-numeric:tabular-nums;font-weight:500}
+  .muted{color:var(--g500)} .tiny{font-size:13px} .xs{font-size:14px} .b{font-weight:700} .m{font-weight:500}
+  .wrap{max-width:1320px;margin:0 auto}
+  .intro{background:#fff;border-radius:10px;padding:16px 20px;margin-bottom:22px}
+  .intro h1{font-size:26px;color:var(--navy)} .intro p{color:var(--g600)} .intro ul{margin:6px 0 0 20px;color:var(--g600)}
+  .sec-title{font-size:22px;color:var(--navy);font-weight:700;margin:30px 0 4px}
+  .sec-note{color:var(--g600);margin-bottom:10px}
+  .scroll{overflow-x:auto;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,.12)}
+  .new{outline:2px dashed #e8912a;outline-offset:3px;border-radius:8px}
+  .newtag{display:inline-block;background:#e8912a;color:#fff;border-radius:999px;padding:0 8px;font-size:12px;font-weight:700;vertical-align:middle;margin-left:6px}
+  .pill{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:1px 10px;font-size:13px;font-weight:700;white-space:nowrap}
+  .p-active{background:var(--active-light);color:#6d28d9} .p-em{background:var(--em-bg);color:var(--em)} .p-amber{background:var(--amber-bg);color:var(--amber)}
+  .p-gray{background:var(--g100);color:var(--g500)} .p-red{background:var(--red-bg);color:var(--red)} .p-blue{background:var(--blue-bg);color:var(--blue)}
+  .badge{min-width:20px;height:20px;padding:0 6px;display:inline-flex;align-items:center;justify-content:center;border-radius:999px;font-size:12px;font-weight:700;margin-left:auto}
+  .btn{height:36px;padding:0 16px;border-radius:8px;border:1px solid var(--g200);background:#fff;color:var(--g700);font-size:15px;font-weight:700;display:inline-flex;align-items:center;gap:6px}
+  .btn-primary{background:var(--primary);border-color:var(--primary);color:#fff}
+  .btn-active{background:var(--active);border-color:var(--active);color:#fff}
+  .btn-ghost{border-color:transparent;color:var(--active);padding:0 8px}
+  .btn[disabled]{opacity:.45;cursor:not-allowed}
+
+  /* ── หน้า hub (ยกจาก home/page.tsx) ── */
+  .hub{background:var(--navy);padding:24px 28px 8px;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,.12);min-width:1000px}
+  .hub-g{font-size:14px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#93c5fd;margin-bottom:10px}
+  .hub-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:26px}
+  .hc{position:relative;background:#fff;border:1px solid var(--g200);border-radius:16px;padding:14px 16px}
+  .hc .em{width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:8px}
+  .hc .lb{font-size:19px;font-weight:700;color:var(--g900)} .hc .ds{font-size:14px;color:var(--g500);line-height:1.35}
+  .hc .ct{position:absolute;top:12px;right:12px;font-size:13px;font-weight:700;color:#4338ca;background:#eef2ff;border-radius:999px;padding:0 10px}
+  .hc.dim{opacity:.35}
+  .hc.ghost{background:transparent;border:2px dashed rgba(255,255,255,.35);color:#bfdbfe}
+  .hc.ghost .lb{color:#dbeafe;font-size:17px} .hc.ghost .ds{color:#93c5fd}
+
+  /* ── โครงแอป ── */
+  .app{display:flex;min-width:1240px;background:var(--g50)}
+  .side{width:224px;background:var(--navy);color:#dbeafe;flex-shrink:0;display:flex;flex-direction:column;font-size:15px}
+  .side .mod{padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.1);font-weight:700;color:#fff;display:flex;gap:8px;align-items:center}
+  .side .mod small{display:block;font-weight:400;color:#93c5fd;font-size:12px}
+  .side nav{padding:8px;display:flex;flex-direction:column;gap:2px;overflow:auto}
+  .mi{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:8px;color:#dbeafe}
+  .mi:hover{background:rgba(255,255,255,.1)} .mi.on{background:rgba(255,255,255,.15);color:#fff;font-weight:700}
+  .mi .badge{background:rgba(255,255,255,.1);color:#dbeafe} .mi.on .badge{background:var(--primary);color:#fff}
+  .mi.sub{padding-left:26px;font-size:14px} .mi.sub::before{content:'';width:5px;height:5px;border-radius:50%;background:#93c5fd;margin-right:2px;flex-shrink:0}
+  .mi .chev{font-size:11px;opacity:.7}
+  .side hr{border:0;border-top:1px solid rgba(255,255,255,.1);margin:6px 4px}
+  .main{flex:1;display:flex;flex-direction:column;min-width:0}
+  .hdr{background:#fff;border-bottom:1px solid var(--g200)}
+  .hdr-top{display:flex;align-items:stretch}
+  .hdr-ico{width:80px;border-right:1px solid var(--g200);display:flex;align-items:center;justify-content:center}
+  .hdr-ico span{width:46px;height:46px;border-radius:50%;background:#ccfbf1;display:flex;align-items:center;justify-content:center;font-size:24px}
+  .hdr-txt{flex:1;padding:10px 16px;min-width:0}
+  .hdr-txt h2{font-size:22px;line-height:1.2;display:flex;align-items:center;gap:8px}
+  .hdr-meta{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:14px;color:var(--g500);margin-top:2px}
+  .hdr-meta b{color:var(--g800);font-weight:500}
+  .hdr-act{display:flex;align-items:center;gap:8px;padding:0 16px}
+  .tabs{display:flex;border-top:1px solid var(--g100);padding-left:80px}
+  .tab{padding:10px 16px;font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--g500);border-bottom:2px solid transparent}
+  .tab.on{color:var(--active);border-color:var(--active)}
+  .body{flex:1;display:flex;min-height:0}
+  .rail{width:80px;border-right:1px solid var(--g200);background:rgba(249,250,251,.4);display:flex;flex-direction:column;gap:6px;padding:12px 6px;flex-shrink:0}
+  .rs{display:flex;flex-direction:column;align-items:center;gap:1px;padding:7px 2px;border-radius:8px;text-align:center}
+  .rs .n{font-size:12px;font-weight:700;line-height:1} .rs .l{font-size:12.5px;font-weight:500;line-height:1.1}
+  .rs.done{background:#fff;border:1px solid var(--g200);color:var(--g700)} .rs.done .ck{color:#10b981;font-size:12px;line-height:1}
+  .rs.cur{background:var(--active);color:#fff} .rs.lock{color:var(--g300)}
+  .center{flex:1;padding:16px;display:flex;flex-direction:column;gap:10px;min-width:0}
+  .card{background:#fff;border:1px solid var(--g200);border-radius:12px;padding:12px 16px}
+  .card.act{border:2px solid var(--active);padding:14px 16px}
+  .card.lock{background:var(--g50);color:var(--g400)}
+  .done-row{display:flex;align-items:center;gap:10px}
+  .done-row .ok{width:22px;height:22px;border-radius:50%;background:#10b981;color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0}
+  .done-row .t{font-weight:700} .done-row .s{color:var(--g500);font-size:15px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .step-h{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+  .step-h .no{font-size:13px;font-weight:700;color:var(--active)} .step-h h3{font-size:19px}
+  .subbar{display:flex;gap:4px;margin-bottom:14px}
+  .subbar div{flex:1;text-align:center;font-size:14px;font-weight:700;color:var(--g500)}
+  .subbar div::before{content:'';display:block;height:4px;border-radius:99px;background:var(--g200);margin-bottom:4px}
+  .subbar .past{color:rgba(139,92,246,.7)} .subbar .past::before,.subbar .now::before{background:var(--active)} .subbar .now{color:var(--active)}
+  .blk{border:1px solid var(--g200);border-radius:10px;margin-bottom:12px;overflow:hidden}
+  .blk-h{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--g50);border-bottom:1px solid var(--g200);font-weight:700;font-size:15px}
+  .blk-h .r{margin-left:auto;display:flex;gap:6px}
+  table.t{width:100%;border-collapse:collapse;font-size:15px}
+  table.t th{text-align:left;font-size:13px;color:var(--g500);font-weight:500;padding:6px 10px;border-bottom:1px solid var(--g200);white-space:nowrap}
+  table.t td{padding:7px 10px;border-bottom:1px solid var(--g100);vertical-align:middle}
+  table.t tr:last-child td{border-bottom:0}
+  table.t .r{text-align:right} table.t tr.sel td{background:#faf8ff}
+  .tier{display:flex;align-items:stretch;gap:0;margin-top:6px}
+  .tier .tb{flex:1;border:1px solid var(--g200);padding:6px 10px;font-size:14px;line-height:1.3;background:#fff}
+  .tier .tb:first-child{border-radius:8px 0 0 8px} .tier .tb:last-child{border-radius:0 8px 8px 0} .tier .tb+.tb{border-left:0}
+  .tier .tb .k{font-size:12px;color:var(--g500);font-weight:700}
+  .tier .ok{background:var(--em-bg)} .tier .ok .k{color:var(--em)} .tier .wait{background:var(--active-light);box-shadow:inset 0 0 0 2px var(--active)} .tier .wait .k{color:#6d28d9}
+  .warn{background:var(--amber-bg);border:1px solid #fde68a;color:#92400e;border-radius:8px;padding:6px 10px;font-size:14px}
+  .acts{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:4px}
+  .lockmsg{font-size:14px}
+  .log{width:300px;border-left:1px solid var(--g200);background:#fff;flex-shrink:0;display:flex;flex-direction:column}
+  .log-h{padding:10px 14px;font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--g500);border-bottom:1px solid var(--g100)}
+  .le{padding:10px 14px;border-bottom:1px solid var(--g100);font-size:14px}
+  .le .w{color:var(--g400);font-size:13px} .le q{display:block;color:var(--g600);font-style:normal;margin-top:2px}
+  .le q::before,.le q::after{content:''}
+
+  /* ── หน้าอนุมัติ ── */
+  .apv{display:flex;min-width:1240px;background:var(--g50);height:760px}
+  .queue{width:330px;border-right:1px solid var(--g200);background:#fff;flex-shrink:0}
+  .qh{padding:12px 16px;border-bottom:1px solid var(--g200);font-size:20px;font-weight:700}
+  .qh small{display:block;font-size:14px;color:var(--g500);font-weight:400}
+  .qi{padding:10px 16px;border-bottom:1px solid var(--g100);font-size:15px}
+  .qi.on{background:var(--active-light);box-shadow:inset 3px 0 0 var(--active)}
+  .qi .r1{display:flex;justify-content:space-between;gap:8px;font-weight:700}
+  .detail{flex:1;overflow:auto;padding:16px 20px;display:flex;flex-direction:column;gap:12px}
+  .tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  .tile{background:#fff;border:1px solid var(--g200);border-radius:10px;padding:10px 12px}
+  .tile .k{font-size:13px;color:var(--g500)} .tile .v{font-size:24px;font-weight:500;line-height:1.2} .tile .d{font-size:13px}
+  .dn{color:var(--red)} .up{color:var(--em)}
+  .cols{display:grid;grid-template-columns:1.15fr .85fr;gap:12px}
+  .pdf{background:#fff;border:1px solid var(--g200);border-radius:10px;padding:12px;position:relative;overflow:hidden;height:100%}
+  .paper{background:#fff;border:1px solid var(--g300);height:300px;position:relative;padding:14px 16px;font-size:11px;color:var(--g600)}
+  .paper .bar{height:7px;background:var(--g200);border-radius:3px;margin:5px 0}
+  .wm{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;transform:rotate(-24deg);font-size:26px;font-weight:700;color:rgba(220,38,38,.18);pointer-events:none;white-space:nowrap}
+  .certify{display:flex;gap:8px;align-items:flex-start;background:#fff;border:1px solid var(--g200);border-radius:10px;padding:10px 12px;font-size:15px}
+  .certify input{width:18px;height:18px;margin-top:3px;accent-color:var(--active)}
+  .foot{display:flex;gap:8px;justify-content:flex-end;align-items:center}
+
+  /* ── การ์ดติดตั้ง ── */
+  .solo{max-width:1040px;background:var(--g50);padding:16px;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,.12)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .ms{display:flex;gap:10px;padding:7px 12px;border-bottom:1px solid var(--g100);font-size:15px;align-items:center}
+  .ms:last-child{border-bottom:0}
+  .ms .dot{width:20px;height:20px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px}
+  .ms .d-ok{background:#10b981;color:#fff} .ms .d-next{border:2px solid var(--active)} .ms .d-no{border:2px solid var(--g300)}
+  .ms .when{margin-left:auto;color:var(--g500);font-size:14px;white-space:nowrap}
+
+  /* ── ช่องลงชื่อใน PDF ── */
+  .sheet{background:#fff;max-width:760px;padding:22px 26px;position:relative;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.12);border-radius:4px}
+  .sig{display:grid;grid-template-columns:1fr 1fr;gap:16px 40px;font-size:14px;color:var(--g700)}
+  .sc{text-align:center}
+  .sc .img{height:44px;display:flex;align-items:flex-end;justify-content:center}
+  .sc .line{border-top:1px dotted var(--g500);margin:2px 16px 2px;padding-top:2px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="intro">
+  <h1>Mockup: โครงการ B2B (flow แบบ Project + อนุมัติ 3 ชั้น)</h1>
+  <p>แผน <b>docs/plan/20261015-07-b2b-project-flow.md</b> · ข้อมูลในภาพเป็นตัวอย่างสมมติ · โครงหน้ายกจากหน้ารายละเอียดลีดของ B2C (header ติดบน · แท็บ · รางขั้นซ้าย · การ์ดขั้น · Activity Log ขวา)</p>
+  <ul>
+    <li><span class="newtag" style="margin:0">ใหม่</span> กรอบประส้ม = ส่วนที่ B2C ไม่มี</li>
+    <li>แสดงเฉพาะ desktop — มือถือใช้ breakpoint แบบหน้าลีด (รางขั้นซ่อน · ปุ่มลัดท้ายจอ)</li>
+  </ul>
+</div>
+
+<!-- ═════════════ 0. หน้า hub ═════════════ -->
+<div class="sec-title">0. หน้า hub — การ์ดเดียว "โครงการ B2B" (แทนการ์ด BOQ เดิม)</div>
+<div class="sec-note">ทีม B2B ที่ขายทำหน้างานเองจนส่งมอบ จึงรวมทุกขั้นไว้การ์ดเดียว · คนที่มีแต่ role B2B / Purchase / ผู้ตรวจสอบ เห็นเฉพาะกลุ่ม Commercial (B2B) · มุมมอง admin ด้านล่าง</div>
+<div class="scroll" style="box-shadow:none">
+<div class="hub">
+  <div class="hub-g">Operation</div>
+  <div class="hub-grid">
+    <div class="hc dim"><div class="em" style="background:#ecfdf5">📞</div><div class="lb">Sales</div><div class="ds">ติดตาม · จอง · เสนอราคา · ชำระเงิน</div></div>
+    <div class="hc dim"><div class="em" style="background:#eff6ff">🔧</div><div class="lb">สำรวจ &amp; ติดตั้ง</div><div class="ds">ปฏิทิน · สำรวจ · คิวติดตั้ง</div></div>
+    <div class="hc dim"><div class="em" style="background:#fff7ed">🛠️</div><div class="lb">O&amp;M</div><div class="ds">ลูกค้า · บ้าน · งานบริการ</div></div>
+    <div class="hc dim"><div class="em" style="background:#fffbeb">💰</div><div class="lb">บัญชี</div><div class="ds">รอยืนยันเงิน · รายรับ</div></div>
+  </div>
+  <div class="hub-g">Commercial (B2B)</div>
+  <div class="hub-grid">
+    <div class="hc new"><span class="ct">12</span><div class="em" style="background:#f0fdfa">🏭</div><div class="lb">โครงการ B2B</div><div class="ds">โอกาสขาย → ส่งมอบ · BOQ · วัสดุและราคา</div></div>
+    <div class="hc ghost"><div class="lb">ถ้าวันหน้ามีทีมโครงการแยก</div><div class="ds">แตกเป็น 💼 B2B Sales (3100–3500) + 🏗️ โครงการ B2B (3600–3950) ได้โดยไม่แตะข้อมูล — แบ่งเมนูใน registry + เพิ่ม role ทีมหน้างาน</div></div>
+    <div class="hc ghost"><div class="lb">Dashboard B2B (ภายหลัง)</div><div class="ds">มูลค่าตามขั้น · อัตราได้งาน · margin เฉลี่ย · งวดค้างรับ</div></div>
+  </div>
+</div>
+</div>
+
+<!-- ═════════════ 1. หน้าโครงการ ═════════════ -->
+<div class="sec-title">1. หน้าโครงการ — กำลังอยู่ขั้น 04 ราคายืนยัน / ต่อรอง</div>
+<div class="sec-note">ใบเสนอราคา Rev 4 ผ่านผู้ตรวจสอบ 1 แล้ว รอผู้ตรวจสอบ 2 · โครงการนี้มี BOQ 2 ขนาด</div>
+<div class="scroll">
+<div class="app">
+  <aside class="side">
+    <div class="mod">🏭 <div>โครงการ B2B<small>Commercial (B2B)</small></div></div>
+    <nav>
+      <a class="mi">ทั้งหมด <span class="badge">12</span></a>
+      <a class="mi">โอกาสขาย <span class="badge">3</span></a>
+      <a class="mi">เสนอราคา <span class="chev">▾</span><span class="badge">5</span></a>
+      <a class="mi sub">ราคาประมาณการ <span class="badge">2</span></a>
+      <a class="mi sub">สำรวจ <span class="badge">1</span></a>
+      <a class="mi sub on">ราคายืนยัน/ต่อรอง <span class="badge">2</span></a>
+      <a class="mi">ได้งาน <span class="badge">1</span></a>
+      <a class="mi">ดำเนินโครงการ <span class="chev">▾</span><span class="badge">3</span></a>
+      <a class="mi sub">ขออนุญาต/จัดซื้อ <span class="badge">1</span></a>
+      <a class="mi sub">ติดตั้ง <span class="badge">2</span></a>
+      <a class="mi sub">ขนานไฟ</a>
+      <a class="mi sub">ส่งมอบ</a>
+      <a class="mi">ปิดโครงการ</a>
+      <a class="mi">แพ้งาน/ยกเลิก</a>
+      <hr>
+      <a class="mi">รายการ BOQ</a>
+      <a class="mi">วัสดุและราคา <span class="badge">66</span></a>
+      <hr>
+      <a class="mi">อนุมัติ B2B <span class="badge">2</span></a>
+      <a class="mi">รอยืนยันรับเงิน <span class="badge">1</span></a>
+    </nav>
+  </aside>
+
+  <div class="main">
+    <div class="hdr">
+      <div class="hdr-top">
+        <div class="hdr-ico"><span>🏭</span></div>
+        <div class="hdr-txt">
+          <h2>โรงงานสยามแพ็คเกจจิ้ง เฟส 2 <span class="pill p-active">ราคายืนยัน · รอผู้ตรวจสอบ 2</span></h2>
+          <div class="hdr-meta">
+            <span>PRJ6810-004</span><span>บจก. สยามแพ็คเกจจิ้ง</span><span>ผู้ดูแล <b>วสุพล ร.</b></span>
+            <span>ขนาด <b class="num">499.32 kWp</b></span><span>ใบล่าสุด <b class="num">7,980,000</b> บาท</span>
+          </div>
+        </div>
+        <div class="hdr-act">
+          <button class="btn">แพ้งาน</button>
+          <button class="btn btn-primary">+ บันทึก</button>
+        </div>
+      </div>
+      <div class="tabs">
+        <span class="tab on">Workflow</span><span class="tab">ข้อมูลโครงการ</span><span class="tab">BOQ (2)</span>
+        <span class="tab">งวดเงิน</span><span class="tab">เอกสาร</span><span class="tab">Timeline</span>
+      </div>
+    </div>
+
+    <div class="body">
+      <aside class="rail">
+        <div class="rs done"><span class="n">01</span><span class="l">โอกาส</span><span class="ck">✓</span></div>
+        <div class="rs done"><span class="n">02</span><span class="l">ประมาณการ</span><span class="ck">✓</span></div>
+        <div class="rs done"><span class="n">03</span><span class="l">สำรวจ</span><span class="ck">✓</span></div>
+        <div class="rs cur"><span class="n">04</span><span class="l">ราคายืนยัน</span></div>
+        <div class="rs lock"><span class="n">05</span><span class="l">ได้งาน</span></div>
+        <div class="rs lock"><span class="n">06</span><span class="l">อนุญาต/ซื้อ</span></div>
+        <div class="rs lock"><span class="n">07</span><span class="l">ติดตั้ง</span></div>
+        <div class="rs lock"><span class="n">08</span><span class="l">ขนานไฟ</span></div>
+        <div class="rs lock"><span class="n">09</span><span class="l">ส่งมอบ</span></div>
+      </aside>
+
+      <div class="center">
+        <div class="card"><div class="done-row"><span class="ok">✓</span><span class="t">01 โอกาสขาย</span><span class="s">บจก. สยามแพ็คเกจจิ้ง · คุณประเสริฐ (ฝ่ายวิศวกรรม) · นิคมฯ อมตะซิตี้ ชลบุรี</span><span class="muted">▾</span></div></div>
+        <div class="card"><div class="done-row"><span class="ok">✓</span><span class="t">02 ราคาประมาณการ</span><span class="s">QT6810-012 Rev 3 · 8,250,000 · ส่งลูกค้า 2 ต.ค. (BOQ A Rev 1 จาก Google Maps)</span><span class="muted">▾</span></div></div>
+        <div class="card"><div class="done-row"><span class="ok">✓</span><span class="t">03 สำรวจหน้างาน</span><span class="s">สำรวจ 9 ต.ค. โดย ธนา ก. · หลังคา Metal Sheet ใช้ได้ 3,850 ตร.ม. · รูป 24</span><span class="muted">▾</span></div></div>
+
+        <div class="card act">
+          <div class="step-h"><span class="no">04</span><h3>ราคายืนยัน / ต่อรอง</h3></div>
+          <div class="subbar">
+            <div class="past">BOQ หลังสำรวจ</div><div class="past">ใบเสนอราคา</div><div class="now">อนุมัติ 3 ชั้น</div><div>ส่งลูกค้า</div>
+          </div>
+
+          <div class="blk">
+            <div class="blk-h">BOQ ของโครงการ <span class="muted xs" style="font-weight:400">— เลือกหลายขนาดได้ แต่ละตัวมี Rev ของตัวเอง</span>
+              <span class="r"><button class="btn">+ BOQ ขนาดใหม่</button></span></div>
+            <table class="t">
+              <tr><th>ตัวเลือก</th><th>Rev</th><th class="r">kWp</th><th class="r">ต้นทุน</th><th class="r">ราคาขาย</th><th class="r">margin</th><th class="r">บาท/Wp</th><th></th></tr>
+              <tr class="sel"><td><b>A</b> · Jinko 730 × 684</td><td>Rev 3 <span class="muted tiny">หลังสำรวจ</span></td><td class="r num">499.32</td><td class="r num">6,550,000</td><td class="r num">7,987,805</td><td class="r num">18.0%</td><td class="r num">16.00</td><td><span class="pill p-blue">ใช้ใน QT Rev 4</span></td></tr>
+              <tr><td><b>B</b> · Jinko 730 × 1,368</td><td>Rev 1 <span class="muted tiny">Google Maps</span></td><td class="r num">998.64</td><td class="r num">12,480,000</td><td class="r num">15,219,512</td><td class="r num">18.0%</td><td class="r num">15.24</td><td><span class="pill p-amber">รอราคา 2 บรรทัด</span></td></tr>
+            </table>
+          </div>
+
+          <div class="blk">
+            <div class="blk-h">ใบเสนอราคา
+              <span class="r"><button class="btn">สร้างใบเสนอราคา</button></span></div>
+            <table class="t">
+              <tr><th>เลขที่</th><th>ชนิด</th><th>จาก BOQ</th><th class="r">ราคา (ก่อน VAT)</th><th>สถานะ</th><th>ยืนยันราคาถึง</th></tr>
+              <tr class="sel"><td><b>QT6810-012 Rev 4</b></td><td>ยืนยัน</td><td>A Rev 3</td><td class="r num">7,980,000</td><td><span class="pill p-active">รอผู้ตรวจสอบ 2</span></td><td class="muted">—</td></tr>
+              <tr><td>QT6810-012 Rev 3</td><td>ประมาณการ</td><td>A Rev 1</td><td class="r num">8,250,000</td><td><span class="pill p-gray">ส่งลูกค้าแล้ว 2 ต.ค.</span></td><td class="muted">1 พ.ย. 69</td></tr>
+            </table>
+            <div style="padding:8px 12px 12px" class="new">
+              <div class="xs b muted">ลำดับอนุมัติ QT6810-012 Rev 4 <span class="newtag">ใหม่: 3 ชั้น</span></div>
+              <div class="tier">
+                <div class="tb ok"><div class="k">✓ ผู้ตรวจสอบ 1</div>คุณประเสริฐ ล. · 15 ต.ค. 10:20<br><span class="muted tiny">"ราคาแผงตรง Master · BOQ ครบ"</span></div>
+                <div class="tb wait"><div class="k">● ผู้ตรวจสอบ 2</div>รอคุณทัศนัย ว. — แจ้งเตือนแล้ว 10:20</div>
+                <div class="tb"><div class="k">○ ผู้ตรวจสอบ 3</div><span class="muted">คุณสุพิจ ศ. · ยังไม่ถึงคิว</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="warn new" style="margin-bottom:10px">⚠ BOQ ตัวเลือก B ยังมีบรรทัด "รอราคา" 2 บรรทัด — สร้างใบเสนอราคาจาก B ได้ แต่<b>ส่งอนุมัติไม่ได้</b>จนกว่า Purchase ใส่ราคาครบ</div>
+          <div class="acts">
+            <button class="btn btn-ghost">ถอยไปสำรวจซ้ำ</button>
+            <button class="btn" disabled title="ใบต้องผ่านอนุมัติครบ 3 ชั้นก่อน">ส่งลูกค้า</button>
+            <button class="btn btn-active" disabled title="ลูกค้าตอบรับใบที่ส่งแล้ว">ได้งาน</button>
+          </div>
+        </div>
+
+        <div class="card lock"><b>05 ได้งาน</b> · <span class="lockmsg">ปลดเมื่อกด "ได้งาน" — เลือกใบเสนอราคา + BOQ ที่ชนะ · บันทึกสัญญา/PO · งวด 1 (30%)</span></div>
+        <div class="card lock"><b>06 ขออนุญาต + จัดซื้อ</b> · <span class="lockmsg">ปลดเมื่อบัญชียืนยันเงินงวด 1</span></div>
+        <div class="card lock"><b>07 ติดตั้ง</b> · <b>08 ขนานไฟ</b> · <b>09 ส่งมอบ</b></div>
+      </div>
+
+      <aside class="log">
+        <div class="log-h">Activity Log</div>
+        <div class="le"><div class="w">วันนี้ 10:20 · คุณประเสริฐ ล. (ผู้ตรวจสอบ 1)</div>อนุมัติ QT6810-012 Rev 4<q>ราคาแผงตรง Master · BOQ ครบ</q></div>
+        <div class="le"><div class="w">14 ต.ค. 16:05 · วสุพล ร.</div>ส่งอนุมัติ QT6810-012 Rev 4 (ยืนยัน · BOQ A Rev 3)</div>
+        <div class="le"><div class="w">14 ต.ค. 11:30 · วสุพล ร.</div>BOQ A Rev 3 — เพิ่มค่าแรงรื้อถอนระบบเดิม · ลด Walkway</div>
+        <div class="le"><div class="w">9 ต.ค. 15:40 · ธนา ก.</div>บันทึกผลสำรวจ · รูป 24 · ไฟล์ 2<br><span class="pill p-gray" style="margin-top:4px">ขั้น 03 → 04</span></div>
+        <div class="le"><div class="w">3 ต.ค. 09:12 · วสุพล ร.</div>นัดสำรวจ 9 ต.ค. — ลูกค้าตอบรับราคาประมาณการ</div>
+        <div class="le"><div class="w">2 ต.ค. 14:00 · วสุพล ร.</div>ส่งลูกค้า QT6810-012 Rev 3 (ประมาณการ)</div>
+        <div class="le"><div class="w">2 ต.ค. 11:48 · คุณสุพิจ ศ. (ผู้ตรวจสอบ 3)</div>อนุมัติ QT6810-012 Rev 3 — ครบ 3 ชั้น</div>
+      </aside>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ═════════════ 2. หน้าอนุมัติ B2B ═════════════ -->
+<div class="sec-title">2. หน้าอนุมัติ B2B — มุมมองผู้ตรวจสอบ 2</div>
+<div class="sec-note">คิวของ role <b>b2b_review2</b> · กลไกเดียวกับหน้าอนุมัติใบเสนอราคา B2C (snapshot · ติ๊กยืนยัน · ส่งกลับแก้ · ลายน้ำ) + ตัวเลขต้นทุน/margin และเทียบกับ Rev ก่อน</div>
+<div class="scroll">
+<div class="apv">
+  <div class="queue">
+    <div class="qh">อนุมัติ B2B<small>คิวของคุณ: ผู้ตรวจสอบ 2 · 2 ใบ</small></div>
+    <div class="qi on"><div class="r1"><span>สยามแพ็คเกจจิ้ง เฟส 2</span><span class="num">7,980,000</span></div><div class="muted xs">QT6810-012 Rev 4 · ยืนยัน · 499.32 kWp</div><div class="xs">ส่งเมื่อ 14 ต.ค. · ผ่านชั้น 1 แล้ว</div></div>
+    <div class="qi"><div class="r1"><span>ไทยฟู้ดส์ คลังสินค้า 3</span><span class="num">12,450,000</span></div><div class="muted xs">QT6810-015 Rev 1 · ประมาณการ · 812.00 kWp</div><div class="xs">ส่งเมื่อ 15 ต.ค. · ผ่านชั้น 1 แล้ว</div></div>
+  </div>
+  <div class="detail">
+    <div style="display:flex;align-items:center;gap:10px">
+      <div><div class="b" style="font-size:21px">QT6810-012 Rev 4 — โรงงานสยามแพ็คเกจจิ้ง เฟส 2</div>
+      <div class="muted xs">ใบยืนยัน (หลังสำรวจ) · BOQ A Rev 3 · ผู้เสนอราคา วสุพล ร. · ส่ง 14 ต.ค. 16:05</div></div>
+      <a class="btn" style="margin-left:auto">เปิดหน้าโครงการ</a>
+    </div>
+
+    <div class="tiles new">
+      <div class="tile"><div class="k">ราคาขาย (ก่อน VAT)</div><div class="v num">7,980,000</div><div class="d dn">▼ 270,000 จาก Rev 3</div></div>
+      <div class="tile"><div class="k">ต้นทุน (BOQ A Rev 3)</div><div class="v num">6,550,000</div><div class="d up">▼ 50,000</div></div>
+      <div class="tile"><div class="k">margin จริง</div><div class="v num">17.9%</div><div class="d dn">▼ จาก 20.0%</div></div>
+      <div class="tile"><div class="k">บาท / Wp</div><div class="v num">15.98</div><div class="d muted">499.32 kWp</div></div>
+    </div>
+
+    <div class="cols">
+      <div class="blk new" style="margin:0;background:#fff">
+        <div class="blk-h">เทียบกับ Rev 3 (ส่งลูกค้า 2 ต.ค.) <span class="newtag">ใหม่</span></div>
+        <table class="t">
+          <tr><th>เรื่อง</th><th>Rev 3</th><th>Rev 4</th></tr>
+          <tr><td>ชนิดใบ</td><td>ประมาณการ</td><td><b>ยืนยัน</b></td></tr>
+          <tr><td>BOQ</td><td>A Rev 1 (Google Maps)</td><td><b>A Rev 3 (หลังสำรวจ)</b></td></tr>
+          <tr><td>ราคาขาย</td><td class="num">8,250,000</td><td class="num"><b>7,980,000</b> <span class="dn tiny">−3.3%</span></td></tr>
+          <tr><td>รายการเพิ่ม</td><td class="muted">—</td><td>ค่าแรงรื้อถอนระบบเดิม <span class="num">+85,000</span></td></tr>
+          <tr><td>รายการลด</td><td class="muted">—</td><td>Walkway <span class="num">−132,000</span></td></tr>
+          <tr><td>งวดเงิน</td><td>30 / 30 / 35 / 5</td><td class="muted">ไม่เปลี่ยน</td></tr>
+          <tr><td>ยืนยันราคา</td><td>30 วัน</td><td class="muted">ไม่เปลี่ยน</td></tr>
+          <tr><td>O&amp;M ที่รวม</td><td>2 ปี · ปีละ 2 ครั้ง</td><td class="muted">ไม่เปลี่ยน</td></tr>
+        </table>
+      </div>
+      <div class="pdf">
+        <div class="xs b muted" style="margin-bottom:6px">PDF ใบเสนอราคา (หน้า 1/2)</div>
+        <div class="paper">
+          <div class="b" style="font-size:13px;color:var(--g800)">ใบเสนอราคา · QT6810-012 Rev 4</div>
+          <div class="bar" style="width:70%"></div><div class="bar" style="width:55%"></div>
+          <div class="bar" style="width:90%;margin-top:12px"></div><div class="bar" style="width:84%"></div><div class="bar" style="width:76%"></div><div class="bar" style="width:80%"></div>
+          <div style="margin-top:10px">เงื่อนไขการชำระเงิน — งวด 1–4</div>
+          <div class="bar" style="width:60%"></div><div class="bar" style="width:66%"></div>
+          <div class="wm">รอผู้ตรวจสอบ 2 อนุมัติ</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="certify"><input type="checkbox"><div>ข้าพเจ้าตรวจสอบราคา margin งวดเงิน และเงื่อนไขในใบเสนอราคานี้แล้ว<div class="muted xs">กดอนุมัติแล้ว ลายเซ็นของคุณจะขึ้นในช่อง "ผู้ตรวจสอบ" ช่องที่ 2 (แถว 2 ขวา) ของ PDF ทันที แล้วส่งต่อผู้ตรวจสอบ 3</div></div></div>
+    <div class="foot">
+      <button class="btn" style="color:var(--red);border-color:#fecaca">ส่งกลับแก้…</button>
+      <button class="btn btn-active">อนุมัติ (ผู้ตรวจสอบ 2)</button>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ═════════════ 3. การ์ดขั้นติดตั้ง ═════════════ -->
+<div class="sec-title">3. การ์ดขั้น 07 ติดตั้ง — milestone + งวดเงิน + เช็กลิสต์ขออนุญาต</div>
+<div class="sec-note">ก่อสร้างระดับ milestone (แบบ ก.) · บันทึก milestone แล้วงวดที่ผูกไว้ "ถึงกำหนดวางบิล" เอง · ตัวอย่างโครงการอื่นที่ได้งานแล้ว</div>
+<div class="solo">
+  <div class="card act">
+    <div class="step-h"><span class="no">07</span><h3>ติดตั้ง</h3><span class="pill p-active">กำลังติดตั้ง</span></div>
+    <div class="subbar"><div class="past">รอของครบ</div><div class="past">แผงส่งครบ</div><div class="now">กำลังติดตั้ง</div><div>ติดตั้งเสร็จ</div></div>
+    <div class="grid2">
+      <div class="blk new" style="margin:0">
+        <div class="blk-h">Milestone หน้างาน <span class="newtag">ใหม่</span></div>
+        <div class="ms"><span class="dot d-ok">✓</span>เซ็นสัญญา / รับ PO<span class="when">3 ก.ย.</span></div>
+        <div class="ms"><span class="dot d-ok">✓</span>สั่งของครบ <span class="muted tiny">Purchase</span><span class="when">10 ก.ย.</span></div>
+        <div class="ms"><span class="dot d-ok">✓</span>ของเข้าหน้างาน<span class="when">25 ก.ย. · รูป 6</span></div>
+        <div class="ms"><span class="dot d-ok">✓</span>แผงส่งครบ 100%<span class="when">30 ก.ย. · รูป 12</span></div>
+        <div class="ms"><span class="dot d-ok">✓</span>เริ่มติดตั้ง<span class="when">2 ต.ค.</span></div>
+        <div class="ms"><span class="dot d-next"></span><b>ติดตั้งเสร็จ 100%</b><span class="when"><button class="btn btn-active" style="height:30px">บันทึก</button></span></div>
+        <div class="ms muted"><span class="dot d-no"></span>ยื่นขนานไฟ<span class="when">—</span></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div class="blk new" style="margin:0">
+          <div class="blk-h">งวดเงิน <span class="muted xs" style="font-weight:400">สัญญา 7,980,000 (ก่อน VAT)</span></div>
+          <table class="t">
+            <tr><th>งวด</th><th>เมื่อ</th><th class="r">ยอด</th><th>สถานะ</th></tr>
+            <tr><td>1 · 30%</td><td>เซ็นสัญญา</td><td class="r num">2,394,000</td><td><span class="pill p-em">รับแล้ว 8 ก.ย.</span></td></tr>
+            <tr><td>2 · 30%</td><td>แผงส่งครบ</td><td class="r num">2,394,000</td><td><span class="pill p-amber">รอบัญชียืนยัน</span></td></tr>
+            <tr><td>3 · 35%</td><td>ติดตั้งเสร็จ</td><td class="r num">2,793,000</td><td><span class="pill p-gray">ยังไม่ถึง</span></td></tr>
+            <tr><td>4 · 5%</td><td>ส่งมอบ + Training</td><td class="r num">399,000</td><td><span class="pill p-gray">ยังไม่ถึง</span></td></tr>
+          </table>
+        </div>
+        <div class="blk" style="margin:0">
+          <div class="blk-h">ขออนุญาต <span class="muted xs" style="font-weight:400">ยกหน้าตาจากเช็กลิสต์ขนานไฟของ B2C</span></div>
+          <div class="ms"><span class="dot d-ok">✓</span>แจ้งความประสงค์ติดตั้ง (อปท.)<span class="when">ได้แล้ว 20 ก.ย.</span></div>
+          <div class="ms"><span class="dot d-next"></span>เชื่อมต่อระบบ กฟภ.<span class="when"><span class="pill p-blue">กำลังยื่น · 28 ก.ย.</span></span></div>
+          <div class="ms muted"><span class="dot d-no"></span>ขอดัดแปลงอาคาร<span class="when">ไม่ต้องใช้</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═════════════ 4. ช่องลงชื่อใน PDF ═════════════ -->
+<div class="sec-title">4. ช่องลงชื่อในใบเสนอราคา (ตามแม่แบบ BOQ Solar rooftop.xlsx · SSE (2)) — ระหว่างรอชั้น 2</div>
+<div class="sec-note">แต่ละชั้นกดอนุมัติแล้ว ลายเซ็น + ชื่อ + วันที่ขึ้นในช่องของตัวเองทันที (แบบ B2C) · ช่องลูกค้าเว้นไว้เซ็นมือ · ลายน้ำหายเมื่อครบ 3 ชั้น</div>
+<div class="sheet">
+  <div class="sig">
+    <div class="sc"><div class="img"></div><div class="line">ลงชื่อ ................................. ลูกค้า</div><div>( ..................................................... )</div><div>วันที่ ........ / ........ / ........</div></div>
+    <div class="sc"><div class="img"><svg width="120" height="40" viewBox="0 0 120 40"><path d="M6 30 C20 6, 30 36, 44 18 S70 8, 78 26 S104 30, 114 12" fill="none" stroke="#1d4ed8" stroke-width="2"/></svg></div><div class="line">ลงชื่อ ................................. ผู้เสนอราคา</div><div>( นายวสุพล เรืองทรัพย์ )</div><div>14 ตุลาคม 2569</div></div>
+    <div class="sc"><div class="img"><svg width="120" height="40" viewBox="0 0 120 40"><path d="M8 26 C18 8, 34 8, 40 24 S58 34, 66 14 S92 6, 112 28" fill="none" stroke="#1d4ed8" stroke-width="2"/></svg></div><div class="line">ลงชื่อ ................................. ผู้ตรวจสอบ</div><div>( คุณประเสริฐ ลิ่มสกุล )</div><div>15 ตุลาคม 2569</div></div>
+    <div class="sc"><div class="img"></div><div class="line">ลงชื่อ ................................. ผู้ตรวจสอบ</div><div>( คุณทัศนัย ว่องวิทย์การ )</div><div class="muted">รอลงนาม</div></div>
+    <div class="sc"><div class="img"></div><div class="line">ลงชื่อ ................................. ผู้ตรวจสอบ</div><div>( คุณสุพิจ ศรีคำ )</div><div class="muted">รอลงนาม</div></div>
+  </div>
+  <div class="wm" style="font-size:40px">รอผู้ตรวจสอบ 2 อนุมัติ</div>
+</div>
+
+</div>
+</body>
+</html>

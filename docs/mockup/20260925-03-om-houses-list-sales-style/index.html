@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>บ้าน / ระบบติดตั้ง · โครงหน้าแบบฝั่งขาย</title>
+<style>
+  :root {
+    --gray-50:#f9fafb; --gray-100:#f3f4f6; --gray-200:#e5e7eb; --gray-300:#d1d5db;
+    --gray-400:#9ca3af; --gray-500:#6b7280; --gray-600:#4b5563; --gray-700:#374151;
+    --gray-800:#1f2937; --gray-900:#111827;
+    --navy:#1e3a8a; --navy-2:#1e40af;
+    --primary:#1fc8bb; --primary-dark:#0f9f95; --primary-50:#e8f9f7;
+    --active:#b449cf; --active-light:#f6e9fb;
+    --amber-50:#fffbeb; --amber-100:#fef3c7; --amber-200:#fde68a; --amber-600:#d97706; --amber-700:#b45309;
+    --red-50:#fef2f2; --red-600:#dc2626;
+    --green-50:#ecfdf5; --green-200:#a7f3d0; --green-600:#16a34a; --green-700:#047857;
+    --blue-50:#eff6ff; --blue-700:#1d4ed8; --blue-900-70:rgb(30 58 138 / .7);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin:0; }
+  body {
+    font-family: "IBM Plex Sans Thai", "Noto Sans Thai", "Sarabun", -apple-system, "Segoe UI", sans-serif;
+    background: var(--gray-100); color: var(--gray-900);
+    padding: 28px 20px 64px; line-height: 1.55;
+  }
+  .wrap { max-width: 1240px; margin: 0 auto; }
+
+  header.page { margin-bottom: 26px; }
+  header.page .meta { font-size: 12px; color: var(--gray-500); margin-bottom: 4px; }
+  header.page h1 { font-size: 22px; margin: 0 0 6px; letter-spacing: -.01em; }
+  header.page p { margin: 0; color: var(--gray-600); font-size: 14px; max-width: 80ch; }
+
+  section { margin-bottom: 36px; }
+  h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .09em; color: var(--gray-500); margin: 0 0 4px; font-weight: 700; }
+  h2 + .sub { margin: 0 0 12px; font-size: 13px; color: var(--gray-600); max-width: 90ch; }
+
+  .frame { background:#fff; border:1px solid var(--gray-300); border-radius: 14px; overflow: hidden; box-shadow: 0 1px 2px rgb(0 0 0 / .05); }
+  .browserbar { background: var(--gray-50); border-bottom:1px solid var(--gray-200); padding: 7px 12px; font-size: 11px; color: var(--gray-500); font-family: ui-monospace, monospace; }
+
+  /* ── ป้ายหมายเลขจุดที่เปลี่ยน ── */
+  .pin { display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; border-radius:50%;
+         background: var(--green-700); color:#fff; font-size:11px; font-weight:800; flex:0 0 auto; vertical-align: middle; }
+  .notes { margin: 12px 0 0; padding: 0; list-style: none; display:grid; gap:6px; font-size: 13px; color: var(--gray-700); }
+  .notes li { display:flex; gap:8px; align-items:flex-start; }
+  .notes li .pin { margin-top: 2px; }
+
+  /* ── ก่อน / หลัง (สัดส่วนความสูง) ── */
+  .cmp { display:grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .cmp .col { background:#fff; border:1px solid var(--gray-300); border-radius: 12px; padding: 12px; }
+  .cmp .col h3 { margin: 0 0 8px; font-size: 13px; }
+  .blk { border-radius: 8px; margin-bottom: 6px; display:flex; align-items:center; justify-content:space-between;
+         padding: 0 10px; font-size: 12px; font-weight: 600; color: var(--gray-700); border: 1px dashed var(--gray-300); background: var(--gray-50); }
+  .blk small { font-weight: 500; color: var(--gray-500); }
+  .blk.gone { background: var(--red-50); border-color: #fecaca; color: var(--red-600); text-decoration: line-through; }
+  .blk.table { background: var(--primary-50); border-color: #99e6de; color: var(--primary-dark); }
+  .cmp .foot { font-size: 12px; color: var(--gray-500); margin-top: 6px; }
+
+  /* ── แอปจำลอง desktop ── */
+  .app { display:flex; min-height: 640px; background: var(--gray-100); }
+  .side { width: 196px; background: var(--navy); color: #dbeafe; flex: 0 0 auto; padding: 12px 8px; font-size: 13px; }
+  .side .logo { color:#fff; font-weight: 800; letter-spacing: .04em; padding: 4px 8px 14px; font-size: 15px; }
+  .side .grp { font-size: 10px; font-weight: 800; color: #93c5fd; letter-spacing: .1em; padding: 8px 8px 4px; }
+  .side .it { display:flex; align-items:center; justify-content:space-between; padding: 7px 10px; border-radius: 8px; margin-bottom: 1px; font-weight: 600; }
+  .side .it.on { background: rgb(255 255 255 / .15); color:#fff; }
+  .side .bdg { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: rgb(255 255 255 / .1); color:#dbeafe;
+               font-size: 11px; display:inline-flex; align-items:center; justify-content:center; }
+  .main { flex: 1; min-width: 0; }
+
+  /* ListPageHeader */
+  .hdr { background:#fff; border-bottom: 1px solid var(--gray-200); }
+  .hdr .t { padding: 12px 20px 2px; display:flex; align-items:baseline; gap: 8px; }
+  .hdr .t b { font-size: 20px; }
+  .hdr .t .ver { font-size: 12px; color: var(--gray-400); }
+  .hdr .subt { padding: 0 20px 8px; font-size: 12.5px; color: var(--gray-600); }
+  .hdr .srow { padding: 0 20px 8px; display:flex; gap: 8px; }
+  .search { flex:1; height: 32px; border-radius: 999px; border: 1px solid var(--gray-200); background: var(--gray-50);
+            display:flex; align-items:center; gap: 8px; padding: 0 14px; font-size: 12.5px; color: var(--gray-400); }
+  .actbtn { height: 32px; padding: 0 14px; border-radius: 999px; border:1px solid var(--gray-200); background: var(--gray-50);
+            font-size: 12.5px; font-weight: 700; color: var(--gray-800); display:inline-flex; align-items:center; white-space: nowrap; }
+  .tabs { display:flex; align-items:center; border-top: 1px solid var(--gray-100); padding: 0 20px; overflow-x:auto; }
+  .tabs .left { font-size: 13px; font-weight: 700; color: var(--gray-600); margin-right: 12px; white-space: nowrap; }
+  .tab { padding: 10px 9px; font-size: 11.5px; font-weight: 700; letter-spacing: .05em; color: var(--gray-500);
+         border-bottom: 2px solid transparent; white-space: nowrap; }
+  .tab .n { font-weight: 500; color: var(--gray-400); }
+  .tab.on { color: var(--active); border-color: var(--active); }
+  .tab.on .n { color: var(--active); }
+  .tab.cut { color: var(--red-600); text-decoration: line-through; opacity: .7; }
+
+  /* แถวเครื่องมือ (ยกจากหน้างานบริการ) */
+  .tools { display:flex; align-items:center; gap: 8px; flex-wrap: wrap; padding: 12px 16px 8px; }
+  .tools .cnt { font-size: 13px; font-weight: 700; color: var(--gray-700); white-space: nowrap; }
+  .dd { height: 32px; min-width: 190px; border-radius: 8px; border: 1px solid var(--gray-200); background:#fff;
+        display:inline-flex; align-items:center; justify-content:space-between; gap: 10px; padding: 0 10px; font-size: 12.5px; color: var(--gray-800); }
+  .dd::after { content: "⌄"; color: var(--gray-400); font-size: 14px; margin-top: -6px; }
+  .sync { margin-left: auto; display:flex; align-items:center; gap: 10px; flex-wrap: wrap; font-size: 11.5px; color: var(--gray-500); }
+  .sync .s { display:inline-flex; align-items:center; gap: 5px; white-space: nowrap; padding: 3px 8px; border-radius: 999px; border: 1px solid transparent; }
+  .sync .s:hover { border-color: var(--gray-200); background:#fff; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display:inline-block; }
+  .dot.ok { background: var(--green-600); } .dot.stale { background: var(--amber-600); }
+  .sync .s.warn { color: var(--amber-700); font-weight: 700; }
+  .sync .q { background: var(--active); color:#fff; font-weight: 700; border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
+
+  /* ตาราง */
+  .tbl { margin: 0 16px 16px; background:#fff; border:1px solid var(--gray-200); border-radius: 12px; overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; background: var(--gray-50); color: var(--gray-500); font-size: 11.5px; font-weight: 700; padding: 8px 14px; border-bottom: 1px solid var(--gray-200); white-space: nowrap; }
+  td { padding: 8px 14px; border-bottom: 1px solid var(--gray-100); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  tbody tr:hover td { background: #f0fdfa; cursor: pointer; }
+  td .hn { font-weight: 700; }
+  td .pj { font-size: 11.5px; font-weight: 600; color: var(--blue-900-70); }
+  td.num { text-align: center; font-weight: 700; color: var(--primary-dark); }
+  td .muted { color: var(--gray-400); font-size: 12px; }
+  td .old { color: var(--amber-600); font-weight: 700; }
+  td .ago { color: var(--gray-400); font-size: 11px; }
+  td.chev { color: var(--gray-300); font-size: 18px; text-align: right; width: 28px; padding-top: 5px; }
+  .chip { display:inline-block; font-size: 10.5px; font-weight: 700; padding: 0 7px; border-radius: 999px; }
+  .chip.vip { background: var(--amber-100); color: var(--amber-700); }
+  .chip.sys { background: var(--active-light); color: var(--active); }
+  .pager { display:flex; justify-content: space-between; align-items:center; padding: 8px 14px; border-top: 1px solid var(--gray-100); font-size: 12px; color: var(--gray-500); }
+  .pager .pg { display:flex; gap: 4px; }
+  .pager .pg span { min-width: 26px; height: 26px; border-radius: 6px; border:1px solid var(--gray-200); display:inline-flex; align-items:center; justify-content:center; background:#fff; }
+  .pager .pg span.on { background: var(--gray-800); color:#fff; border-color: var(--gray-800); }
+
+  /* popover รายละเอียด sync (ตัวอย่างตอนกด) */
+  .pop { position: absolute; right: 16px; top: 34px; width: 330px; background:#fff; border:1px solid var(--gray-200); border-radius: 12px;
+         box-shadow: 0 10px 30px rgb(0 0 0 / .12); padding: 12px; font-size: 12px; color: var(--gray-600); z-index: 2; }
+  .pop b { color: var(--gray-900); }
+  .pop .row { display:flex; justify-content: space-between; gap: 8px; padding: 4px 0; }
+  .pop .bar { height: 5px; border-radius: 99px; background: var(--gray-100); overflow: hidden; margin: 4px 0 6px; }
+  .pop .bar i { display:block; height:100%; width:70%; background: var(--primary); }
+  .pop .btn { display:inline-flex; height: 28px; align-items:center; padding: 0 10px; border-radius: 999px; border:1px solid var(--gray-200); font-weight: 700; color: var(--gray-700); font-size: 11.5px; margin-top: 6px; }
+  .pop .warnbox { background: var(--amber-50); border: 1px solid var(--amber-200); color: var(--amber-700); border-radius: 8px; padding: 6px 8px; margin: 4px 0 8px; font-weight: 600; }
+
+  /* ── มือถือ ── */
+  .phones { display:flex; gap: 24px; flex-wrap: wrap; align-items: flex-start; }
+  .phone { width: 390px; border: 1px solid var(--gray-300); border-radius: 28px; overflow: hidden; background: var(--gray-100); box-shadow: 0 1px 2px rgb(0 0 0 / .05); }
+  .phone .notch { height: 22px; background:#fff; }
+  .phone .hdr .t { padding: 6px 16px 2px; }
+  .phone .hdr .t b { font-size: 18px; }
+  .phone .hdr .subt, .phone .hdr .srow { padding-left: 16px; padding-right: 16px; }
+  .phone .tabs { padding: 0 16px; }
+  .phone .tools { padding: 10px 12px 6px; }
+  .phone .tools .dd { width: 100%; }
+  .phone .sync { margin-left: 0; width: 100%; }
+  .mcard { background:#fff; border-top: 1px solid var(--gray-100); padding: 11px 16px; display:flex; gap: 10px; }
+  .mcard .b { flex: 1; min-width: 0; font-size: 12.5px; color: var(--gray-500); }
+  .mcard .b .h { font-size: 14px; font-weight: 700; color: var(--gray-900); }
+  .mcard .b .pj { font-size: 12px; font-weight: 600; color: var(--blue-900-70); }
+  .mcard .chev { color: var(--gray-300); font-size: 20px; align-self: center; }
+  .mlist { margin: 0 12px 12px; border: 1px solid var(--gray-200); border-radius: 12px; overflow: hidden; }
+  .mlist .mcard:first-child { border-top: 0; }
+  .navbar { background:#fff; border-top: 1px solid var(--gray-200); display:flex; justify-content: space-around; padding: 8px 0 14px; font-size: 10.5px; color: var(--gray-500); }
+  .navbar .on { color: var(--primary-dark); font-weight: 700; }
+  .phone-note { max-width: 420px; font-size: 13px; color: var(--gray-600); }
+  .phone-note ul { margin: 6px 0 0; padding-left: 18px; }
+
+  /* ── เรื่องให้ตัดสินใจ ── */
+  .dec { background:#fff; border:1px solid var(--gray-300); border-radius: 14px; padding: 16px; margin-bottom: 16px; }
+  .dec > h3 { margin: 0 0 4px; font-size: 16px; display:flex; gap: 8px; align-items:center; }
+  .dec > h3 .k { background: var(--gray-800); color:#fff; border-radius: 6px; padding: 0 7px; font-size: 12px; }
+  .dec > p { margin: 0 0 12px; font-size: 13px; color: var(--gray-600); max-width: 95ch; }
+  .opts { display:grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+  .opt { border:1px solid var(--gray-200); border-radius: 12px; padding: 12px; background: var(--gray-50); }
+  .opt.rec { border-color: var(--green-200); box-shadow: 0 0 0 3px var(--green-50); background:#fff; }
+  .opt .tag { font-size: 12.5px; font-weight: 800; color: var(--gray-700); margin-bottom: 8px; display:flex; gap: 6px; align-items:center; }
+  .opt.rec .tag { color: var(--green-700); }
+  .opt .tag .k { background: var(--gray-700); color:#fff; border-radius: 5px; padding: 0 6px; font-size: 11px; }
+  .opt.rec .tag .k { background: var(--green-700); }
+  .opt .demo { background:#fff; border:1px solid var(--gray-200); border-radius: 10px; padding: 10px; margin-bottom: 8px; font-size: 12px; }
+  .v { display:flex; gap: 7px; font-size: 12.5px; color: var(--gray-600); margin-top: 3px; }
+  .v .m { font-weight: 800; flex: 0 0 auto; }
+  .v.ok .m { color: var(--green-700); } .v.no .m { color: var(--red-600); }
+  .nums { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0 0 12px; max-width: 720px; }
+  .nums .nb { background: var(--gray-50); border: 1px solid var(--gray-200); border-radius: 10px; padding: 10px 12px; font-size: 12.5px; color: var(--gray-600); }
+  .nums .nb b { display:block; font-size: 22px; color: var(--gray-900); }
+
+  .keep { display:grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .keep .box { background:#fff; border:1px solid var(--gray-300); border-radius: 12px; padding: 14px 16px; font-size: 13px; color: var(--gray-700); }
+  .keep .box h3 { margin: 0 0 6px; font-size: 14px; }
+  .keep ul { margin: 0; padding-left: 18px; }
+  .keep li { margin-bottom: 4px; }
+  code { font-family: ui-monospace, monospace; font-size: 12px; background: var(--gray-100); padding: 0 4px; border-radius: 4px; }
+
+  @media (max-width: 900px) {
+    .cmp, .keep { grid-template-columns: 1fr; }
+    .side { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="page">
+  <div class="meta">แผน docs/plan/20260925-03-om-houses-list-sales-style.md · 25 ก.ย. 69 · mockup ยังไม่แก้โค้ด</div>
+  <h1>บ้าน / ระบบติดตั้ง — โครงหน้าแบบฝั่งขาย</h1>
+  <p>ยกโครงหน้าของ Pipeline / งานบริการมาใช้ (หัวหน้า <code>ListPageHeader</code> + แถวเครื่องมือ) แต่<b>เนื้อหาบน desktop ยังเป็นตาราง</b>
+    เพราะหน้านี้คือทะเบียนบ้านสำหรับไล่ตรวจ/เติมข้อมูล ไม่ใช่งานที่เดินเป็นขั้น — มือถือเป็นการ์ดเหมือนเดิม
+    ท้ายหน้ามี 3 เรื่องให้เลือก (กรอบเขียว = แนะนำ)</p>
+</header>
+
+<!-- ───────────── 1. ก่อน / หลัง ───────────── -->
+<section>
+  <h2>1 · ก่อน / หลัง — พื้นที่ก่อนถึงแถวแรกของตาราง</h2>
+  <p class="sub">สัดส่วนความสูงจริงบนจอ desktop (1080p) — ของเดิมกว่าจะถึงตารางกินไปเกือบ 530px</p>
+  <div class="cmp">
+    <div class="col">
+      <h3>ตอนนี้</h3>
+      <div class="blk gone" style="height:124px">กล่อง sync 3 ใบ <small>ทะเบียน REM · กวาดงานขาย · รอคนตัดสิน · ~250px</small></div>
+      <div class="blk" style="height:34px">ค้นหา + ปุ่ม "+ เพิ่มบ้าน" <small>(ปุ่มกดแล้วไม่มีอะไรเกิดขึ้น)</small></div>
+      <div class="blk" style="height:28px">แท็บ 8 อัน</div>
+      <div class="blk" style="height:28px">"1,713 หลัง" + dropdown โครงการ (select ของเบราว์เซอร์)</div>
+      <div class="blk gone" style="height:28px">แถบสรุป "ทุกโครงการ 1,713 หลัง · ถึงคิวล้าง 1,546 …" <small>ซ้ำกับตัวเลขบนแท็บ</small></div>
+      <div class="blk table" style="height:60px">ตาราง</div>
+      <div class="foot">หัวหน้าสร้างเองในหน้า — ไม่ใช่ ListPageHeader แบบหน้าอื่น</div>
+    </div>
+    <div class="col">
+      <h3>หลังปรับ</h3>
+      <div class="blk" style="height:76px">ListPageHeader <small>ชื่อเมนู · คำอธิบาย · ค้นหา · แท็บ + ตัวเลข</small></div>
+      <div class="blk" style="height:24px">แถวเครื่องมือ <small>จำนวน · โครงการ · สถานะ sync บรรทัดเดียว</small></div>
+      <div class="blk table" style="height:200px">ตาราง — เห็นเพิ่มขึ้นประมาณ 5–6 หลังต่อจอ</div>
+      <div class="foot">ถึงแถวแรกของตารางที่ ~230px (เดิม ~530px)</div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────── 2. desktop ───────────── -->
+<section>
+  <h2>2 · Desktop — ชุดที่แนะนำ (A1 + B1 + C1)</h2>
+  <p class="sub">ข้อมูลตัวอย่าง: บ้านเลขที่/โครงการ/ตัวเลขจากหน้าจริง · ชื่อลูกค้าและเบอร์เป็นข้อมูลสมมติ</p>
+  <div class="frame">
+    <div class="browserbar">localhost:3020/om/houses</div>
+    <div class="app">
+      <nav class="side">
+        <div class="logo">SENA SOLAR</div>
+        <div class="it">HOME</div>
+        <div class="grp">O&amp;M</div>
+        <div class="it">ภาพรวม</div>
+        <div class="it">แจ้งเตือน</div>
+        <div class="it">ลูกค้า</div>
+        <div class="it on">บ้าน / ระบบติดตั้ง</div>
+        <div class="it">งานบริการ <span class="bdg">1661</span></div>
+        <div class="it">ปฏิทิน / จ่ายงาน <span class="bdg">2</span></div>
+        <div class="it">เช็คลิสต์ <span class="bdg">1</span></div>
+        <div class="it">รายรับ O&amp;M</div>
+        <div class="it">ตั้งค่า O&amp;M</div>
+      </nav>
+      <div class="main">
+        <div class="hdr">
+          <div class="t"><b>บ้าน / ระบบติดตั้ง</b><span class="ver">v3.0.0-dev</span> <span class="pin">1</span></div>
+          <div class="subt">O&amp;M · ทะเบียนบ้านที่ติดโซลาร์ · ข้อมูลจาก REM / ระบบขาย / ไฟล์นำเข้า</div>
+          <div class="srow">
+            <div class="search">⌕ ค้นบ้านเลขที่ · ชื่อลูกค้า · เบอร์</div>
+          </div>
+          <div class="tabs">
+            <span class="left">1,713 หลัง</span>
+            <span class="tab on">ทั้งหมด <span class="n">(1,713)</span></span>
+            <span class="tab">ไม่มีเบอร์ <span class="n">(162)</span></span>
+            <span class="tab">ไม่มีวันประกัน <span class="n">(49)</span></span>
+            <span class="tab">ไม่รู้อินเวอร์เตอร์ <span class="n">(1,104)</span></span>
+            <span class="tab">ยังไม่ผูกลูกค้า <span class="n">(5)</span></span>
+            <span class="tab">รอตรวจ · ไม่มีสเปก <span class="n">(321)</span></span>
+            <span class="tab">ซ่อนไว้ <span class="n">(50)</span></span>
+          </div>
+        </div>
+
+        <div class="tools" style="position:relative">
+          <span class="cnt">1,713 หลังในแท็บนี้</span>
+          <span class="dd">ทุกโครงการ · 1,713 หลัง</span>
+          <span class="pin">2</span>
+          <span class="sync">
+            <span class="pin">3</span>
+            <span class="s warn"><span class="dot stale"></span>ทะเบียน REM 9 ก.ย. · 16 วันก่อน</span>
+            <span class="s"><span class="dot ok"></span>กวาดงานขาย 13:45</span>
+            <span class="q">รอคนตัดสิน 1 →</span>
+          </span>
+        </div>
+
+        <div class="tbl">
+          <table>
+            <thead><tr>
+              <th>บ้านเลขที่</th><th>ระบบ / kWp</th><th>วันเริ่มประกัน</th><th>ล้างล่าสุด</th>
+              <th style="text-align:center">สิทธิ์เหลือ</th><th>ชื่อลูกค้า</th><th>เบอร์</th><th><span class="pin">4</span></th>
+            </tr></thead>
+            <tbody>
+              <tr><td><span class="hn">10</span><div class="pj muted">ลูกค้าทั่วไป · ไม่อยู่ในโครงการ</div></td><td>10.00 kW</td><td>2026-07-11</td>
+                <td><span class="muted">ยังไม่เคยล้าง</span></td><td class="num">4</td><td>สมใจ รักดี</td><td>081-234-5678</td><td class="chev">›</td></tr>
+              <tr><td><span class="hn">146/1</span><div class="pj">J EXCLUSIVE - วงแหวน-บางใหญ่</div></td><td>3.00 kW</td><td>2026-01-15</td>
+                <td><span class="muted">ยังไม่เคยล้าง</span></td><td class="num">4</td><td>สมชาย ใจดี</td><td><span class="muted">—</span></td><td class="chev">›</td></tr>
+              <tr><td><span class="hn">146/4</span><div class="pj">J EXCLUSIVE - วงแหวน-บางใหญ่</div></td><td>—</td><td>2026-06-30</td>
+                <td><span class="muted">ยังไม่เคยล้าง</span></td><td class="num">4</td><td>วิไล มีสุข</td><td>080-111-2233</td><td class="chev">›</td></tr>
+              <tr><td><span class="hn">146/6</span> <span class="chip vip">VIP</span><div class="pj">J EXCLUSIVE - วงแหวน-บางใหญ่</div></td><td>3.00 kW</td><td>2024-08-23</td>
+                <td><span class="old">2026-02-14</span><div class="ago">7 เดือน · 3 ครั้ง</div></td><td class="num">1</td><td>ประภา ทองดี</td><td>082-555-0101</td><td class="chev">›</td></tr>
+              <tr><td><span class="hn">146/10</span><div class="pj">J EXCLUSIVE - วงแหวน-บางใหญ่</div></td><td><span class="chip sys">2 ระบบ</span> 3.00 + 2.00 kW</td><td>2024-08-23</td>
+                <td>2026-06-02<div class="ago">4 เดือน · 2 ครั้ง</div></td><td class="num">2</td><td>อนันต์ ศรีสุข</td><td>081-777-8899</td><td class="chev">›</td></tr>
+              <tr><td><span class="hn">146/11</span><div class="pj">J EXCLUSIVE - วงแหวน-บางใหญ่</div></td><td>—</td><td>2026-08-19</td>
+                <td><span class="muted">ยังไม่เคยล้าง</span></td><td class="num">4</td><td>ปวีณา แสงทอง</td><td>093-624-0000</td><td class="chev">›</td></tr>
+            </tbody>
+          </table>
+          <div class="pager"><span>1–30 จาก 1,713</span><span class="pg"><span class="on">1</span><span>2</span><span>3</span><span>…</span><span>58</span></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <ul class="notes">
+    <li><span class="pin">1</span><span><b>หัวหน้าใช้ <code>ListPageHeader</code></b> ตัวเดียวกับ Pipeline / Today / งานบริการ — ชื่อหน้า = ชื่อเมนู (<code>useActiveMenuItem</code>) · ค้นหาอยู่บนหัว · แท็บพร้อมตัวเลข · "1,713 หลัง" อยู่ช่องซ้ายของแท็บ</span></li>
+    <li><span class="pin">2</span><span><b>แถวเครื่องมือยกจากหน้างานบริการ</b> — "N หลังในแท็บนี้" + dropdown โครงการเปลี่ยนเป็น <code>Dropdown</code> ตัวกลาง (รายการในนั้นเหมือนเดิม: โครงการ · กลุ่มพิเศษ · กลุ่มที่ซ่อนจากลิสต์หลัก)</span></li>
+    <li><span class="pin">3</span><span><b>สถานะ sync เหลือบรรทัดเดียว</b> (เรื่อง A) — จุดส้มเมื่อข้อมูลเก่ากว่าที่ควร เช่น REM ที่ไม่ได้ดึงมา 16 วัน · กดแต่ละอันเปิดรายละเอียด + ปุ่ม "ดึงเดี๋ยวนี้ / กวาดเดี๋ยวนี้" · แสดงเฉพาะ admin / solar_sup / sales_sup (role อื่นไม่มีบรรทัดนี้)</span></li>
+    <li><span class="pin">4</span><span><b>ปุ่ม "แก้ไข" ท้ายแถวเปลี่ยนเป็นลูกศร ›</b> — กดทั้งแถวเปิดรายละเอียดบ้านอยู่แล้ว (กติกาเดียวกับการ์ดฝั่งขาย: ไม่มีปุ่มบนการ์ด กดทั้งใบ)</span></li>
+  </ul>
+</section>
+
+<!-- ───────────── 3. มือถือ ───────────── -->
+<section>
+  <h2>3 · มือถือ</h2>
+  <p class="sub">ตารางซ่อนบนจอเล็กเหมือนเดิม ใช้การ์ดที่มีอยู่แล้ว — ตัดปุ่ม "แก้ไข" ออก กดทั้งใบ</p>
+  <div class="phones">
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="hdr">
+        <div class="t"><b>บ้าน / ระบบติดตั้ง</b></div>
+        <div class="subt">O&amp;M · ทะเบียนบ้านที่ติดโซลาร์</div>
+        <div class="srow"><div class="search">⌕ ค้นบ้านเลขที่ · ชื่อ · เบอร์</div></div>
+        <div class="tabs">
+          <span class="left">1,713</span>
+          <span class="tab on">ทั้งหมด <span class="n">(1,713)</span></span>
+          <span class="tab">ไม่มีเบอร์ <span class="n">(162)</span></span>
+          <span class="tab">ไม่มีวันประกัน</span>
+        </div>
+      </div>
+      <div class="tools">
+        <span class="cnt">1,713 หลังในแท็บนี้</span>
+        <span class="dd">ทุกโครงการ · 1,713 หลัง</span>
+        <span class="sync">
+          <span class="s warn"><span class="dot stale"></span>REM 16 วันก่อน</span>
+          <span class="s"><span class="dot ok"></span>งานขาย 13:45</span>
+          <span class="q">รอตัดสิน 1 →</span>
+        </span>
+      </div>
+      <div class="mlist">
+        <div class="mcard"><div class="b"><div class="h">บ้าน 10</div><div>10.00 kW · เหลือ <b>4</b> · 081-234-5678</div><div>ยังไม่เคยล้าง</div></div><span class="chev">›</span></div>
+        <div class="mcard"><div class="b"><div class="h">บ้าน 146/1</div><div class="pj">J EXCLUSIVE - วงแหวน-บางใหญ่</div><div>3.00 kW · เหลือ <b>4</b> · ไม่มีเบอร์</div><div>ยังไม่เคยล้าง</div></div><span class="chev">›</span></div>
+        <div class="mcard"><div class="b"><div class="h">บ้าน 146/6 <span class="chip vip">VIP</span></div><div class="pj">J EXCLUSIVE - วงแหวน-บางใหญ่</div><div>3.00 kW · เหลือ <b>1</b> · 082-555-0101</div><div>ล้างล่าสุด <span style="color:var(--amber-600);font-weight:700">2026-02-14</span> · 7 เดือน</div></div><span class="chev">›</span></div>
+      </div>
+      <div class="navbar"><span>หน้าแรก</span><span class="on">บ้าน</span><span>งานบริการ</span><span>ปฏิทิน</span><span>ฉัน</span></div>
+    </div>
+    <div class="phone-note">
+      <b>มือถือเปลี่ยนเท่านี้</b>
+      <ul>
+        <li>หัวหน้าเป็น ListPageHeader เหมือน desktop (แท็บเลื่อนแนวนอนได้)</li>
+        <li>dropdown โครงการเต็มความกว้าง · สถานะ sync ลงมาบรรทัดถัดไป ใช้คำสั้น</li>
+        <li>การ์ดเดิมทุกบรรทัด — ตัดปุ่ม "แก้ไข" เหลือลูกศร ›</li>
+        <li>แถบล่างไม่เปลี่ยน (ตาม role ที่สวม — กติกา ui-rules)</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────── 4. เรื่องให้ตัดสินใจ ───────────── -->
+<section>
+  <h2>4 · เรื่องให้ตัดสินใจ</h2>
+  <p class="sub">เลือกเรื่องละ 1 ทาง — กรอบเขียวคือทางที่แนะนำ (ภาพ desktop ด้านบนใช้ A1 + B1 + C1)</p>
+
+  <div class="dec">
+    <h3><span class="k">A</span> กล่อง sync 3 ใบบนสุด</h3>
+    <p>ทั้ง 3 ใบเป็นเครื่องมือแอดมิน แต่กินพื้นที่ ~250px บนหน้าที่ทุกคนใช้ ·
+      <b>API สถานะ sync อ่านได้เฉพาะ admin / solar_sup / sales_sup</b> — role อื่นเห็นกล่องนี้เป็น "0 unit · รอบล่าสุด —" มาตลอด
+      ⇒ ไม่ว่าเลือกทางไหน ควรแสดงเฉพาะ 3 role นี้ ·
+      ตอนนี้ทะเบียน REM ขึ้น "ล่าสุด 9 ก.ย." คือไม่ได้ดึงมา 16 วัน ทั้งที่ควรดึงทุก 6 ชม. ถ้าย่อต้องยังเห็นเรื่องแบบนี้</p>
+    <div class="opts">
+      <div class="opt rec">
+        <div class="tag"><span class="k">A1</span> ย่อเหลือบรรทัดเดียวในแถวเครื่องมือ · แนะนำ</div>
+        <div class="demo" style="position:relative;min-height:212px">
+          <div style="display:flex;gap:8px;align-items:center;font-size:11.5px;color:var(--gray-500);flex-wrap:wrap">
+            <span style="color:var(--amber-700);font-weight:700;border:1px solid var(--gray-200);border-radius:99px;padding:2px 8px;background:#fff"><span class="dot stale"></span> ทะเบียน REM 9 ก.ย. · 16 วันก่อน</span>
+            <span><span class="dot ok"></span> กวาดงานขาย 13:45</span>
+            <span style="background:var(--active);color:#fff;font-weight:700;border-radius:99px;padding:2px 9px">รอคนตัดสิน 1 →</span>
+          </div>
+          <div class="pop" style="left:0;right:auto;top:34px;width:100%">
+            <div class="row"><b>ทะเบียน REM</b><span>13,039 unit · 8,186 สัญญาโอน</span></div>
+            <div class="bar"><i></i></div>
+            <div>ดึงครบ 81 / 116 โครงการบ้าน (70%) · ล่าสุด 9 ก.ย. 13:19</div>
+            <div class="warnbox">ไม่ได้ดึงมา 16 วัน — ปกติดึงทุก 6 ชม.</div>
+            <span class="btn">⟳ ดึงทะเบียนเดี๋ยวนี้</span>
+          </div>
+        </div>
+        <div class="v ok"><span class="m">✓</span><span>หน้าสั้นลง ~220px แต่สถานะยังอยู่ตรงที่ข้อมูลแสดง — ตัวเลขดูแปลกเมื่อไรก็เห็นสาเหตุทันที</span></div>
+        <div class="v ok"><span class="m">✓</span><span>จุดส้ม = ข้อมูลเก่ากว่าที่ควร (REM &gt; 1 วัน · กวาดงานขาย &gt; 2 ชม.) · ป้าย "รอคนตัดสิน" โผล่เฉพาะตอนมีของค้าง</span></div>
+        <div class="v no"><span class="m">✕</span><span>รายละเอียด (แถบความคืบหน้า / จำนวนเจ้าของ) ต้องกดดู</span></div>
+      </div>
+      <div class="opt">
+        <div class="tag"><span class="k">A2</span> ย้ายทั้งกล่องไปหน้า "ตั้งค่า O&amp;M"</div>
+        <div class="demo">หน้าบ้านเหลือแค่ป้าย <span style="background:var(--active);color:#fff;font-weight:700;border-radius:99px;padding:1px 8px">รอคนตัดสิน 1 →</span> เมื่อมีของค้าง
+          <div style="margin-top:6px;color:var(--gray-500)">กล่อง 3 ใบไปอยู่ <code>/om/settings</code> (เห็นเฉพาะ admin / solar_sup / sales_sup)</div></div>
+        <div class="v ok"><span class="m">✓</span><span>หน้าบ้านสะอาดที่สุด · ทีมหน้างานไม่เห็นของที่ไม่ใช่งานตัวเอง</span></div>
+        <div class="v no"><span class="m">✕</span><span>REM หยุดดึงแบบตอนนี้จะไม่มีใครเห็น จนกว่าแอดมินจะเข้าหน้าตั้งค่า</span></div>
+      </div>
+      <div class="opt">
+        <div class="tag"><span class="k">A3</span> คงไว้แบบเดิม</div>
+        <div class="demo">กล่อง 3 ใบ ~250px อยู่บนสุดเหมือนเดิม</div>
+        <div class="v no"><span class="m">✕</span><span>หน้าไม่เหมือนฝั่งขาย · ตารางเริ่มต่ำลงเกือบครึ่งจอ</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="dec">
+    <h3><span class="k">B</span> แท็บ "ถึงคิวล้าง"</h3>
+    <p>เรื่องเดียวกันแต่ตัวเลขไม่ตรงกันสองหน้า — นิยามต่างกัน: หน้านี้นับ<b>ทุกหลังที่ไม่เคยล้างหรือเลยรอบ</b> ·
+      หน้างานบริการแยกหลังที่ไม่มีเบอร์ / โทรไม่ติด / สิทธิ์หมด ออกไปแท็บอื่น</p>
+    <div class="nums">
+      <div class="nb"><b>1,546</b>บ้าน / ระบบติดตั้ง · แท็บ "ถึงคิวล้าง"</div>
+      <div class="nb"><b>919</b>งานบริการ · แท็บ "ติดตาม" (ที่เหลือไปอยู่ ติดต่อไม่ได้ 277 · สิทธิ์หมด 463 ฯลฯ)</div>
+    </div>
+    <div class="opts">
+      <div class="opt rec">
+        <div class="tag"><span class="k">B1</span> เอาแท็บออก — คิวล้างดูที่งานบริการที่เดียว · แนะนำ</div>
+        <div class="demo"><span class="tab cut" style="padding:0">ถึงคิวล้าง (1,546)</span>
+          <div style="margin-top:6px;color:var(--gray-500)">ในตารางยังเห็นคอลัมน์ "ล้างล่าสุด" (สีส้มเมื่อเลยรอบ) เหมือนเดิม</div></div>
+        <div class="v ok"><span class="m">✓</span><span>คนใช้เห็นตัวเลขคิวล้างชุดเดียว · หน้านี้เหลือแท็บเรื่องคุณภาพข้อมูลล้วน ๆ</span></div>
+        <div class="v no"><span class="m">✕</span><span>อยากได้รายชื่อบ้านที่ไม่เคยล้างทั้งหมด (รวมหลังที่ไม่มีเบอร์/สิทธิ์หมด) ต้องไปรวมจากหลายแท็บในหน้างานบริการ</span></div>
+      </div>
+      <div class="opt">
+        <div class="tag"><span class="k">B2</span> คงไว้ เปลี่ยนชื่อเป็น "ไม่เคยล้าง / เลยรอบ"</div>
+        <div class="demo">แท็บ <b>ไม่เคยล้าง / เลยรอบ (1,546)</b> + หมายเหตุใต้แท็บ "ไม่ใช่คิวโทร — คิวโทรอยู่หน้างานบริการ"</div>
+        <div class="v ok"><span class="m">✓</span><span>ยังกรองบ้านที่ไม่เคยล้างได้จากหน้าทะเบียน</span></div>
+        <div class="v no"><span class="m">✕</span><span>ยังมีสองตัวเลข ต้องอ่านหมายเหตุถึงจะเข้าใจ</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="dec">
+    <h3><span class="k">C</span> ปุ่ม "+ เพิ่มบ้าน"</h3>
+    <p>ตอนนี้ปุ่มไม่ได้ผูกคำสั่งอะไรไว้ — กดแล้วไม่มีอะไรเกิดขึ้น · บ้านเข้าระบบเองอยู่แล้ว 3 ทาง:
+      ทะเบียน REM (ทุก 6 ชม.) · งานขายที่ติดตั้งเสร็จ (ทุก 1 ชม.) · คิวจับคู่ที่แอดมินตัดสิน</p>
+    <div class="opts">
+      <div class="opt rec">
+        <div class="tag"><span class="k">C1</span> เอาปุ่มออกไปก่อน · แนะนำ ถ้ายังไม่มีเคสจริง</div>
+        <div class="demo">ช่องค้นหาเต็มความกว้าง ไม่มีปุ่มข้าง ๆ (แบบในภาพ desktop)</div>
+        <div class="v ok"><span class="m">✓</span><span>ไม่มีปุ่มหลอก · ไม่มีบ้านที่สร้างมือแล้วชนกับบ้านที่ REM ส่งมาทีหลัง</span></div>
+        <div class="v no"><span class="m">✕</span><span>ถ้ามีลูกค้าที่ไม่อยู่ใน 3 ทางนี้ ต้องให้แอดมินเพิ่มผ่านข้อมูลนำเข้า</span></div>
+      </div>
+      <div class="opt">
+        <div class="tag"><span class="k">C2</span> ทำฟอร์มเพิ่มบ้านจริง</div>
+        <div class="demo"><span class="actbtn">+ เพิ่มบ้าน</span> → เปิด modal แบบเดียวกับรายละเอียดบ้าน (ช่องว่าง): บ้านเลขที่ · โครงการ (ไม่บังคับ) · ลูกค้า · เบอร์ · ขนาดระบบ · วันติดตั้ง</div>
+        <div class="v ok"><span class="m">✓</span><span>รองรับลูกค้านอกระบบ เช่น ติดตั้งกับเจ้าอื่นแล้วมาใช้บริการ O&amp;M</span></div>
+        <div class="v no"><span class="m">✕</span><span>งานเพิ่ม: API สร้างบ้าน + กันบ้านซ้ำกับ REM · ต้องตกลงว่าใครกดได้</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────── 5. ไม่เปลี่ยน / ขอบเขต ───────────── -->
+<section>
+  <h2>5 · ขอบเขต</h2>
+  <div class="keep">
+    <div class="box">
+      <h3>ไม่เปลี่ยน</h3>
+      <ul>
+        <li>desktop ยังเป็นตาราง คอลัมน์เดิมทั้งหมด · มือถือยังเป็นการ์ด</li>
+        <li>หน้าต่างรายละเอียดบ้าน (เพิ่งจัด 2 คอลัมน์ + ที่มาข้อมูลในการ์ด)</li>
+        <li>แท็บคุณภาพข้อมูล ตัวเลข และการแบ่งหน้า — API เดิมทุกตัว</li>
+        <li>รายการใน dropdown โครงการ (โครงการ · กลุ่มพิเศษ · กลุ่มที่ซ่อน)</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>ไฟล์ที่ต้องแก้ (ชุดแนะนำ)</h3>
+      <ul>
+        <li><code>src/app/(app)/om/houses/page.tsx</code> — หัว ListPageHeader · แถวเครื่องมือ · ตัดแถบสรุป · ลูกศรแทนปุ่มแก้ไข · ตัดแท็บ/ปุ่ม ตามที่เลือก</li>
+        <li><code>src/components/om/SyncBar.tsx</code> — เพิ่มแบบบรรทัดเดียว + กล่องรายละเอียด (A1) หรือย้ายไปหน้าตั้งค่า (A2)</li>
+        <li>ไม่แก้ API / ฐานข้อมูล (ยกเว้นเลือก C2)</li>
+        <li>ไม่รวมรอบนี้: dropdown "เรียง" แบบฝั่งขาย — ต้องแก้ API เพิ่ม ทำทีหลังได้</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+</div>
+</body>
+</html>

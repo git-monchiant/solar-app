@@ -1,5 +1,6 @@
 "use client";
 import { LineIcon, UserIcon } from "@/components/ui/icons";
+import { formatThaiDate } from "@/lib/utils/formatters";
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
@@ -139,7 +140,7 @@ export default function LinePickerModal({ target, onClose, onLinked }: Props) {
                         <div className="text-sm font-semibold text-gray-900 truncate">{u.display_name || "LINE User"}</div>
                         <div className="text-xs text-gray-400 truncate">
                           {u.created_at
-                            ? new Date(u.created_at).toLocaleString("th-TH", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Bangkok" })
+                            ? formatThaiDate(u.created_at, { year: false, time: true, timeZone: "Asia/Bangkok" })
                             : ""}
                         </div>
                       </div>

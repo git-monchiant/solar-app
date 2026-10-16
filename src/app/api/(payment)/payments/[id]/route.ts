@@ -3,6 +3,7 @@ import { getDb, sql } from "@/lib/db";
 import { requireAdmin, requireAuth } from "@/lib/auth";
 import { syncOrderPaidFlags } from "@/lib/payments-helpers";
 import { logLeadActivity, paymentStepLabel, fmtBaht } from "@/lib/lead-activity-log";
+import { refreshJourneySafe } from "@/lib/journey";
 import { notifyAccountingRole, notifyLeadOwner, resolveAccountingNotifications } from "@/lib/accounting-notifications";
 import { syncOperationalSlas } from "@/lib/sla-service";
 
@@ -176,6 +177,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         userId: gate.userId,
       });
 
+      await refreshJourneySafe(db, pay.lead_id);
       await resolveAccountingNotifications(db, {
         paymentId: payId,
         leadId: pay.lead_id,
@@ -271,6 +273,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
                   cheque_status_at = GETDATE()
                 WHERE id = @id`);
       await syncOrderPaidFlags(db, pay.lead_id).catch(e => console.error("syncOrderPaidFlags failed:", e));
+      await refreshJourneySafe(db, pay.lead_id);
       await logLeadActivity(db, {
         leadId: pay.lead_id,
         activityType: failedStatus === "bounced" ? "payment_cheque_bounced" : "payment_cheque_cancelled",
@@ -405,6 +408,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
 
       await syncOrderPaidFlags(db, pay.lead_id).catch(e => console.error("syncOrderPaidFlags failed:", e));
+      await refreshJourneySafe(db, pay.lead_id);
       await logLeadActivity(db, {
         leadId: pay.lead_id,
         activityType: "payment_confirmed",
@@ -535,6 +539,8 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     if (/^order_installment_\d+$/.test(slipField)) {
       await syncOrderPaidFlags(db, pay.lead_id).catch(e => console.error("syncOrderPaidFlags failed:", e));
     }
+
+    await refreshJourneySafe(db, pay.lead_id);
 
     await logLeadActivity(db, {
       leadId: pay.lead_id,

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { formatTHB } from "@/lib/utils/formatters";
 import { useParams, useRouter } from "next/navigation";
 import { getUserIdHeader } from "@/lib/api";
 
@@ -30,11 +31,7 @@ const escapeHtml = (value: unknown) =>
         char
       ] || char,
   );
-const money = (value: unknown) =>
-  Number(value || 0).toLocaleString("th-TH", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+const money = (value: unknown) => formatTHB(Number(value || 0), { decimals: 2 });
 function buildDraftHtml(draft: DraftPreview) {
   const lead = draft.lead;
   const rows = [...draft.packageItems, ...draft.items]

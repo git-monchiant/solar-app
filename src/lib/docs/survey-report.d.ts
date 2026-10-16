@@ -12,6 +12,8 @@ type SurveyReportOptions = {
     contractAmount?: number;
     depositAmount?: number;
     netAmount?: number;
+    /** งวดสุดท้ายในใบเสนอราคา (% และยอดเงินจริงหลังหักเงินจอง) — ยอดผ่อนบัตรใน §8 */
+    lastInstallment?: { percent: number; amount: number };
   };
   /** ชื่อแพ็กเกจที่จะแสดงใน §4 — บรรทัดแรกของรายการในใบเสนอราคา */
   packageTitle?: string;
@@ -28,8 +30,12 @@ type SurveyReportOptions = {
   };
 };
 
-/** Build the 15-page survey report HTML for one lead (hybrid fill — blanks stay blank). */
+/** Build the survey report HTML for one lead (hybrid fill — blanks stay blank).
+ *  15 pages; 14 (loan) or 13 (cash/card) when financial.inputs.payment_method narrows the payment section. */
 export function buildSurveyReportHtml(L: LeadRow, D: LeadRow, PKG: LeadRow | null, options?: SurveyReportOptions): string;
+
+/** Number of A4 pages in HTML returned by buildSurveyReportHtml. */
+export function countSurveyReportPages(html: string): number;
 
 /** Absolute path of the accepted quotation PDF to append as ภาคผนวก ก, or null. */
 export function quotationPdfPath(L: LeadRow): string | null;

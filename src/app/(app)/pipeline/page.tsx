@@ -2,10 +2,15 @@
 
 import { apiFetch } from "@/lib/api";
 import { CheckIcon } from "@/components/ui/icons";
+import { useSearchParams } from "next/navigation";
+import { useActiveMenuItem } from "@/lib/hooks/useActiveModule";
+import Dropdown from "@/components/ui/Dropdown";
 import { useEffect, useState, useCallback } from "react";
 import ListPageHeader from "@/components/layout/ListPageHeader";
 import LeadCard, { type LeadData } from "@/components/lead/LeadCard";
 import { useActiveRoles, hasRole, useMe } from "@/lib/roles";
+import { normalizeSourceKey, SOURCE_STYLES } from "@/lib/source-tag";
+import Loading from "@/components/ui/Loading";
 import SlaFilterChips from "@/components/sla/SlaFilterChips";
 import SlaSubFilter, { SLA_SUB_SELECT_CLASS } from "@/components/sla/SlaSubFilter";
 import { slaPolicyOrder, slaTaskLabel } from "@/lib/sla-display";
@@ -28,6 +33,8 @@ interface Lead {
   house_number: string | null;
   status: string;
   source: string;
+  /** touchpoint channels เพิ่มเติมระหว่างทาง — JSON array string เช่น '["line_sena"]' */
+  tag: string | null;
   note: string | null;
   contact_date: string;
   created_at: string;
@@ -49,6 +56,8 @@ interface Lead {
   order_before_ready_count?: number | null;
   order_ready_count?: number | null;
   order_total_count?: number | null;
+  journey_step?: number | null;
+  journey_sub?: number | null;
   /** งาน SLA ที่ใกล้ครบกำหนดที่สุดของ lead — /api/leads ส่งมาแค่ตัวบนสุดตัวเดียว */
   sla_status?: "active" | "warning" | "critical" | "breached" | null;
   sla_started_at?: string | null;
@@ -61,68 +70,87 @@ interface Lead {
   sla_done_breached_at?: string | null;
 }
 
-type TabKey = "all" | "pre_survey" | "booking" | "survey" | "quotation" | "order" | "deposit" | "wait_install" | "install" | "installing" | "warranty" | "gridtie" | "lost";
+type TabKey = "all" | "pre_survey" | "booking" | "survey" | "quotation" | "order" | "quote_process" | "install_process" | "warranty_process" | "wait_install" | "install" | "installing" | "warranty" | "gridtie" | "handover" | "lost";
 type SortField = "follow_up" | "created" | "name" | "activity" | "survey_date" | "install_date";
 type SortOrder = "asc" | "desc";
 
-const TAB_KEYS: TabKey[] = ["all","pre_survey","booking","survey","quotation","order","deposit","wait_install","install","installing","warranty","gridtie","lost"];
+const TAB_KEYS: TabKey[] = ["all","pre_survey","booking","survey","quotation","order","quote_process","install_process","warranty_process","wait_install","install","installing","warranty","gridtie","handover","lost"];
 const SORT_FIELDS: SortField[] = ["follow_up", "created", "name", "activity", "survey_date", "install_date"];
 
-// Booking = pre_survey lead ที่กดยืนยันการชำระเงิน 1 หรือ 2 แล้ว
-// (status เป็น pre_survey-01 หรือ pre_survey-02). plain `pre_survey` =
-// ก่อนกดยืนยัน 1 → ไป tab "รอติดตาม" ตามปกติ
+const parseTags = (raw: string | null | undefined): string[] => {
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr.filter((t): t is string => typeof t === "string") : [];
+  } catch { return []; }
+};
+
+// จัดกลุ่มช่องทางเป็น bucket มาตรฐานชุดเดียวกับ dashboard (normalizeSourceKey):
+// โค้ดสะกดต่าง/ค่า other:xxx ทั้งหมด ยุบรวมตามกติกากลาง — "อื่นๆ" เป็นตัวเลือกเดียว
+// เรียงตามตัวอักษรของป้าย (ยกเว้น "อื่นๆ" ไว้ท้ายสุด)
+const buildGroups = (values: string[]) => {
+  const keys = new Set<string>();
+  for (const v of values) keys.add(normalizeSourceKey(v));
+  return [...keys]
+    .map((key) => ({ value: key, label: SOURCE_STYLES[key as keyof typeof SOURCE_STYLES]?.label ?? key }))
+    .sort((a, b) => {
+      if (a.value === "other") return 1;
+      if (b.value === "other") return -1;
+      return a.label.localeCompare(b.label, "th");
+    });
+};
+
+// Tab = กลุ่มของ journey code ที่ persist บน leads.journey_step/journey_sub
+// (กติกา: src/lib/journey-rules.mjs · design: docs/plan/20260813-01-journey-step-codes.md)
 //
-// `todayYmd` — "YYYY-MM-DD" of today's local date, used to split install tabs:
-//   install     → install_date strictly in the future (waiting for the day)
-//   installing  → install_date ≤ today (day has arrived/passed but the lead
-//                 still sits in the install workflow — e.g. ติดตั้งเสร็จ ticked
-//                 but ส่งมอบ not yet, so the macro `status` is still "install").
-// Both ignore install_completed_at and are status-agnostic except for excluding
-// terminal states (warranty / lost / returned) — matches the dashboard's
-// stepInstallScheduledRows / stepInstallingRows split.
+// install/installing ยัง split ด้วย install_date สดๆ (journey_sub 710/720 เกลี่ย
+// รายคืน อาจช้าได้ ~1 วัน) และคงเงื่อนไขเงิน "งวดก่อนติดตั้งครบ" ไว้ — งานที่ยัง
+// เก็บเงินไม่ครบไม่ควรขึ้นกระดานติดตั้ง (งวดที่ติ๊ก "ชำระหลังติดตั้ง" ไม่นับ
+// ไม่งั้นงาน 20/80 หายจากกระดานทันทีที่นัดวัน — ตรงกับ today API)
 const matchesTab = (l: Lead, key: TabKey, todayYmd: string): boolean => {
   if (key === "all") return true;
-  if (key === "pre_survey") return l.status === "pre_survey";
-  if (key === "booking") return l.status === "pre_survey-01" || l.status === "pre_survey-02";
-  if (key === "lost") return l.status === "lost" || l.status === "returned";
-  if (key === "quotation") return l.status === "quote";
-  // Split 'order' status by paid deposit — ≥1 confirmed installment goes to
-  // "ชำระมัดจำ", the rest stays in "รออนุมัติ/ชำระ".
-  if (key === "order") return l.status === "order" && (l.order_ready_count ?? l.order_paid_count ?? 0) === 0;
-  if (key === "deposit") return l.status === "order" && (l.order_paid_count ?? 0) >= 1;
-  // "รอนัดติดตั้ง" — paid the deposit but no install date scheduled yet.
-  // Status not gated (could be order or install) but we exclude lost.
-  if (key === "wait_install") return ((l.order_ready_count ?? l.order_paid_count ?? 0) > 0) && !l.install_date && !l.install_completed_at && l.status !== "lost" && l.status !== "returned";
-  // "Done" statuses match dashboard's stepDoneRows — once a lead moves into
-  // warranty/gridtie/closed it belongs to the warranty/done section, not here.
-  //
-  // Install readiness: normal payments count after confirmed_at; cheque rows
-  // count after cheque_received_at so Sale/Install can proceed while
-  // Accounting still confirms the actual money later.
+  if (key === "pre_survey") return l.journey_step === 100;
+  if (key === "booking") return l.journey_step === 200;
+  if (key === "survey") return l.journey_step === 300;
+  if (key === "quotation") return l.journey_step === 400;
+  if (key === "order") return l.journey_step === 500;
+  // กระบวนการใบเสนอทั้งวง: รอทำใบเสนอ → รออนุมัติ → รอชำระ (400 คลุมช่วงรออนุมัติอยู่แล้ว)
+  if (key === "quote_process") return l.journey_step === 400 || l.journey_step === 500;
+  // กระบวนการติดตั้ง: รอนัด → รอ/กำลังติดตั้ง (ออกใบรับประกันเป็นงานหลังติดตั้ง ไม่รวม)
+  // — นับตาม journey ตรงๆ ไม่ใส่ money gate เพื่อให้เท่ากับ badge
+  if (key === "install_process") return l.journey_step === 600 || l.journey_step === 700;
+  // งานรับประกันทั้งวง (การ์ดโมดูล Warranty): รอออกใบรับประกัน + รอขอขนานไฟ
+  if (key === "warranty_process") return l.journey_step === 800 || l.journey_step === 900;
+  if (key === "wait_install") return l.journey_step === 600;
+  if (key === "warranty") return l.journey_step === 800;
+  if (key === "gridtie") return l.journey_step === 900;
+  if (key === "handover") return l.journey_step === 1000;
+  if (key === "lost") return l.journey_step === 9800 || l.journey_step === 9900;
   const totalCount = l.order_total_count ?? 0;
-  const paidCount = l.order_paid_count ?? 0;
-  // เงื่อนไขขึ้นกระดาน = งวด "ก่อนติดตั้ง" ต้องรับเงินครบ ส่วนงวดที่ติ๊ก
-  // "ชำระหลังติดตั้ง" เก็บที่ Step 05 จึงไม่นับ ไม่งั้นงาน 20/80 จะหายจาก
-  // รอติดตั้ง/กำลังติดตั้ง ทันทีที่นัดวัน (ตรงกับ today API)
   const beforeTotal = l.order_before_total_count ?? totalCount;
-  const beforeReady = l.order_before_ready_count ?? l.order_before_paid_count ?? paidCount;
-  const allInstallReady = totalCount > 0 && beforeReady >= beforeTotal;
-  const installScheduled = allInstallReady && !!l.install_date
-    && l.status !== "warranty" && l.status !== "gridtie" && l.status !== "closed"
-    && l.status !== "lost" && l.status !== "returned";
-  if (key === "install") return installScheduled && l.install_date!.slice(0, 10) > todayYmd;
-  if (key === "installing") return installScheduled && l.install_date!.slice(0, 10) <= todayYmd;
-  return l.status === key;
+  const beforeReady = l.order_before_ready_count ?? l.order_before_paid_count ?? l.order_paid_count ?? 0;
+  const gateOk = totalCount > 0 && beforeReady >= beforeTotal;
+  if (key === "install") return l.journey_step === 700 && gateOk && !!l.install_date && l.install_date.slice(0, 10) > todayYmd;
+  if (key === "installing") return l.journey_step === 700 && gateOk && (!l.install_date || l.install_date.slice(0, 10) <= todayYmd);
+  return false;
 };
 
 export default function PipelinePage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
+  const searchParams = useSearchParams();
+  // ?tab= จากเมนูโมดูล/deep link ชนะค่าที่จำไว้ — ไม่มีก็ใช้ tab ล่าสุดจาก localStorage
   const [tab, setTab] = useState<TabKey>(() => {
     if (typeof window === "undefined") return "all";
+    const fromUrl = new URLSearchParams(window.location.search).get("tab") as TabKey | null;
+    if (fromUrl && TAB_KEYS.includes(fromUrl)) return fromUrl;
     const saved = localStorage.getItem("pipelineTab") as TabKey | null;
     return saved && TAB_KEYS.includes(saved) ? saved : "all";
   });
+  useEffect(() => {
+    const t = searchParams.get("tab") as TabKey | null;
+    if (t && TAB_KEYS.includes(t)) setTab(t);
+  }, [searchParams]);
   const { activeRoles } = useActiveRoles();
   const isSales = hasRole(activeRoles, "sales");
   const isSolar = hasRole(activeRoles, "solar");
@@ -142,6 +170,13 @@ export default function PipelinePage() {
     return localStorage.getItem("pipeline.sortOrder") === "desc" ? "desc" : "asc";
   });
   const [search, setSearch] = useState("");
+  // filter ช่องทาง (source) + tag — "all" = ไม่กรอง
+  const [sourceFilter, setSourceFilter] = useState("all");
+  const [tagFilter, setTagFilter] = useState("all");
+  // โหมดโมดูล: left menu ทำหน้าที่เลือก tab (ผ่าน ?tab=) → ซ่อนแถบ tab แนวนอน
+  // และหัวเรื่องหน้า = ชื่อเมนูที่ active (จาก hook กลาง ไม่ต้องรู้จักเมนูเอง)
+  const { module: activeModule, item: activeMenuItem } = useActiveMenuItem();
+  const moduleMode = !!activeModule;
   // จำค่าไว้แบบเดียวกับ pipeline.sortField เพราะ Pipeline เป็นหน้าที่เปิดค้างทั้งวัน
   // ต่างจาก Today ที่จำใน URL เพราะใช้ส่งลิงก์หากันมากกว่า
   const [slaFilters, setSlaFilters] = useState<SlaFilterKey[]>(() => {
@@ -220,6 +255,16 @@ export default function PipelinePage() {
   }, [tab, sortField]);
 
   const todayYmd = new Date().toISOString().slice(0, 10);
+
+  // ตัวเลือกใน dropdown = lead source (แหล่งแรก) ของรายการในเมนู/แท็บปัจจุบันเท่านั้น
+  // (จัดกลุ่มการสะกด + เรียงตามจำนวนมาก → น้อย) — ช่องทางที่ไม่มี lead ในหน้านี้ไม่แสดง
+  const tabLeads = leads.filter(l => matchesTab(l, tab, todayYmd));
+  const sourceOptions = buildGroups(tabLeads.map(l => l.source).filter(Boolean));
+  const tagOptions = buildGroups(tabLeads.flatMap(l => parseTags(l.tag)));
+
+  // เปลี่ยนเมนู/แท็บ → ล้าง filter กันค่าที่ไม่มีในหน้าใหม่ค้างกรองแบบมองไม่เห็น
+  useEffect(() => { setSourceFilter("all"); setTagFilter("all"); }, [tab]);
+
   const matchesSearch = (l: Lead) => {
     if (!search.trim()) return true;
     const q = search.trim().toLowerCase();
@@ -250,7 +295,11 @@ export default function PipelinePage() {
 
   // ตัวเลขบนชิปต้องเป็น "จำนวนที่จะเห็นจริงเมื่อกด" จึงนับหลังกรองแท็บ คำค้น และงานของฉันแล้ว
   // แต่ก่อนกรอง SLA ไม่งั้นพอติ๊กปุ่มหนึ่ง ตัวเลขปุ่มที่เหลือจะกลายเป็น 0 หมด
-  const tabScoped = leads.filter(l => matchesTab(l, tab, todayYmd)).filter(matchesSearch).filter(matchesMine);
+  // กรองช่องทาง/tag ก่อนเข้าเครื่องกรอง SLA — ตัวเลขบนชิป SLA จะได้ตรงกับรายการที่เห็นจริง
+  const tabScoped = tabLeads
+    .filter(l => sourceFilter === "all" || (l.source && normalizeSourceKey(l.source) === sourceFilter))
+    .filter(l => tagFilter === "all" || parseTags(l.tag).some(t => normalizeSourceKey(t) === tagFilter))
+    .filter(matchesSearch).filter(matchesMine);
 
   // ตัวเลือกสร้างจากรายการในแท็บก่อนกรอง SLA ตัวเลือกจึงไม่หายไปเองตอนกำลังเลือก
   const slaStageOptions = Array.from(
@@ -309,7 +358,7 @@ export default function PipelinePage() {
     return counts;
   }, { breached: 0, near_due: 0, active: 0, done_ontime: 0, without: 0 } as Record<SlaFilterKey, number>);
 
-  const filtered = sortLeads(slaScoped.filter(l => {
+  const filteredBase = sortLeads(slaScoped.filter(l => {
     if (slaFilters.length === 0) return true;
     // normalizeSlaFilters การันตีว่า "ไม่มีงาน SLA" กับ "เสร็จตามกำหนด" อยู่ตัวเดียวเสมอ
     if (slaFilters.includes("without") || slaFilters.includes("done_ontime")) {
@@ -317,6 +366,13 @@ export default function PipelinePage() {
     }
     return matchesSlaStatus(l.sla_status, slaStatusKeys);
   }));
+
+  // list รวมกระบวนการ (ใบเสนอ/ติดตั้ง): จัดกลุ่มตามลำดับขั้น journey ก่อน
+  // — sort ของผู้ใช้ยังมีผลภายในแต่ละกลุ่ม (Array.sort เสถียร)
+  const filtered = tab === "quote_process" || tab === "install_process" || tab === "warranty_process"
+    ? [...filteredBase].sort((a, b) =>
+        ((a.journey_step ?? 0) - (b.journey_step ?? 0)) || ((a.journey_sub ?? 0) - (b.journey_sub ?? 0)))
+    : filteredBase;
 
   const countFor = (key: TabKey) => key === "all" ? leads.length : leads.filter(l => matchesTab(l, key, todayYmd)).length;
 
@@ -328,13 +384,16 @@ export default function PipelinePage() {
     { key: "booking",    label: "รายการจอง" },
     { key: "survey",     label: "รอสำรวจ" },
     { key: "quotation",  label: "รอใบเสนอราคา" },
+    { key: "quote_process", label: "ใบเสนอราคา" },
+    { key: "install_process", label: "ติดตั้ง" },
+    { key: "warranty_process", label: "รับประกัน" },
     { key: "order",      label: "รอเสนอลูกค้า" },
-    { key: "deposit",    label: "ชำระมัดจำ" },
-    { key: "wait_install", label: "รอนัดติดตั้ง" },
+    { key: "wait_install", label: "มัดจำแล้ว รอนัดติดตั้ง" },
     { key: "install",    label: "รอติดตั้ง" },
     { key: "installing", label: "กำลังติดตั้ง" },
     { key: "warranty",   label: "รอออกใบรับประกัน" },
-    { key: "gridtie",    label: "ขอขนานไฟ" },
+    { key: "gridtie",    label: "รอขอขนานไฟ" },
+    { key: "handover",   label: "ส่งมอบแล้ว" },
     { key: "lost",       label: "ยกเลิก" },
   ];
   const visible = isAdmin || isSales || isSolar || isAccount;
@@ -343,20 +402,43 @@ export default function PipelinePage() {
   return (
     <div>
       <ListPageHeader
-        title="Pipeline"
-        subtitle="ALL LEADS & CUSTOMERS"
+        title={moduleMode ? (activeMenuItem?.label ?? ALL_TABS.find(t => t.key === tab)?.label ?? "Pipeline") : "Pipeline"}
+        subtitle={moduleMode ? undefined : "ALL LEADS & CUSTOMERS"}
+        tabsLeft={moduleMode ? (
+          <div className="flex items-center gap-2">
+            <span className="whitespace-nowrap">
+              {(sourceFilter !== "all" || tagFilter !== "all") ? filtered.length : countFor(tab)} รายการ
+            </span>
+            {/* filter ช่องทาง/Tag เฉพาะ list "ทั้งหมด" — list รายขั้นเอาแค่จำนวนพอ */}
+            {tab === "all" && (
+            <Dropdown
+              className="w-40 font-normal"
+              value={sourceFilter}
+              onChange={(v) => setSourceFilter(v || "all")}
+              options={[{ value: "all", label: "ช่องทางทั้งหมด" }, ...sourceOptions]}
+            />
+            )}
+            {tab === "all" && tagOptions.length > 0 && (
+              <Dropdown
+                className="w-36 font-normal"
+                value={tagFilter}
+                onChange={(v) => setTagFilter(v || "all")}
+                options={[{ value: "all", label: "Tag ทั้งหมด" }, ...tagOptions]}
+              />
+            )}
+          </div>
+        ) : undefined}
         search={search}
         onSearchChange={setSearch}
         searchPlaceholder="ค้นหาชื่อ, เบอร์, โครงการ..."
-        tabs={TABS}
+        tabs={moduleMode ? [] : TABS}
         activeTab={tab}
         onTabChange={(k) => { setTab(k as TabKey); localStorage.setItem("pipelineTab", k); }}
       />
 
       <div className="p-3 md:p-4">
-        {/* ทั้งแถวอยู่ในตัวหน้า ไม่ใช่ tabsRight — tabsRight ซ่อนบนจอแคบ ติ๊กไว้แล้วจะปลดไม่ได้
-            และแถวแท็บ 13 ปุ่มก็ไม่เหลือที่ให้ยืน · ปุ่มเรียงย้ายลงมาด้วย จะได้ไม่เบียดแท็บ
-            และใช้ได้บนมือถือด้วย (เดิมซ่อนทิ้งไปเลย) */}
+        {/* แถวตัวกรอง SLA + เรียงข้อมูล อยู่ในตัวหน้า ไม่ใช่ tabsRight — tabsRight ซ่อนบนจอแคบ
+            ติ๊กไว้แล้วจะปลดไม่ได้ · ปุ่มเรียงย้ายลงมาด้วย จะได้ใช้บนมือถือได้ (เดิมซ่อนทิ้งไปเลย) */}
         <div className="mb-3 flex flex-wrap items-center gap-2 px-1">
           {slaAvailable && (
             <SlaFilterChips
@@ -429,40 +511,42 @@ export default function PipelinePage() {
               </span>
               งานของฉัน
             </button>
-            <select
+            <Dropdown
+              className="w-36"
               value={sortField}
-              onChange={(e) => {
-                const v = e.target.value as typeof sortField;
-                setSortField(v);
-                localStorage.setItem("pipeline.sortField", v);
+              onChange={(v) => {
+                if (!v) return;
+                const s = v as typeof sortField;
+                setSortField(s);
+                localStorage.setItem("pipeline.sortField", s);
               }}
-              className="h-7 px-2 pr-6 rounded-md border border-gray-200 bg-white text-xxs font-medium text-gray-700 focus:outline-none focus:border-gray-400"
-            >
-              <option value="follow_up">วันนัดติดตาม</option>
-              <option value="created">วันที่สร้าง</option>
-              <option value="activity">กิจกรรมล่าสุด</option>
-              {tab === "survey" && <option value="survey_date">วันที่สำรวจ</option>}
-              {tab === "install" && <option value="install_date">วันที่ติดตั้ง</option>}
-              <option value="name">ชื่อลูกค้า</option>
-            </select>
-            <select
+              options={[
+                { value: "follow_up", label: "วันนัดติดตาม" },
+                { value: "created", label: "วันที่สร้าง" },
+                { value: "activity", label: "กิจกรรมล่าสุด" },
+                ...(tab === "survey" ? [{ value: "survey_date", label: "วันที่สำรวจ" }] : []),
+                ...(tab === "install" ? [{ value: "install_date", label: "วันที่ติดตั้ง" }] : []),
+                { value: "name", label: "ชื่อลูกค้า" },
+              ]}
+            />
+            <Dropdown
+              className="w-32"
               value={sortOrder}
-              onChange={(e) => {
-                const v = e.target.value as typeof sortOrder;
-                setSortOrder(v);
-                localStorage.setItem("pipeline.sortOrder", v);
+              onChange={(v) => {
+                if (!v) return;
+                const s = v as typeof sortOrder;
+                setSortOrder(s);
+                localStorage.setItem("pipeline.sortOrder", s);
               }}
-              className="h-7 px-2 pr-6 rounded-md border border-gray-200 bg-white text-xxs font-medium text-gray-700 focus:outline-none focus:border-gray-400"
-            >
-              <option value="asc">{sortField === "name" ? "ก-ฮ" : "เก่า → ใหม่"}</option>
-              <option value="desc">{sortField === "name" ? "ฮ-ก" : "ใหม่ → เก่า"}</option>
-            </select>
+              options={[
+                { value: "asc", label: sortField === "name" ? "ก-ฮ" : "เก่า → ใหม่" },
+                { value: "desc", label: sortField === "name" ? "ฮ-ก" : "ใหม่ → เก่า" },
+              ]}
+            />
           </div>
         </div>
         {loading ? (
-          <div className="flex items-center justify-center py-16">
-            <div className="w-10 h-10 border-3 border-gray-200 border-t-primary rounded-full animate-spin" />
-          </div>
+          <Loading />
         ) : filtered.length === 0 ? (
           <div className="text-center py-16 text-gray-400 text-sm">ไม่พบรายการ</div>
         ) : (

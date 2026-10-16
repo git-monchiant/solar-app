@@ -2,6 +2,7 @@
 
 import { apiFetch } from "@/lib/api";
 import { getNotificationTarget } from "@/lib/notification-navigation";
+import { loadB2bNotifications, markB2bNotifications, wantsB2bNotifications } from "@/lib/b2b/notification-client";
 import { useActiveRoles } from "@/lib/roles";
 import { formatThaiDate } from "@/lib/utils/formatters";
 import Link from "next/link";
@@ -10,7 +11,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 type NotificationItem = {
   id: number;
-  notification_source: "quotation" | "accounting";
+  notification_source: "quotation" | "accounting" | "b2b";
   lead_id: number;
   approval_stage: string | null;
   title: string;
@@ -25,7 +26,9 @@ type NotificationItem = {
 
 export default function NotificationBell() {
   const router = useRouter();
-  const { activeRoles } = useActiveRoles();
+  const { activeRoles, availableRoles } = useActiveRoles();
+  // แจ้งเตือน B2B (แผน 20261015-11) อยู่คนละ API — ดึงมารวมเฉพาะผู้ใช้ที่มี role B2B
+  const withB2b = wantsB2bNotifications(availableRoles);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<NotificationItem[]>([]);
@@ -46,26 +49,28 @@ export default function NotificationBell() {
 
   const loadSummary = useCallback(async () => {
     try {
-      const data = await apiFetch(summaryUrl);
-      setUnreadCount(Number(data.unread_count) || 0);
+      const [data, b2b] = await Promise.all([apiFetch(summaryUrl), withB2b ? loadB2bNotifications(true) : null]);
+      setUnreadCount((Number(data.unread_count) || 0) + (b2b?.unread_count ?? 0));
     } catch {
       // The bell must never block the rest of the header.
     }
-  }, [summaryUrl]);
+  }, [summaryUrl, withB2b]);
 
   const loadItems = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const data = await apiFetch(notificationUrl);
-      setItems((data.items || []).slice(0, 8));
-      setUnreadCount(Number(data.unread_count) || 0);
+      const [data, b2b] = await Promise.all([apiFetch(notificationUrl), withB2b ? loadB2bNotifications<NotificationItem>(false) : null]);
+      const merged = [...(data.items || []), ...(b2b?.items ?? [])] as NotificationItem[];
+      merged.sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+      setItems(merged.slice(0, 8));
+      setUnreadCount((Number(data.unread_count) || 0) + (b2b?.unread_count ?? 0));
     } catch (e) {
       setError(e instanceof Error ? e.message : "โหลดการแจ้งเตือนไม่สำเร็จ");
     } finally {
       setLoading(false);
     }
-  }, [notificationUrl]);
+  }, [notificationUrl, withB2b]);
 
   useEffect(() => {
     void loadSummary();
@@ -111,6 +116,7 @@ export default function NotificationBell() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ all: true }),
       });
+      if (withB2b) await markB2bNotifications({ all: true });
       const readAt = new Date().toISOString();
       setItems((current) => current.map((item) => ({ ...item, read_at: item.read_at || readAt })));
       setUnreadCount(0);
@@ -123,7 +129,8 @@ export default function NotificationBell() {
   const openItem = async (item: NotificationItem) => {
     if (!item.read_at) {
       try {
-        await apiFetch(notificationUrl, {
+        if (item.notification_source === "b2b") await markB2bNotifications({ id: item.id });
+        else await apiFetch(notificationUrl, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: item.id, source: item.notification_source }),
@@ -146,7 +153,7 @@ export default function NotificationBell() {
         onClick={toggle}
         aria-label={`การแจ้งเตือน${unreadCount > 0 ? `ที่ยังไม่อ่าน ${unreadCount} รายการ` : ""}`}
         aria-expanded={open}
-        className={`relative flex h-9 w-9 items-center justify-center rounded-full border transition-colors ${open ? "border-primary/30 bg-primary/10 text-primary" : "border-gray-200 bg-white/80 text-gray-600 hover:bg-white"}`}
+        className={`relative flex h-9 w-9 items-center justify-center rounded-full transition-colors ${open ? "bg-primary/10 text-primary" : "text-gray-400 hover:text-gray-600 hover:bg-black/5"}`}
       >
         <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />

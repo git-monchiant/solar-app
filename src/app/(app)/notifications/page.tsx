@@ -3,13 +3,14 @@
 import Header from "@/components/layout/Header";
 import { apiFetch } from "@/lib/api";
 import { getNotificationTarget } from "@/lib/notification-navigation";
+import { loadB2bNotifications, markB2bNotifications, wantsB2bNotifications } from "@/lib/b2b/notification-client";
 import { useActiveRoles } from "@/lib/roles";
 import { formatThaiDate } from "@/lib/utils/formatters";
 import { useCallback, useEffect, useState } from "react";
 
 type NotificationItem = {
   id: number;
-  notification_source: "quotation" | "accounting";
+  notification_source: "quotation" | "accounting" | "b2b";
   quotation_id: number;
   lead_id: number;
   notification_type: string;
@@ -27,7 +28,8 @@ type NotificationItem = {
 };
 
 export default function NotificationsPage() {
-  const { activeRoles } = useActiveRoles();
+  const { activeRoles, availableRoles } = useActiveRoles();
+  const withB2b = wantsB2bNotifications(availableRoles);   // แจ้งเตือน B2B คนละ API (แผน 20261015-11)
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -46,15 +48,17 @@ export default function NotificationsPage() {
   const load = useCallback(async () => {
     try {
       setError("");
-      const data = await apiFetch(notificationUrl);
-      setItems(data.items || []);
-      setUnreadCount(Number(data.unread_count) || 0);
+      const [data, b2b] = await Promise.all([apiFetch(notificationUrl), withB2b ? loadB2bNotifications<NotificationItem>(false) : null]);
+      const merged = [...(data.items || []), ...(b2b?.items ?? [])] as NotificationItem[];
+      merged.sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+      setItems(merged);
+      setUnreadCount((Number(data.unread_count) || 0) + (b2b?.unread_count ?? 0));
     } catch (e) {
       setError(e instanceof Error ? e.message : "โหลดการแจ้งเตือนไม่สำเร็จ");
     } finally {
       setLoading(false);
     }
-  }, [notificationUrl]);
+  }, [notificationUrl, withB2b]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -66,6 +70,7 @@ export default function NotificationsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ all: true }),
       });
+      if (withB2b) await markB2bNotifications({ all: true });
       setItems((current) => current.map((item) => ({ ...item, read_at: item.read_at || new Date().toISOString() })));
       setUnreadCount(0);
       window.dispatchEvent(new Event("notifications:changed"));
@@ -79,7 +84,8 @@ export default function NotificationsPage() {
   const openItem = async (item: NotificationItem) => {
     if (!item.read_at) {
       try {
-        await apiFetch(notificationUrl, {
+        if (item.notification_source === "b2b") await markB2bNotifications({ id: item.id });
+        else await apiFetch(notificationUrl, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: item.id, source: item.notification_source }),

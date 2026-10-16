@@ -1,12 +1,42 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql, fixDates, toSqlDate } from "@/lib/db";
-import { requireAuth } from "@/lib/auth";
+import { getEffectiveRolesFromReq, requireAuth } from "@/lib/auth";
 import { logLeadActivity, fmtThaiDate } from "@/lib/lead-activity-log";
 import { validateDocNo } from "@/lib/doc-number";
 import { getGridTieFinalMissing } from "@/lib/gridTie";
+import { refreshJourneySafe } from "@/lib/journey";
 import { installmentAmount, netTotalOf, parseInstallmentRows, type InstallmentRow } from "@/lib/installments";
 import { processGradeChange, syncOperationalSlas } from "@/lib/sla-service";
 import { slaLiveStatusSql } from "@/lib/lead-sla-sql";
+import { hasEvCharger, parseLoadProfile, serializeLoadProfile } from "@/lib/load-assumption";
+
+type PlanRowLike = { pct?: unknown; amount?: unknown; when?: unknown; method?: unknown; loan_bank?: unknown; cc_pct?: unknown };
+
+/**
+ * แผนงวดเปลี่ยนในส่วนที่กระทบยอดเงินหรือไม่ — จำนวนงวด, %, ยอด, ก่อน/หลังติดตั้ง, วิธีชำระ
+ *
+ * หน้าจอส่ง order_installments มาทุกครั้งที่บันทึกอัตโนมัติ แม้ผู้ใช้แก้แค่วันติดตั้ง
+ * จึงต้องเทียบแบบทนต่อรูปแบบข้อมูล (null กับค่าว่าง, "10" กับ 10) ไม่อย่างนั้นการบันทึก
+ * ช่องอื่นจะโดนปฏิเสธไปด้วยทั้งที่แผนไม่ได้เปลี่ยน · ไม่เทียบวันครบกำหนดเพราะไม่กระทบยอด
+ * · ไม่เทียบ % ของงวดสุดท้ายที่ไม่ได้กำหนดยอด เพราะหน้าจอคำนวณใหม่จากงวดอื่นทุกครั้ง
+ */
+function planMoneyChanged(prev: PlanRowLike[], next: PlanRowLike[]): boolean {
+  if (!Array.isArray(prev) || !Array.isArray(next)) return true;
+  if (prev.length !== next.length) return true;
+  const num = (v: unknown) => (v == null || v === "" ? null : Math.round(Number(v) * 100) / 100);
+  const txt = (v: unknown, fallback: string | null) => (v == null || v === "" ? fallback : String(v));
+  let remainderIdx = -1;
+  next.forEach((row, i) => { if (num(row?.amount) == null) remainderIdx = i; });
+  return next.some((n, i) => {
+    const p = prev[i] ?? {};
+    return (i !== remainderIdx && num(p.pct) !== num(n?.pct))
+      || num(p.amount) !== num(n?.amount)
+      || txt(p.when, "before") !== txt(n?.when, "before")
+      || txt(p.method, "transfer") !== txt(n?.method, "transfer")
+      || txt(p.loan_bank, null) !== txt(n?.loan_bank, null)
+      || num(p.cc_pct) !== num(n?.cc_pct);
+  });
+}
 
 const statusLabels: Record<string, string> = {
   pre_survey: "รอติดตาม",
@@ -59,6 +89,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
                -- these were never on leads to begin with.
                d.house_age,
                d.occupant_total,
+               d.occupant_adults,
                d.occupant_elderly,
                d.occupant_kids,
                d.occupant_pets,
@@ -73,6 +104,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
                d.work_days_per_week,
                d.ac_split,
                d.ev_charge_period,
+               d.load_profile,
                -- Questionnaire §4 (migration 041).
                d.future_ev,
                d.future_ev_charger,
@@ -97,7 +129,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
                -- Questionnaire §9 (migration 153).
                d.occupation,
                d.age_range,
-               d.household_income
+               d.household_income,
+               -- Asked with the demographics block (migration 194).
+               d.payment_interest
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
         LEFT JOIN packages pk ON l.interested_package_id = pk.id
@@ -185,10 +219,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       grid_inspection_date: Date | null;
       grid_approved_date: Date | null;
       grid_meter_changed_date: Date | null;
+      lost_reason: string | null;
     } | null = null;
+    // ข้อความลง Timeline ตอนดึงลีดที่ยกเลิกกลับมาติดตาม — ตั้งค่าในบล็อก reopen ด้านล่าง
+    let reopenNote: string | null = null;
     {
       const current = await db.request().input("id", sql.Int, leadId).query(`
-        SELECT status, payment_confirmed,
+        SELECT status, payment_confirmed, lost_reason,
                survey_date, survey_time_slot, install_date, install_time_slot, next_follow_up,
                survey_ready_at, survey_ready_by, survey_ready_note,
                survey_confirmed, install_confirmed, install_completed_at,
@@ -204,6 +241,48 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       if (current.recordset.length > 0) {
         oldRow = current.recordset[0];
         oldStatus = oldRow?.status ?? null;
+        // ดึงลีดที่ยกเลิกกลับมาติดตาม — เซลส์ทุกคนกดได้ (sales, หัวหน้าเซลส์, admin)
+        // เดิมลีด lost ไม่มีทางกลับ ปุ่ม Set Revisit Date เก็บวันไว้เฉย ๆ เพราะหน้า Today
+        // ตัดลีด lost ออกทุกคิว จึงต้องบังคับวันติดตามถัดไป ลีดจะกลับเข้าคิวทันที
+        if (body.reopen_from_lost === true) {
+          if (oldStatus !== "lost") {
+            return NextResponse.json({ error: "ลีดนี้ไม่ได้อยู่ในสถานะยกเลิก" }, { status: 400 });
+          }
+          const roleRow = await db.request().input("uid", sql.Int, gate.userId)
+            .query(`SELECT roles FROM users WHERE id = @uid AND is_active = 1`);
+          let assignedRoles: string[] = [];
+          try {
+            const parsed = JSON.parse(roleRow.recordset[0]?.roles || "[]");
+            if (Array.isArray(parsed)) assignedRoles = parsed;
+          } catch { assignedRoles = []; }
+          const actingRoles = getEffectiveRolesFromReq(req, assignedRoles);
+          if (!actingRoles.some(r => r === "admin" || r === "sales" || r === "sales_sup")) {
+            return NextResponse.json({ error: "เฉพาะทีมขายดึงลีดกลับมาติดตามได้" }, { status: 403 });
+          }
+          if (!body.next_follow_up) {
+            return NextResponse.json({ error: "กรุณากำหนดวันติดตามครั้งถัดไป" }, { status: 400 });
+          }
+          // Grade F คือ "ไม่สนใจ — ปิดเคส" ถ้ายังเป็น F ลีดจะถูกนับเป็นยกเลิกซ้ำ
+          const gradeAfter = body.customer_grade !== undefined ? body.customer_grade : oldRow?.customer_grade;
+          if (gradeAfter === "F") {
+            return NextResponse.json({ error: "กรุณาเลือก Grade ใหม่ (Grade F หมายถึงไม่สนใจ)" }, { status: 400 });
+          }
+          // คืนสถานะก่อนยกเลิกจากประวัติ ยกเว้นยกเลิกตอนรออนุมัติ/ชำระ ให้กลับไป
+          // รอใบเสนอราคา เพราะราคาเดิมน่าจะต้องเสนอใหม่ · ไม่มีประวัติถือว่ารอติดตาม
+          const before = await db.request().input("lead_id", sql.Int, leadId).query(`
+            SELECT TOP 1 old_status FROM lead_activities
+            WHERE lead_id = @lead_id AND activity_type = 'status_change'
+              AND new_status = 'lost' AND old_status IS NOT NULL AND old_status <> 'lost'
+            ORDER BY id DESC
+          `);
+          const statusBeforeLost = before.recordset[0]?.old_status as string | undefined;
+          body.status = statusBeforeLost === "order" ? "quote" : (statusBeforeLost || "pre_survey");
+          body.lost_reason = null;
+          body.revisit_date = null;
+          const extra = String(body.reopen_note || "").trim();
+          reopenNote = `ดึงกลับมาติดตาม · เหตุผลที่เคยยกเลิก: ${oldRow?.lost_reason || "ไม่ได้ระบุ"}`
+            + (extra ? ` · หมายเหตุ: ${extra}` : "");
+        }
         // BOOK_SURVEY starts from confirmed payment. The lead PATCH path is
         // used by the zero-baht/free flow; normal payments are stamped by the
         // payments API at the Account confirmation transaction.
@@ -373,7 +452,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     pushLd("bill_photo_url",   sql.NVarChar(500),     body.pre_bill_photo_url);
     // Questionnaire §1 fields (migration 038).
     pushLd("house_age",        sql.NVarChar(20),      body.house_age);
-    pushLd("occupant_total",   sql.Int,               body.occupant_total);
+    // occupant_total is NOT taken from the body — it is derived below from the
+    // people counts (migration 199), so a stale or pet-inclusive total from any
+    // client can never land.
+    pushLd("occupant_adults",  sql.Int,               body.occupant_adults);
     pushLd("occupant_elderly", sql.Int,               body.occupant_elderly);
     pushLd("occupant_kids",    sql.Int,               body.occupant_kids);
     pushLd("occupant_pets",    sql.Int,               body.occupant_pets);
@@ -388,6 +470,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     pushLd("work_days_per_week", sql.NVarChar(20),      body.work_days_per_week);
     pushLd("ac_split",           sql.NVarChar(sql.MAX), body.ac_split);
     pushLd("ev_charge_period",   sql.NVarChar(20),      body.ev_charge_period);
+    // Appliance load answers (migration 198). Re-serialised through the shared
+    // parser so a hand-made PATCH can't store garbage or absurd numbers.
+    pushLd("load_profile",       sql.NVarChar(sql.MAX),
+      body.load_profile === undefined ? undefined : serializeLoadProfile(parseLoadProfile(body.load_profile)));
     // Questionnaire §4 (migration 041).
     pushLd("future_ev",           sql.NVarChar(20), body.future_ev);
     pushLd("future_ev_charger",   sql.NVarChar(10), body.future_ev_charger);
@@ -413,6 +499,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     pushLd("occupation",       sql.NVarChar(200), body.occupation);
     pushLd("age_range",        sql.NVarChar(20),  body.age_range);
     pushLd("household_income", sql.NVarChar(20),  body.household_income);
+    // Single PAYMENT_INTERESTS code, asked with the block above (migration 194).
+    pushLd("payment_interest", sql.NVarChar(100), body.payment_interest);
     // ─────────────────────────────────────────────────────────────────────
 
     if (body.status !== undefined) {
@@ -620,6 +708,43 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             const changed = prev.pct !== next.pct || prev.when !== next.when || prev.method !== next.method || prev.loan_bank !== next.loan_bank;
             if (changed) {
               return NextResponse.json({ error: `งวดที่ ${idx + 1} ชำระแล้ว — แก้ไขข้อมูลไม่ได้ ต้องถอน confirm ก่อน` }, { status: 409 });
+            }
+          }
+          // 3. แผนงวดล็อกตั้งแต่ส่งสลิป ไม่ต้องรอบัญชียืนยัน — หน้าจอล็อกให้แล้ว แต่หน้าที่
+          //    เปิดค้างไว้ก่อนเซลส์ส่งสลิปยังไม่รู้ว่ามีสลิปรออยู่ จึงต้องกันที่นี่อีกชั้น
+          //    (ลีด 1070: แผน 30/60/10 กลายเป็น 30/0/70 ระหว่างรอบัญชียืนยัน)
+          //    Admin ผ่านได้ สำหรับกรณีต้องแก้ข้อมูลด้วยมือ
+          if (planMoneyChanged(prevArr, newArr)) {
+            const pending = await db.request()
+              .input("lead_id", sql.Int, leadId)
+              .query(`
+                SELECT slip_field FROM slip_files
+                WHERE lead_id = @lead_id AND submitted_at IS NOT NULL
+                  AND slip_field LIKE 'order_installment_%'
+                UNION
+                SELECT slip_field FROM payments
+                WHERE lead_id = @lead_id AND confirmed_at IS NULL AND cheque_received_at IS NOT NULL
+                  AND slip_field LIKE 'order_installment_%'
+              `);
+            if (pending.recordset.length > 0) {
+              const roleRow = await db.request().input("uid", sql.Int, gate.userId)
+                .query(`SELECT roles FROM users WHERE id = @uid`);
+              let assignedRoles: string[] = [];
+              try {
+                const parsed = JSON.parse(roleRow.recordset[0]?.roles || "[]");
+                if (Array.isArray(parsed)) assignedRoles = parsed;
+              } catch { assignedRoles = []; }
+              if (!getEffectiveRolesFromReq(req, assignedRoles).includes("admin")) {
+                const rows = pending.recordset
+                  .map((r: { slip_field: string }) => parseInt(r.slip_field.replace("order_installment_", "")) + 1)
+                  .filter((n: number) => !isNaN(n))
+                  .sort((a: number, b: number) => a - b)
+                  .map((n: number) => `งวดที่ ${n}`)
+                  .join(", ");
+                return NextResponse.json({
+                  error: `สลิป${rows} รอบัญชียืนยัน — แก้แผนงวดได้หลังบัญชียืนยันหรือตีกลับสลิป (โหลดหน้าใหม่เพื่อดูสถานะล่าสุด)`,
+                }, { status: 409 });
+              }
             }
           }
         }
@@ -1429,6 +1554,34 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           INSERT (${insertCols}, updated_at)
           VALUES (${insertVals}, SYSUTCDATETIME());
       `);
+      // ผู้อยู่อาศัยรวม = ผู้ใหญ่ + ผู้สูงอายุ + เด็ก — never pets. Recomputed from
+      // the stored parts because the info tab PATCHes one counter at a time.
+      if (ldFields.some(f => f.col.startsWith("occupant_"))) {
+        await db.request().input("ld_lead_id", sql.Int, leadId).query(`
+          UPDATE lead_data
+          SET occupant_total = NULLIF(ISNULL(occupant_adults, 0) + ISNULL(occupant_elderly, 0) + ISNULL(occupant_kids, 0), 0)
+          WHERE lead_id = @ld_lead_id
+        `);
+      }
+      // EV answers mean something only when the customer HAS a charger.
+      // Refuse a charge period / EV load answers without one, and drop both
+      // when the charger is switched to "ไม่มี" — same as the form does, but
+      // enforced here so no client (info tab, a stale form instance) can
+      // bring back the leftovers migration 201 cleaned up.
+      if (ldFields.some(f => f.col === "ev_charge_period" || f.col === "appliances" || f.col === "load_profile")) {
+        const cur = (await db.request().input("ld_lead_id", sql.Int, leadId)
+          .query(`SELECT appliances, ev_charge_period, load_profile FROM lead_data WHERE lead_id = @ld_lead_id`)).recordset[0];
+        if (cur && !hasEvCharger(cur.appliances)) {
+          const profile = parseLoadProfile(cur.load_profile);
+          const hadEvAnswers = !!profile.ev;
+          delete profile.ev;
+          if (cur.ev_charge_period !== null || hadEvAnswers) {
+            await db.request().input("ld_lead_id", sql.Int, leadId)
+              .input("lp", sql.NVarChar(sql.MAX), serializeLoadProfile(profile))
+              .query(`UPDATE lead_data SET ev_charge_period = NULL, load_profile = @lp WHERE lead_id = @ld_lead_id`);
+          }
+        }
+      }
     }
     // If the leads UPDATE was skipped (only lead_data fields), recordset is
     // empty — caller doesn't get the updated lead echoed. Most callers
@@ -1736,7 +1889,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         // who-when-why instead of just the status delta.
         const lostNote = body.status === "lost" && body.lost_reason
           ? String(body.lost_reason)
-          : null;
+          : reopenNote;
         // Stamp the actual user (was hardcoded 1 = Admin, which broke
         // attribution for seeker-driven status changes via sync).
         await db.request()
@@ -1772,6 +1925,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
 
     await syncOperationalSlas(db, leadId, gate.userId);
+    await refreshJourneySafe(db, leadId);
 
     // When only lead_data was touched, the UPDATE leads above was skipped so
     // result.recordset is empty. Echo the current row by re-reading so the

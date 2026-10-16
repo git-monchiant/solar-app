@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql } from "@/lib/db";
+import { refreshJourneySafe } from "@/lib/journey";
 import { ensureFirstContactSla } from "@/lib/sla-service";
 import { parseThaiLocation } from "@/lib/thai-location";
 
@@ -342,6 +343,7 @@ export async function POST(req: NextRequest) {
         )
       `);
     const leadId = ins.recordset[0].id as number;
+    await refreshJourneySafe(db, leadId);
 
     // 4. lead_data — questionnaire §2 fields
     await db

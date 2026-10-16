@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql, fixDates, toSqlDate } from "@/lib/db";
 import { getUserIdFromReq } from "@/lib/auth";
+import { refreshJourneySafe } from "@/lib/journey";
 import { processContactActivity, syncOperationalSlas } from "@/lib/sla-service";
 import type { ContactResult } from "@/lib/sla-rules";
 
@@ -110,6 +111,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       });
     }
     await syncOperationalSlas(db, leadId, userId);
+    await refreshJourneySafe(db, leadId);
+
 
     return NextResponse.json(result.recordset[0], { status: 201 });
   } catch (error) {

@@ -1,5 +1,7 @@
 "use client";
 import { CheckIcon, PlusIcon } from "@/components/ui/icons";
+import Dropdown from "@/components/ui/Dropdown";
+import { useActiveModuleKey } from "@/lib/hooks/useActiveModule";
 
 import { apiFetch } from "@/lib/api";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ComponentProps } from "react";
@@ -23,6 +25,7 @@ import ChannelPickerModal from "@/components/shared/ChannelPickerModal";
 import type { ChannelValue } from "@/lib/constants/channels";
 import { useActiveRoles, hasRole, useMe } from "@/lib/roles";
 import EventCalendarList from "@/components/calendar/EventCalendarList";
+import Loading from "@/components/ui/Loading";
 
 interface TodayData {
   newLeads: LeadData[];
@@ -109,6 +112,12 @@ export default function TodayPage() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<TodayTab>("sales_all");
   const [search, setSearch] = useState("");
+  // โหมดโมดูล: left menu ทำหน้าที่แยกมุมมองแล้ว → ซ่อนแถบ tab และคง Today ไว้ที่
+  // มุมมองรวม (sales_all — ถ้า role ไม่มี fallback เป็น tab แรกที่มองเห็นตามเดิม)
+  const moduleMode = !!useActiveModuleKey();
+  useEffect(() => {
+    if (moduleMode) setTab("sales_all");
+  }, [moduleMode]);
   const [zones, setZones] = useState<{ id: number; name: string; color?: string | null }[]>([]);
   const [selectedZone, setSelectedZone] = useState<string>("");
   const [channelPickerOpen, setChannelPickerOpen] = useState(false);
@@ -357,9 +366,7 @@ export default function TodayPage() {
 
   if (loading || activeRoles.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="w-10 h-10 border-3 border-gray-200 border-t-gray-900 rounded-full animate-spin" />
-      </div>
+      <Loading />
     );
   }
 
@@ -425,9 +432,9 @@ export default function TodayPage() {
       surveyToday: pick(raw.surveyToday),
       surveyPending: pick(raw.surveyPending),
       quotationPending: pick(raw.quotationPending),
-      // Split รอเสนอราคา (no installment paid yet) from ชำระมัดจำ (≥1 confirmed)
-      installPending: installAll.filter(l => (l.order_paid_count ?? 0) === 0),
-      depositPaid: installAll.filter(l => (l.order_paid_count ?? 0) >= 1),
+      // Split ด้วย journey: 500 = รอเสนอ/รอชำระ (รวมรอยืนยันเงินงวด) · 600 = มัดจำแล้ว
+      installPending: installAll.filter(l => l.journey_step === 500),
+      depositPaid: installAll.filter(l => l.journey_step === 600),
       waitInstall: pick(raw.waitInstall),
       installScheduled: pick(raw.installScheduled),
       warranty: pick(raw.warranty),
@@ -452,8 +459,11 @@ export default function TodayPage() {
   const solarCount = bookingPaidCount + d.surveyToday.length + d.surveyPending.length + d.quotationPending.length + d.waitInstall.length + d.installScheduled.length + d.warranty.length;
   const salesSolarCount = d.quotationPending.length;
 
-  const isSales = hasRole(activeRoles, "sales");
-  const isSolar = hasRole(activeRoles, "solar");
+  // admin/account เห็นทั้งสองมุมมอง — หลักเดียวกับ effect ตรวจ tab ด้านบน ไม่งั้น
+  // admin เปิด Today แล้ว allTabs เหลือแค่ปฏิทิน (โหมดโมดูลซ่อน tab ยิ่งดูเหมือนหน้า Calendar)
+  const isAdminishTabs = hasRole(activeRoles, "admin", "account");
+  const isSales = hasRole(activeRoles, "sales") || isAdminishTabs;
+  const isSolar = hasRole(activeRoles, "solar") || isAdminishTabs;
   // Solar sub-tabs — survey/install grouped from the same data buckets the
   // ทีมโซลาร์ tab uses, so each section can be reached directly without
   // scrolling.
@@ -469,7 +479,7 @@ export default function TodayPage() {
   const solarInstallingCount = installInProgress.length;
   const solarWarrantyCount = d.warranty.length;
   // ใช้ชุดข้อมูลและเงื่อนไขเดียวกับ Pipeline > ขอขนานไฟ
-  const solarGridtie = filterLeads(allLeads || []).filter(l => l.status === "gridtie");
+  const solarGridtie = filterLeads(allLeads || []).filter(l => l.journey_step === 900);
 
   const sortLeads = (leads: LeadData[], dateField?: "survey_date" | "install_date"): LeadData[] => {
     const ts = (v: string | null | undefined, fallback: number) =>
@@ -692,32 +702,36 @@ export default function TodayPage() {
         <span className="hidden xl:inline text-xxs font-semibold text-gray-500">เรียงตามความเร่งด่วนของ SLA</span>
       ) : (
         <>
-          <select
+          <Dropdown
+            className="w-36 max-md:hidden"
             value={sortField}
-            onChange={(e) => {
-              const v = e.target.value as typeof sortField;
-              setSortField(v);
-              localStorage.setItem("today.sortField", v);
+            onChange={(v) => {
+              if (!v) return;
+              const s = v as typeof sortField;
+              setSortField(s);
+              localStorage.setItem("today.sortField", s);
             }}
-            className="hidden h-7 px-2 pr-6 rounded-md border border-gray-200 bg-white text-xxs font-medium text-gray-700 focus:outline-none focus:border-gray-400 md:block"
-          >
-            <option value="follow_up">วันนัดติดตาม</option>
-            <option value="created">วันที่สร้าง</option>
-            <option value="activity">กิจกรรมล่าสุด</option>
-            <option value="name">ชื่อลูกค้า</option>
-          </select>
-          <select
+            options={[
+              { value: "follow_up", label: "วันนัดติดตาม" },
+              { value: "created", label: "วันที่สร้าง" },
+              { value: "activity", label: "กิจกรรมล่าสุด" },
+              { value: "name", label: "ชื่อลูกค้า" },
+            ]}
+          />
+          <Dropdown
+            className="w-32 max-md:hidden"
             value={sortOrder}
-            onChange={(e) => {
-              const v = e.target.value as typeof sortOrder;
-              setSortOrder(v);
-              localStorage.setItem("today.sortOrder", v);
+            onChange={(v) => {
+              if (!v) return;
+              const s = v as typeof sortOrder;
+              setSortOrder(s);
+              localStorage.setItem("today.sortOrder", s);
             }}
-            className="hidden h-7 px-2 pr-6 rounded-md border border-gray-200 bg-white text-xxs font-medium text-gray-700 focus:outline-none focus:border-gray-400 md:block"
-          >
-            <option value="asc">{sortField === "name" ? "ก-ฮ" : "เก่า → ใหม่"}</option>
-            <option value="desc">{sortField === "name" ? "ฮ-ก" : "ใหม่ → เก่า"}</option>
-          </select>
+            options={[
+              { value: "asc", label: sortField === "name" ? "ก-ฮ" : "เก่า → ใหม่" },
+              { value: "desc", label: sortField === "name" ? "ฮ-ก" : "ใหม่ → เก่า" },
+            ]}
+          />
         </>
       )}
     </div>
@@ -735,7 +749,7 @@ export default function TodayPage() {
         search={search}
         onSearchChange={setSearch}
         searchPlaceholder="ค้นหาชื่อ, เบอร์..."
-        tabs={allTabs}
+        tabs={moduleMode ? [] : allTabs}
         activeTab={visibleTab}
         onTabChange={(k) => setTab(k as TodayTab)}
       />
@@ -755,20 +769,12 @@ export default function TodayPage() {
             ที่ไม่อยู่ใน bucket ใดข้างบน (เพื่อให้เห็น lead ครบทุกใบเหมือน pipeline) */}
         {visibleTab === "sales_all" && (
           <>
-            {/* First section header + sort controls on a single row.
-                When overdue is empty, the controls sit alone right-aligned. */}
-            <div className="flex items-center justify-between mb-3 px-1 gap-3 flex-wrap">
-              {d.followUpOverdue.length > 0 ? (
-                <h2 className="text-xs font-bold tracking-wider uppercase text-red-600">เลยกำหนดติดตาม</h2>
-              ) : <div />}
-              <div className="flex items-center gap-2">
-                {d.followUpOverdue.length > 0 && (
-                  <span className="text-xs font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">{d.followUpOverdue.length}</span>
-                )}
-              </div>
-            </div>
             {d.followUpOverdue.length > 0 && (
               <section>
+                <div className="flex items-center justify-between mb-3 px-1">
+                  <h2 className="text-xs font-bold tracking-wider uppercase text-red-600">เลยกำหนดติดตาม</h2>
+                  <span className="text-xs font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">{d.followUpOverdue.length}</span>
+                </div>
                 <div className="space-y-3">{sortLeads(d.followUpOverdue).map((l) => <LeadCard key={l.id} lead={l} />)}</div>
               </section>
             )}
@@ -892,18 +898,12 @@ export default function TodayPage() {
          * ที่ยังไม่ถึงวัน follow-up → ไปดู pipeline */}
         {visibleTab === "sales" && (
           <>
-            <div className="flex items-center justify-between mb-3 px-1 gap-3 flex-wrap">
-              {d.followUpOverdue.length > 0 ? (
-                <h2 className="text-xs font-bold tracking-wider uppercase text-red-600">เลยกำหนดติดตาม</h2>
-              ) : <div />}
-              <div className="flex items-center gap-2">
-                {d.followUpOverdue.length > 0 && (
-                  <span className="text-xs font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">{d.followUpOverdue.length}</span>
-                )}
-              </div>
-            </div>
             {d.followUpOverdue.length > 0 && (
               <section>
+                <div className="flex items-center justify-between mb-3 px-1">
+                  <h2 className="text-xs font-bold tracking-wider uppercase text-red-600">เลยกำหนดติดตาม</h2>
+                  <span className="text-xs font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">{d.followUpOverdue.length}</span>
+                </div>
                 <div className="space-y-3">{sortLeads(d.followUpOverdue).map((l) => <LeadCard key={l.id} lead={l} />)}</div>
               </section>
             )}
@@ -957,9 +957,7 @@ export default function TodayPage() {
             <section>
               <div className="flex items-center justify-between mb-3 px-1">
                 <h2 className="text-xs font-bold tracking-wider uppercase text-emerald-700">รายการจอง · รอนัดสำรวจ</h2>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">{d.booking.length}</span>
-                </div>
+                <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">{d.booking.length}</span>
               </div>
               <div className="space-y-3">{sortLeads(d.booking).map((l) => <LeadCard key={l.id} lead={l} />)}</div>
             </section>
@@ -1505,9 +1503,7 @@ function AccountTodayView({ leads, search, setSearch }: { leads: LeadData[]; sea
       />
       <div className="p-3 md:p-6">
         {reportLoading ? (
-          <div className="flex items-center justify-center py-20">
-            <div className="w-10 h-10 border-3 border-gray-200 border-t-primary rounded-full animate-spin" />
-          </div>
+          <Loading />
         ) : filtered.length === 0 ? (
           <div className="bg-white rounded-xl border border-gray-300 p-12 text-center">
             <div className="text-sm text-gray-400">ไม่มีรายการรอยืนยัน</div>

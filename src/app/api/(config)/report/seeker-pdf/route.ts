@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import puppeteer from "puppeteer";
+import { formatNumber } from "@/lib/utils/formatters";
 import { getDb } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 
@@ -36,7 +37,7 @@ function renderReportHtml(rows: Row[], asOfDate: string): string {
     not_interested: acc.not_interested + r.not_interested,
   }), { name: "", total: 0, has_solar: 0, no_solar: 0, line_count: 0, interested_new: 0, interested_upgrade: 0, undecided: 0, not_home: 0, pending: 0, not_interested: 0 });
 
-  const num = (n: number) => (n > 0 ? n.toLocaleString("en") : "-");
+  const num = (n: number) => (n > 0 ? formatNumber(n) : "-");
   const tr = (r: Row, idx: number | null) => `
     <tr>
       <td class="c idx">${idx === null ? "" : idx + 1}</td>

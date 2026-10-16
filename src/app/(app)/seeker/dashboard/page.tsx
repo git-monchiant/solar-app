@@ -1,11 +1,12 @@
 "use client";
 import { CheckIcon, DownloadIcon, XIcon } from "@/components/ui/icons";
+import { formatNumber } from "@/lib/utils/formatters";
 
 import { apiFetch, getUserIdHeader } from "@/lib/api";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Header from "@/components/layout/Header";
 import { useDialog } from "@/components/ui/Dialog";
-import { formatNumber } from "@/lib/utils/formatters";
+import Loading from "@/components/ui/Loading";
 
 type StatusKey = "pending" | "contacted" | "interested" | "not_interested";
 
@@ -163,9 +164,7 @@ export default function SeekerDashboardPage() {
 
       <div className="px-4 md:px-5 py-4 space-y-4">
         {loading ? (
-          <div className="flex items-center justify-center py-16">
-            <div className="w-8 h-8 border-3 border-gray-200 border-t-gray-900 rounded-full animate-spin" />
-          </div>
+          <Loading />
         ) : (
           <>
             {/* Top KPI row */}

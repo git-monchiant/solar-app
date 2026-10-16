@@ -16,6 +16,10 @@ interface DropdownProps {
   className?: string;
   /** Extra class for the button — useful for font-mono on numeric values. */
   buttonClassName?: string;
+  /** Button height utility; default h-8 matches compact form inputs. */
+  heightClassName?: string;
+  /** เปิดช่องพิมพ์ค้นหาในตัวเลือก — ใช้เมื่อ options ยาวจนไล่หาไม่ไหว (label ต้องเป็น string) */
+  searchable?: boolean;
   /**
    * เปิดรายการ "พิมพ์เอง…" ท้าย popover สำหรับช่องที่ catalogue ครอบไม่หมด
    * (หน้างานเปลี่ยนอุปกรณ์เป็นรุ่นที่ยังไม่มีในแพ็กเกจได้เสมอ) ปิดไว้เป็นค่าเริ่มต้น
@@ -32,14 +36,16 @@ interface DropdownProps {
 export default function Dropdown({
   value, onChange, options,
   placeholder = "— เลือก —",
-  disabled, className, buttonClassName, allowCustom,
+  disabled, className, buttonClassName, heightClassName, searchable, allowCustom,
 }: DropdownProps) {
   const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
   // โหมดพิมพ์เอง: ปุ่มกลายเป็น input ชั่วคราว ค่าจะยังไม่ถูกเขียนกลับจนกด Enter
   // หรือคลิกออก — กด Escape ทิ้งสิ่งที่พิมพ์แล้วกลับไปใช้ค่าเดิม
   const [typing, setTyping] = useState(false);
   const [draft, setDraft] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (!open) setQ(""); }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -65,6 +71,10 @@ export default function Dropdown({
   // shows in the button and survives the round-trip.
   const unlisted = !selected && value ? { value, label: value } : null;
   const shownOptions = unlisted ? [unlisted, ...options] : options;
+  const shown = searchable && q.trim()
+    ? shownOptions.filter(o => (typeof o.label === "string" ? o.label : o.value)
+        .toLowerCase().includes(q.trim().toLowerCase()))
+    : shownOptions;
 
   const startTyping = () => { setDraft(value); setTyping(true); setOpen(false); };
   const commitTyping = () => {
@@ -85,11 +95,11 @@ export default function Dropdown({
             if (e.key === "Enter") { e.preventDefault(); commitTyping(); }
             if (e.key === "Escape") { e.preventDefault(); setTyping(false); }
           }}
-          className={`w-full h-8 px-3 rounded-lg border border-primary bg-white text-sm focus:outline-none ${buttonClassName ?? ""}`}
+          className={`w-full ${heightClassName ?? "h-8"} px-3 rounded-lg border border-primary bg-white text-sm focus:outline-none ${buttonClassName ?? ""}`}
         />
       ) : (
       <button type="button" disabled={disabled} onClick={() => setOpen(o => !o)}
-        className={`w-full h-8 pl-3 pr-8 rounded-lg border text-left text-sm flex items-center transition-colors focus:outline-none ${
+        className={`w-full ${heightClassName ?? "h-8"} pl-3 pr-8 rounded-lg border text-left text-sm flex items-center transition-colors focus:outline-none ${
           disabled ? "bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed"
           : open    ? "bg-white border-primary"
                     : "bg-white border-gray-200 hover:border-active/40"
@@ -106,7 +116,14 @@ export default function Dropdown({
       )}
 
       {open && !disabled && (
-        <div className="absolute z-20 left-0 right-0 mt-1 max-h-60 overflow-auto rounded-lg border border-gray-200 bg-white shadow-lg py-1">
+        <div className="absolute z-20 left-0 right-0 mt-1 rounded-lg border border-gray-200 bg-white shadow-lg">
+          {searchable && (
+            <div className="p-1.5 border-b border-gray-100">
+              <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="พิมพ์ค้นหา…"
+                className="w-full h-8 px-2.5 rounded-md border border-gray-200 text-sm outline-none focus:border-primary" />
+            </div>
+          )}
+          <div className="max-h-60 overflow-auto py-1">
           {/* ล้างค่าโดยไม่ต้องรู้ทริค: เดิมทำได้ด้วยการกดตัวที่เลือกอยู่ซ้ำ ซึ่งไม่มี
               อะไรบอกเลยว่าทำได้ ตั้งชื่อว่า "ไม่ระบุ" ไม่ใช่ "ยกเลิก" เพราะมันคือค่า
               ไม่ใช่การกระทำ — คนที่อยากแค่ปิด dropdown จะได้ไม่กดแล้วค่าหาย
@@ -117,7 +134,8 @@ export default function Dropdown({
               <span className="truncate">— ไม่ระบุ —</span>
             </button>
           )}
-          {shownOptions.map(opt => {
+          {shown.length === 0 && <div className="px-3 py-2 text-sm text-gray-400">ไม่พบตัวเลือก</div>}
+          {shown.map(opt => {
             const active = opt.value === value;
             return (
               <button key={opt.value} type="button"
@@ -144,6 +162,7 @@ export default function Dropdown({
               <span className="truncate">พิมพ์เอง…</span>
             </button>
           )}
+          </div>
         </div>
       )}
     </div>

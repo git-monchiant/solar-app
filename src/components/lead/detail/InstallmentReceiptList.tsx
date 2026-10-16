@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { formatTHB } from "@/lib/utils/formatters";
 import ReceiptButtons from "./ReceiptButtons";
 import ActualReceiptUpload from "./ActualReceiptUpload";
 
@@ -136,7 +137,7 @@ export default function InstallmentReceiptList({ leadId, preDocNo, when, refresh
     <div className="space-y-2">
       {withOffsets.map(p => {
         const label = `งวดที่ ${p.idx + 1}`;
-        const amountStr = p.amount ? `฿${Math.round(p.amount).toLocaleString()}` : "";
+        const amountStr = p.amount ? `฿${formatTHB(Math.round(p.amount))}` : "";
         const fileLabel = `${preDocNo || `lead_${leadId}`}_inst${p.idx + 1}`;
         return (
           <div key={p.id} className="rounded-lg border border-gray-200 bg-white p-3 space-y-2">

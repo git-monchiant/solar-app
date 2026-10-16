@@ -24,6 +24,8 @@ export interface LeadData {
   customer_grade?: string | null;
   customer_group?: string | null;
   status: string;
+  journey_step?: number | null;
+  journey_sub?: number | null;
   source: string;
   note: string;
   contact_date: string;
@@ -189,13 +191,23 @@ export default function LeadCard({ lead, compact, onAssignChange, onOpen, slaFoo
             //   order (paid≥1, no install_date) → รอนัดติดตั้ง
             //   install_date set → รอติดตั้ง
             //   warranty/gridtie/closed → รับประกัน
-            const FLOW_STAGES = ["pre_survey", "booking", "survey", "quote", "order", "wait_install", "install", "warranty"] as const;
+            const FLOW_STAGES = ["pre_survey", "booking", "survey", "quote", "order", "wait_install", "install", "installing", "warranty"] as const;
+            // ตำแหน่งบน flow อ่านจาก journey_step ที่ persist แล้ว (นิยามเดียวกับ
+            // เมนูโมดูล/pipeline) — fallback derive แบบเก่าเฉพาะแถวที่ยังไม่มีค่า
+            const JOURNEY_TO_FLOW: Record<number, typeof FLOW_STAGES[number]> = {
+              100: "pre_survey", 200: "booking", 300: "survey", 400: "quote",
+              500: "order", 600: "wait_install",
+              800: "warranty", 900: "warranty", 1000: "warranty",
+            };
             const main = getMainStatus(lead.status);
             const sub = getSubstep(lead.status);
             const paid = (lead.order_ready_count ?? lead.order_paid_count ?? 0) >= 1;
             const hasInstallDate = !!lead.install_date;
             const isDone = ["warranty", "gridtie", "closed"].includes(main);
             const effective = (() => {
+              // step 700 แยกด้วย sub: 710 รอติดตั้ง · 720/730 กำลังติดตั้ง/เสร็จ
+              if (lead.journey_step === 700) return (lead.journey_sub ?? 710) >= 720 ? "installing" : "install";
+              if (lead.journey_step != null && JOURNEY_TO_FLOW[lead.journey_step]) return JOURNEY_TO_FLOW[lead.journey_step];
               if (isDone) return "warranty";
               if (hasInstallDate) return "install";                                          // schedule locked in
               if (paid && (main === "order" || main === "install")) return "wait_install";   // paid but no date yet
@@ -212,6 +224,7 @@ export default function LeadCard({ lead, compact, onAssignChange, onOpen, slaFoo
               order: "ชำระเงิน",
               wait_install: "รอนัดติดตั้ง",
               install: "รอติดตั้ง",
+              installing: "กำลังติดตั้ง",
               warranty: "รับประกัน",
             };
             return (
@@ -223,7 +236,8 @@ export default function LeadCard({ lead, compact, onAssignChange, onOpen, slaFoo
                   const hasStageSla = s === slaStage && !!lead.sla_status && !!lead.sla_due_at;
                   // นาฬิกาที่ยังเดินอยู่ของขั้นนี้มาก่อนเสมอ ประวัติที่ปิดไปแล้ว
                   // ไม่ต้องแย่งที่กับตัวเลขที่ยังนับสด
-                  const lateSla = hasStageSla ? undefined : lateSlaStages[s];
+                  // "installing" เป็น stage ของ flow v3 — ระบบ SLA ไม่มีขั้นนี้ (นับรวมใน install)
+                  const lateSla = hasStageSla || s === "installing" ? undefined : lateSlaStages[s];
                   const slaTone = hasStageSla ? SLA_TIMELINE_STYLE[lead.sla_status!]
                     : lateSla ? (lateSla.stillOpen ? SLA_TIMELINE_STYLE.breached : SLA_LATE_TIMELINE_STYLE)
                     : null;
@@ -445,7 +459,9 @@ export default function LeadCard({ lead, compact, onAssignChange, onOpen, slaFoo
             return later ? base + (lead.install_extra_cost || 0) : base;
           })();
           return (
-            <div className={`mt-4 -mx-5 -mb-5 md:-mx-3 md:-mb-3 px-5 py-3 md:px-3 md:py-2 ${config.bg} rounded-b-2xl flex items-center gap-2 flex-wrap text-xs text-gray-400`}>
+            <div className={`mt-4 -mx-5 -mb-5 md:-mx-3 md:-mb-3 px-5 py-3 md:px-3 md:py-2 ${config.bg} rounded-b-2xl text-xs text-gray-400`}>
+              {/* แถว meta — ของสั้นๆ อยู่บรรทัดเดียว นัดลูกค้าชิดขวาเสมอ */}
+              <div className="flex items-center gap-2 flex-wrap">
               <AssignOwnerButton
                 leadId={lead.id}
                 assignedUserId={lead.assigned_user_id}
@@ -467,42 +483,6 @@ export default function LeadCard({ lead, compact, onAssignChange, onOpen, slaFoo
               {lead.created_at && (
                 <span className="hidden md:inline">· สร้าง {formatThaiDateShort(lead.created_at)}</span>
               )}
-              {lead.last_activity_date && (
-                <span className="hidden md:inline">
-                  · ติดตามล่าสุด {formatThaiDateShort(lead.last_activity_date)}
-                  {(() => {
-                    const t = lead.last_activity_title || "";
-                    const isOk = t.startsWith("ติดต่อได้");
-                    const isFail = t.startsWith("ติดต่อไม่ได้");
-                    const isOther = t === "อื่นๆ";
-                    const hasStructured = isOk || isFail || isOther;
-                    const tone = isOk ? "text-green-700" : isFail ? "text-red-700" : "text-gray-600";
-                    const type = lead.last_activity_type || "follow_up";
-                    const iconCls = `w-3 h-3 ${tone}`;
-                    const icon = !hasStructured ? null :
-                      type === "call" ? (
-                        <PhoneIcon className={iconCls} />
-                      ) : type === "visit" ? (
-                        <svg className={iconCls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
-                      ) : type === "line" ? (
-                        <LineIcon className={iconCls} />
-                      ) : type === "loan_followup" ? (
-                        <svg className={iconCls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5z" /></svg>
-                      ) : (
-                        <span className={`w-1.5 h-1.5 rounded-full ${isOk ? "bg-green-500" : isFail ? "bg-red-500" : "bg-gray-400"}`} />
-                      );
-                    const note = lead.last_activity_note?.trim();
-                    if (!hasStructured && !note) return null;
-                    return (
-                      <span className="ml-1.5 inline-flex items-center gap-1">
-                        {icon}
-                        {hasStructured && <span className={`font-medium ${tone}`}>{t}</span>}
-                        {note && <span className="text-gray-500 font-normal italic">{hasStructured ? "— " : ""}{note}</span>}
-                      </span>
-                    );
-                  })()}
-                </span>
-              )}
               {(lead.contact_count ?? 0) > 0 && (
                 <span className="font-semibold text-gray-600">· ติดตาม {lead.contact_count} ครั้ง</span>
               )}
@@ -519,6 +499,48 @@ export default function LeadCard({ lead, compact, onAssignChange, onOpen, slaFoo
                   <CalendarIcon className="h-3.5 w-3.5 shrink-0" />
                   นัดลูกค้า {formatThaiDateShort(lead.next_follow_up!)}{isOverdue ? " · เลยนัดแล้ว" : ""}
                 </span>
+              )}
+              </div>
+              {/* แถว log ติดตามล่าสุด — แยกบรรทัดเต็มความกว้าง note ยาวโดน clamp 2 บรรทัด
+                  ไม่ปล่อยไหลปนกับ meta จนการ์ดกลายเป็นกำแพงข้อความ (desktop เท่านั้นเหมือนเดิม) */}
+              {lead.last_activity_date && (
+                <div className="hidden md:block mt-1.5 pt-1.5 border-t border-black/5 leading-snug">
+                  <div className="line-clamp-2">
+                    <span className="font-medium text-gray-500 whitespace-nowrap">ติดตามล่าสุด {formatThaiDateShort(lead.last_activity_date)}</span>
+                    {(() => {
+                      const t = lead.last_activity_title || "";
+                      const isOk = t.startsWith("ติดต่อได้");
+                      const isFail = t.startsWith("ติดต่อไม่ได้");
+                      const isOther = t === "อื่นๆ";
+                      const hasStructured = isOk || isFail || isOther;
+                      const tone = isOk ? "text-green-700" : isFail ? "text-red-700" : "text-gray-600";
+                      const type = lead.last_activity_type || "follow_up";
+                      const iconCls = `w-3 h-3 inline ${tone}`;
+                      const icon = !hasStructured ? null :
+                        type === "call" ? (
+                          <PhoneIcon className={iconCls} />
+                        ) : type === "visit" ? (
+                          <svg className={iconCls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+                        ) : type === "line" ? (
+                          <LineIcon className={iconCls} />
+                        ) : type === "loan_followup" ? (
+                          <svg className={iconCls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5z" /></svg>
+                        ) : (
+                          <span className={`inline-block w-1.5 h-1.5 rounded-full ${isOk ? "bg-green-500" : isFail ? "bg-red-500" : "bg-gray-400"}`} />
+                        );
+                      const note = lead.last_activity_note?.trim();
+                      if (!hasStructured && !note) return null;
+                      return (
+                        <>
+                          <span className="mx-1 text-gray-300">·</span>
+                          {icon && <span className="mr-1">{icon}</span>}
+                          {hasStructured && <span className={`font-medium ${tone}`}>{t}</span>}
+                          {note && <span className="text-gray-500 font-normal italic"> {hasStructured ? "— " : ""}{note}</span>}
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
               )}
             </div>
           );

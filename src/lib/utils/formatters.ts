@@ -46,12 +46,14 @@ type ThaiDateOpts = {
   monthLong?: boolean;
   time?: boolean;
   buddhist?: boolean;
+  /** Pin display to a zone (e.g. "Asia/Bangkok") for timestamps stored without offset. */
+  timeZone?: string;
 };
 
 export function formatThaiDate(d: DateLike, opts: ThaiDateOpts = {}): string {
   const date = parseDate(d, !opts.time);
   if (!date) return DASH;
-  const { weekday = false, year = true, monthLong = false, time = false, buddhist = false } = opts;
+  const { weekday = false, year = true, monthLong = false, time = false, buddhist = false, timeZone } = opts;
   const locale = buddhist ? "th-TH-u-ca-buddhist" : "th-TH";
   const fmt: Intl.DateTimeFormatOptions = {
     day: "numeric",
@@ -59,9 +61,10 @@ export function formatThaiDate(d: DateLike, opts: ThaiDateOpts = {}): string {
   };
   if (weekday) fmt.weekday = "short";
   if (year) fmt.year = "numeric";
+  if (timeZone) fmt.timeZone = timeZone;
   let out = date.toLocaleDateString(locale, fmt);
   if (time) {
-    out += ", " + date.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
+    out += ", " + date.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", timeZone });
   }
   return out;
 }
@@ -108,6 +111,13 @@ export function normalizePhone(s: string | null | undefined): string | null {
   if (digits.length === 9 && digits[0] !== "0") return "0" + digits;
   if ((digits.length === 9 || digits.length === 10) && digits[0] === "0") return digits;
   return null;
+}
+
+// เบอร์ที่คนพิมพ์แทน "ไม่รู้เบอร์" (0000000000 · 0999999999 · 0123456789) — ติดต่อไม่ได้ และถ้าใช้เป็นตัวกันลูกค้าซ้ำ
+// คนที่ไม่เกี่ยวกันจะถูกผูกเป็นคนเดียว (เจอ 15 ต.ค. 69 · ฟอร์มเพิ่มบ้าน O&M แผน 20261015-05)
+export function isPlaceholderPhone(s: string | null | undefined): boolean {
+  const digits = String(s ?? "").replace(/\D/g, "");
+  return /^0(\d)\1{8}$/.test(digits) || digits === "0123456789";
 }
 
 export function formatThaiId(s: string | null | undefined): string {

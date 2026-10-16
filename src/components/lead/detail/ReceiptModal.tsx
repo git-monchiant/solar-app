@@ -6,7 +6,8 @@ import { createPortal } from "react-dom";
 import PdfPreview from "./PdfPreview";
 import { useMe } from "@/lib/roles";
 
-export type ReceiptStage = "deposit" | "order_before" | "order_after" | "installment";
+// om = ค่าบริการงาน O&M (ต้องส่ง paymentId) — ใช้จากขั้นชำระเงินของงานบริการ + หน้ารายรับ O&M
+export type ReceiptStage = "deposit" | "order_before" | "order_after" | "installment" | "om";
 
 interface Props {
   leadId: number;
@@ -29,6 +30,7 @@ const STAGE_TITLE: Record<ReceiptStage, string> = {
   order_before: "ใบเสร็จงวดก่อนติดตั้ง",
   order_after: "ใบเสร็จงวดหลังติดตั้ง",
   installment: "ใบเสร็จงวดชำระ",
+  om: "ใบเสร็จค่าบริการ O&M",
 };
 
 function apiUrl(leadId: number, stage: ReceiptStage, userId?: number, title?: string, showSurvey?: boolean, paymentId?: number) {

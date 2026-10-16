@@ -13,9 +13,13 @@ import PhotosTab from "@/components/lead/detail/PhotosTab";
 import AddActivityModal, { ActivityType } from "@/components/lead/detail/AddActivityModal";
 import AssignOwnerButton from "@/components/lead/AssignOwnerButton";
 import LostModal from "@/components/lead/detail/LostModal";
+import ReopenLeadButton from "@/components/lead/detail/ReopenLeadModal";
 import ProfileModal from "@/components/lead/detail/ProfileModal";
 import LinePickerModal from "@/components/modal/LinePickerModal";
 import { getSourceStyle } from "@/lib/source-tag";
+import { PAYMENT_INTERESTS, optionLabel } from "@/lib/customer-questionnaire";
+import { LoadProfileField } from "@/components/lead/detail/LoadProfileEditor";
+import { computeLoad, hasEvCharger, loadSummaryText, setEvCharger } from "@/lib/load-assumption";
 import { Activity } from "@/components/lead/detail/ActivityItem";
 import PreSurveyStep from "@/components/lead/detail/steps/PreSurveyStep";
 import PreSurveyForm, { type PreSurveyFormHandle, DECISION_FACTORS } from "@/components/lead/detail/steps/PreSurveyForm";
@@ -35,8 +39,10 @@ import { formatThaiDate as formatDate, formatThaiTime, formatNumber } from "@/li
 import { formatSlotsRange } from "@/lib/time-slots";
 import { slaTaskLabel } from "@/lib/sla-display";
 import { INFO_LABELS, PRIMARY_REASON_LABEL } from "@/lib/constants/info-labels";
+import { getStatusLabel, getStatusColor } from "@/lib/constants/statuses";
 import FallbackImage from "@/components/ui/FallbackImage";
 import NotificationBell from "@/components/layout/NotificationBell";
+import Loading from "@/components/ui/Loading";
 import { compactLatestForwardStatusActivities } from "@/lib/timeline-activities";
 
 const formatAcUnits = (s: string | null): string | null => {
@@ -75,8 +81,8 @@ const Q_LABELS: Record<string, Record<string, string>> = {
   workDaysPerWeek:    { "1_2": "1-2 วัน/สัปดาห์", "3_5": "3-5 วัน/สัปดาห์", daily: "ทุกวัน" },
   evChargePeriod:     { day: "กลางวัน", night: "กลางคืน" },
   // §4 Future plans
-  yesNoConsidering:   { yes: "มี", no: "ไม่มี", considering: "กำลังพิจารณา" },                  // future_ev, future_ev_charger
-  yesNoBin:           { yes: "มี", no: "ไม่มี" },                                              // future_extend_home, future_more_members, future_smart_home
+  yesNoConsidering:   { yes: "มี", no: "ไม่มี", considering: "กำลังพิจารณา" },                  // future_ev
+  yesNoBin:           { yes: "มี", no: "ไม่มี" },                                              // future_ev_charger, future_extend_home, future_more_members, future_smart_home
   yesNoMaybe:         { yes: "มี", no: "ไม่มี", maybe: "ยังไม่แน่ใจ" },                          // future_battery
   // §5 Energy security
   outagePriorities:   { ac: "แอร์", lights: "ไฟส่องสว่าง", internet: "Internet", cctv: "กล้องวงจรปิด", fridge: "ตู้เย็น", ev_charger: "EV Charger", gate: "ระบบประตูรั้ว", ups: "ระบบสำรองฉุกเฉิน" },
@@ -113,6 +119,7 @@ const qCsvLabel = (csv: string | null | undefined, kind: keyof typeof Q_LABELS):
   if (parts.length === 0) return null;
   return parts.map(p => qLabel(p, kind)).filter(Boolean).join(", ");
 };
+
 
 // Convert a Q_LABELS map (code -> Thai label) into an ordered dropdown
 // options list. Insertion order is preserved, matching the picker order in
@@ -218,7 +225,7 @@ const isFilled = (v: unknown) => v != null && v !== "" && v !== false;
 // based on `kind`. Every change fires the parent's `onCommit` immediately,
 // which debounces + PATCHes the lead row. The `readonly` kind is the escape
 // hatch for values we don't yet know how to edit inline (stars / JSON).
-type QCellKind = "dropdown" | "number" | "stepper" | "multi_csv" | "text" | "factors" | "bill_range" | "ac_split" | "readonly";
+type QCellKind = "dropdown" | "number" | "stepper" | "multi_csv" | "text" | "factors" | "bill_range" | "ac_split" | "load_profile" | "readonly";
 interface QCellProps {
   label: string;
   kind: QCellKind;
@@ -241,10 +248,12 @@ interface QCellProps {
   chipIcon?: React.ReactNode;
   /** Fallback display for `readonly` kind (already-formatted string). */
   readonlyDisplay?: React.ReactNode;
+  /** Short note under the label — context the answer depends on. */
+  hint?: string;
   /** Called with the new raw value; parent handles the PATCH + refresh. */
   onCommit: (next: string | number | null) => void;
 }
-function EditableQCell({ label, kind, value, options, suffix, required, allowOther, chipIcon, readonlyDisplay, onCommit }: QCellProps) {
+function EditableQCell({ label, kind, value, options, suffix, required, allowOther, chipIcon, readonlyDisplay, hint, onCommit }: QCellProps) {
   const currentStr = value == null ? "" : String(value);
   // Chip button — exact mirror of PreSurveyForm.chipBtn so the info tab
   // reads as the same questionnaire the customer answers in the workflow.
@@ -267,6 +276,7 @@ function EditableQCell({ label, kind, value, options, suffix, required, allowOth
           <span className="ml-1 text-gray-400 font-normal">({suffix})</span>
         )}
       </label>
+      {hint && <div className="text-xxs text-amber-700 -mt-1 mb-1.5">{hint}</div>}
       {kind === "dropdown" && (
         <>
           <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
@@ -703,7 +713,9 @@ function StepCard({
 
   const rootCls = fullscreen
     ? "fixed inset-0 z-[9999] bg-white flex flex-col safe-top"
-    : `group relative rounded-2xl overflow-hidden transition-all ${container}`;
+    // scroll-mt = ความสูง sticky header (~124px) + 12px ให้เท่าระยะ py-3 ของราง
+    // STEPS — ตอน auto-scroll การ์ดจะเรียงขอบบนตรงกับปุ่ม step ข้างซ้ายพอดี
+    : `group relative rounded-2xl overflow-hidden transition-all scroll-mt-34 ${container}`;
   const bodyCls = fullscreen
     ? "flex-1 overflow-y-auto p-4 safe-bottom"
     : "px-5 pb-5 pt-3 border-t border-gray-100";
@@ -972,9 +984,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
 
   if (loadingLead) {
     return (
-      <div className="flex items-center justify-center h-full py-20">
-        <div className="w-10 h-10 border-3 border-primary/30 border-t-primary rounded-full animate-spin" />
-      </div>
+      <Loading />
     );
   }
   if (!lead) return <div className="text-center py-12 text-gray-500">Not found</div>;
@@ -1050,46 +1060,139 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   return (
     <div className="flex flex-col h-full">
       {/* Header — subtle primary tint */}
-      <div className="bg-gradient-to-b from-primary via-primary/50 to-white safe-top sticky top-0 z-40">
-        {/* Top row: back + name + call */}
-        <div className="pl-3 pr-5 pt-3 flex items-center gap-2">
-          {focus ? (
-            <button type="button" onClick={() => setShowProfileModal(true)}
-              title={`Grade ${lead.customer_grade || "-"}`}
-              className={`w-11 h-11 rounded-full hover:opacity-80 transition-colors shrink-0 flex items-center justify-center ${
-                lead.customer_grade === "A" ? "text-emerald-600" :
-                lead.customer_grade === "B" ? "text-sky-600" :
-                lead.customer_grade === "C" ? "text-amber-500" :
-                lead.customer_grade === "D" ? "text-orange-500" :
-                lead.customer_grade === "E" ? "text-gray-500" :
-                lead.customer_grade === "F" ? "text-red-600" :
-                "text-gray-600"
-              }`}
-              style={{ minHeight: 0 }}>
-              <svg className="w-9 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.963 0a9 9 0 10-11.963 0m11.963 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-            </button>
-          ) : (
-            <button type="button" onClick={() => window.history.back()} className="p-2 rounded-full text-gray-600 hover:bg-gray-200 transition-colors shrink-0" style={{ minHeight: 0 }}>
+      <div className="bg-white border-b border-gray-200 safe-top sticky top-0 z-40">
+        {/* Header: [คอลัมน์ avatar กว้างเท่าราง STEPS — เส้นขวาลากต่อเนื่องถึงบนสุด]
+            | [‹ + ชื่อ+ป้าย / meta] [ปุ่มขวา] */}
+        <div className="flex items-stretch">
+          {/* จอเล็ก: ปุ่มย้อนกลับอยู่หน้า avatar (ลำดับ ‹ รูป ชื่อ ติดกัน) — จอใหญ่ใช้ตัวใน
+              คอลัมน์ขวาแทน เพื่อไม่ให้เส้นแนวตั้งเลื่อนจากราง STEPS */}
+          {!focus && (
+            <button type="button" onClick={() => window.history.back()} className="md:hidden self-center ml-1 p-1.5 rounded-full text-gray-600 hover:bg-gray-200 transition-colors shrink-0" style={{ minHeight: 0 }}>
               <ChevronLeftIcon className="w-5 h-5" strokeWidth={2.5} />
             </button>
           )}
-          <div className="flex-1 min-w-0 flex items-center gap-1">
-            <h1 className="text-2xl font-bold tracking-tight leading-tight text-gray-900 truncate">
+          <div className="max-md:hidden w-20 shrink-0 border-r border-gray-200 flex items-center justify-center py-2">
+          {/* avatar กินความสูงทั้งชื่อ+meta — สีตามเกรด กดเปิดโปรไฟล์ (ทุกโหมด) */}
+          <button type="button" onClick={() => setShowProfileModal(true)}
+            title={`Grade ${lead.customer_grade || "-"}`}
+            className={`relative w-14 h-14 rounded-full hover:opacity-80 transition-colors shrink-0 flex items-center justify-center ${
+              lead.customer_grade === "A" ? "text-emerald-600" :
+              lead.customer_grade === "B" ? "text-sky-600" :
+              lead.customer_grade === "C" ? "text-amber-500" :
+              lead.customer_grade === "D" ? "text-orange-500" :
+              lead.customer_grade === "E" ? "text-gray-500" :
+              lead.customer_grade === "F" ? "text-red-600" :
+              "text-gray-600"
+            }`}
+            style={{ minHeight: 0 }}>
+            {/* เชื่อม LINE แล้ว → ใช้รูปโปรไฟล์ LINE (ขอบสีตามเกรด) แทนไอคอน */}
+            {lead.line_id && lead.line_picture_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={lead.line_picture_url} alt="" className="w-full h-full rounded-full object-cover border-2 border-current" />
+            ) : (
+              <svg className="w-12 h-12" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.963 0a9 9 0 10-11.963 0m11.963 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            )}
+            {/* ตราเกรดมุมขวาล่างของ avatar — เกรดเป็นคุณสมบัติของ "ตัวลูกค้า"
+                เลยผูกกับรูป ไม่ไปแย่งพื้นที่กับป้ายสถานะข้างชื่อ */}
+            {lead.customer_grade && (
+              <span className={`absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full text-[10px] font-bold text-white flex items-center justify-center ring-2 ring-white ${
+                lead.customer_grade === "A" ? "bg-emerald-500" :
+                lead.customer_grade === "B" ? "bg-sky-500" :
+                lead.customer_grade === "C" ? "bg-amber-500" :
+                lead.customer_grade === "D" ? "bg-orange-500" :
+                lead.customer_grade === "F" ? "bg-red-500" :
+                "bg-gray-400"
+              }`}>{lead.customer_grade}</span>
+            )}
+          </button>
+          </div>
+          <div className="flex-1 min-w-0 flex items-center gap-2 pl-1.5 md:pl-3 pr-4 md:pr-5 py-2.5">
+          {!focus && (
+            <button type="button" onClick={() => window.history.back()} className="max-md:hidden p-2 -ml-1 rounded-full text-gray-600 hover:bg-gray-200 transition-colors shrink-0" style={{ minHeight: 0 }}>
+              <ChevronLeftIcon className="w-5 h-5" strokeWidth={2.5} />
+            </button>
+          )}
+          <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <h1 className="text-lg md:text-xl font-bold tracking-tight leading-tight text-gray-900 truncate">
               {(() => {
                 const hn = houseNumberOrNull(lead.house_number);
                 const nm = stripThaiTitle(lead.full_name);
                 return hn ? `${hn} - ${nm}` : nm;
               })()}
             </h1>
-            {!focus && (
-              <button type="button" onClick={() => setShowProfileModal(true)} className="shrink-0 w-8 h-8 rounded-full hover:bg-gray-200 flex items-center justify-center text-gray-400 hover:text-primary transition-colors" style={{ minHeight: 0 }}>
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.963 0a9 9 0 10-11.963 0m11.963 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
+            {/* สถานะปัจจุบันป้ายเดียวข้างชื่อ (เกรดย้ายไปเป็นตรามุม avatar แล้ว)
+                สีเดียวกับ pill สถานะบนการ์ด lead — ระบบสีเดียวทั้งแอป */}
+            <span className={`hidden sm:inline-flex shrink-0 text-xxs font-bold uppercase tracking-wide px-2 py-0.5 rounded-full text-white ${getStatusColor(lead)}`}>
+              {getStatusLabel(lead)}
+            </span>
+          </div>
+          {/* Meta — บรรทัดเดียว truncate ใต้ชื่อ ชิดคอลัมน์เดียวกัน */}
+          <div className="mt-0.5 text-xs text-gray-600 leading-tight flex items-center gap-1.5 min-w-0">
+            <svg className="w-3.5 h-3.5 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            <span className="truncate">
+              {(() => {
+                // ชื่อโครงการที่เป็นขีด/ว่าง ("-") ถือว่าไม่มี — กันขีดโดดๆ กลางบรรทัด
+                const proj = lead.project_name && !/^[\s\-–—]+$/.test(lead.project_name) ? lead.project_name : null;
+                return (
+                  <>
+                    {lead.installation_address && <span className="font-bold text-gray-900">{lead.installation_address}</span>}
+                    {lead.installation_address && proj && <span className="text-gray-300"> · </span>}
+                    {proj}
+                  </>
+                );
+              })()}
+              {lead.contact_date && (() => {
+                const aging = Math.floor((Date.now() - new Date(lead.contact_date).getTime()) / 86400000);
+                const toneText = aging >= 14 ? "text-red-600" : aging >= 7 ? "text-amber-600" : "text-emerald-600";
+                return (
+                  <>
+                    <span className="text-gray-300 mx-1.5">·</span>
+                    ติดต่อ {formatDate(lead.contact_date)}
+                    {aging > 0 && <span className={`ml-1 font-semibold ${toneText}`}>({aging} วัน)</span>}
+                  </>
+                );
+              })()}
+              {lead.phone && (
+                <>
+                  <span className="text-gray-300 mx-1.5">·</span>
+                  <span className="font-mono tabular-nums">{lead.phone}</span>
+                </>
+              )}
+              {lead.source && (
+                <>
+                  <span className="text-gray-300 mx-1.5">·</span>
+                  {getSourceStyle(lead.source).label}
+                </>
+              )}
+              {isUpgrade && (
+                <>
+                  <span className="text-gray-300 mx-1.5">·</span>
+                  <span className="font-semibold text-purple-600">↑ Scale Up</span>
+                </>
+              )}
+            </span>
+            {/* SLA chip (งาน v2) — กดแล้วเปิดแท็บ SLA Tracking · อยู่นอก span truncate จะได้ไม่โดนตัด */}
+            {slaStatusMeta && lead.sla_due_at && (
+              <button
+                type="button"
+                onClick={openSlaTimeline}
+                title={`${slaTaskLabel(lead.sla_policy_code, lead.sla_task_name)} · กำหนด ${formatDate(lead.sla_due_at)} ${formatThaiTime(lead.sla_due_at)}`}
+                className={`shrink-0 inline-flex min-h-0 items-center gap-1 rounded-full border px-2 py-0.5 font-semibold transition-colors hover:brightness-95 ${slaStatusMeta.badge}`}
+              >
+                <ClockIcon className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />
+                <span>{lead.sla_status === "breached" ? "ค้างเกิน SLA" : `SLA ${slaStatusMeta.label}`}</span>
+                <span className="rounded-full bg-white/80 px-1.5 font-bold tabular-nums" aria-label={`${slaStatusCount} รายการ`}>
+                  {slaStatusCount}
+                </span>
               </button>
             )}
+          </div>
           </div>
           <NotificationBell />
           {/* LINE link button — connected: open unmap modal; not connected: open picker */}
@@ -1101,7 +1204,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
             }}
             title={lead.line_id ? "คลิกเพื่อยกเลิกการเชื่อม LINE" : "เชื่อมกับ LINE ลูกค้า"}
             style={{ minHeight: 0 }}
-            className={`shrink-0 w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-all ${
+            className={`shrink-0 w-9 h-9 md:w-11 md:h-11 rounded-full flex items-center justify-center active:scale-95 transition-all ${
               lead.line_id
                 ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/40 hover:bg-emerald-600"
                 : "bg-white text-gray-500 shadow border border-gray-200 hover:border-active/40 hover:text-active"
@@ -1112,81 +1215,16 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
           {lead.phone && (
             <a
               href={`tel:${lead.phone}`}
-              className="shrink-0 w-11 h-11 rounded-full bg-primary text-white shadow-lg shadow-primary/40 flex items-center justify-center hover:bg-primary-dark active:scale-95 transition-all"
+              className="shrink-0 w-9 h-9 md:w-11 md:h-11 rounded-full bg-primary text-white shadow-lg shadow-primary/40 flex items-center justify-center hover:bg-primary-dark active:scale-95 transition-all"
               aria-label="โทร"
+              style={{ minHeight: 0, minWidth: 0 }}
             >
               <PhoneIcon className="w-5 h-5" width="20" height="20" />
             </a>
           )}
-        </div>
-
-        {/* Meta — order: project (under name), source/upgrade badges, phone */}
-        <div className="px-5 pb-3 pt-1 space-y-1">
-          {(lead.project_name || lead.installation_address || lead.contact_date) && (
-            <div className="text-xs text-gray-600 leading-tight flex items-center gap-1.5 min-w-0">
-              <svg className="w-3.5 h-3.5 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-              <span className="truncate">
-                {lead.installation_address && <span className="font-bold text-gray-900">{lead.installation_address}</span>}
-                {lead.installation_address && lead.project_name && <span className="text-gray-300"> · </span>}
-                {lead.project_name}
-                {lead.contact_date && (() => {
-                  const aging = Math.floor((Date.now() - new Date(lead.contact_date).getTime()) / 86400000);
-                  const toneText = aging >= 14 ? "text-red-600" : aging >= 7 ? "text-amber-600" : "text-emerald-600";
-                  return (
-                    <>
-                      <span className="text-gray-300 mx-1.5">·</span>
-                      ติดต่อ {formatDate(lead.contact_date)}
-                      {aging > 0 && <span className={`ml-1 font-semibold ${toneText}`}>({aging} วัน)</span>}
-                    </>
-                  );
-                })()}
-              </span>
-            </div>
-          )}
-          <div className="text-xs text-gray-600 leading-tight flex items-center gap-1.5 flex-wrap">
-            {lead.phone && (
-              <>
-                <PhoneIcon className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                <span className="font-mono tabular-nums">{lead.phone}</span>
-                <span className="text-gray-300">·</span>
-              </>
-            )}
-            {lead.source && (
-              <span className="inline-flex items-center gap-1">
-                <UserIcon className="w-3.5 h-3.5 text-gray-400" strokeWidth={2} />
-                {getSourceStyle(lead.source).label}
-              </span>
-            )}
-            {isUpgrade && (
-              <>
-                <span className="text-gray-300">·</span>
-                <span className="inline-flex items-center gap-1 font-semibold text-purple-600">
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 10.5L12 3m0 0l7.5 7.5M12 3v18" />
-                  </svg>
-                  Scale Up
-                </span>
-              </>
-            )}
-            {slaStatusMeta && lead.sla_due_at && (
-              <button
-                type="button"
-                onClick={openSlaTimeline}
-                title={`${slaTaskLabel(lead.sla_policy_code, lead.sla_task_name)} · กำหนด ${formatDate(lead.sla_due_at)} ${formatThaiTime(lead.sla_due_at)}`}
-                className={`inline-flex min-h-0 items-center gap-1 rounded-full border px-2 py-1 font-semibold transition-colors hover:brightness-95 ${slaStatusMeta.badge}`}
-              >
-                <ClockIcon className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />
-                <span>{lead.sla_status === "breached" ? "ค้างเกิน SLA" : `SLA ${slaStatusMeta.label}`}</span>
-                <span className="rounded-full bg-white/80 px-1.5 font-bold tabular-nums" aria-label={`${slaStatusCount} รายการ`}>
-                  {slaStatusCount}
-                </span>
-              </button>
-            )}
           </div>
         </div>
+
 
         {/* Tabs row + (desktop) left step-nav header + Activity Log header,
             all column-aligned with the panels below. */}
@@ -1611,6 +1649,11 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                 required?: boolean;
                 allowOther?: boolean;
                 chipIcon?: React.ReactNode;
+                /** Custom save for rows whose chip value isn't the stored
+                 *  value (e.g. EV มี/ไม่มี → 'ev' inside the appliances CSV).
+                 *  Without it the row PATCHes `field` with the raw value. */
+                commit?: (next: string | number | null) => void;
+                hint?: string;
               };
               // Clock icon reused by the peak-usage row (rendered on the left
               // of each time-range chip).
@@ -1728,6 +1771,10 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                     { label: "อาชีพ", value: qLabel(lead.occupation, "occupation"), field: "occupation", kind: "dropdown" as QCellKind, options: [...optsFromQ("occupation"), { value: "other", label: "อื่นๆ" }], raw: lead.occupation ?? "", allowOther: true },
                     { label: "อายุ", value: qLabel(lead.age_range, "ageRange"), field: "age_range", kind: "dropdown" as QCellKind, options: optsFromQ("ageRange"), raw: lead.age_range ?? "" },
                     { label: "รายได้ครัวเรือน/เดือน", value: qLabel(lead.household_income, "householdIncome"), field: "household_income", kind: "dropdown" as QCellKind, options: optsFromQ("householdIncome"), raw: lead.household_income ?? "" },
+                    // Options come straight from PAYMENT_INTERESTS rather than a
+                    // Q_LABELS copy — the list is new, so there is no legacy
+                    // code to decode and no reason to duplicate the labels.
+                    { label: "รูปแบบการชำระเงินที่สนใจ", value: lead.payment_interest ? optionLabel(PAYMENT_INTERESTS, lead.payment_interest) : null, field: "payment_interest", kind: "dropdown" as QCellKind, options: [...PAYMENT_INTERESTS], raw: lead.payment_interest ?? "" },
                   ],
                 },
                 {
@@ -1737,10 +1784,13 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                     { label: "ประเภทบ้าน", value: otherOrLabel(lead.pre_residence_type, INFO_LABELS.residence), field: "pre_residence_type", kind: "dropdown" as QCellKind, options: [...optsFromInfo(INFO_LABELS.residence), { value: "other", label: "อื่นๆ" }], raw: lead.pre_residence_type ?? "", required: true, allowOther: true },
                     { label: "ทรงหลังคา", value: lead.pre_roof_shape ? INFO_LABELS.roofShape[lead.pre_roof_shape] : null, field: "pre_roof_shape", kind: "dropdown" as QCellKind, options: [...optsFromInfo(INFO_LABELS.roofShape), { value: "other", label: "อื่นๆ" }], raw: lead.pre_roof_shape ?? "", allowOther: true, chipIcon: roofIcon },
                     { label: "อายุบ้าน", value: qLabel(lead.house_age, "houseAge"), field: "house_age", kind: "dropdown" as QCellKind, options: optsFromQ("houseAge"), raw: lead.house_age ?? "" },
-                    { label: "ผู้อยู่อาศัยรวม", value: lead.occupant_total != null ? `${lead.occupant_total} คน` : null, field: "occupant_total", kind: "stepper" as QCellKind, suffix: "คน", raw: lead.occupant_total ?? "" },
+                    // Total is derived by the API (adults + elderly + kids —
+                    // never pets, migration 199), so it is shown, not edited.
+                    { label: "ผู้ใหญ่", value: lead.occupant_adults != null ? `${lead.occupant_adults} คน` : null, field: "occupant_adults", kind: "stepper" as QCellKind, suffix: "คน", raw: lead.occupant_adults ?? "" },
                     { label: "ผู้สูงอายุ", value: lead.occupant_elderly != null ? `${lead.occupant_elderly} คน` : null, field: "occupant_elderly", kind: "stepper" as QCellKind, suffix: "คน", raw: lead.occupant_elderly ?? "" },
                     { label: "เด็ก", value: lead.occupant_kids != null ? `${lead.occupant_kids} คน` : null, field: "occupant_kids", kind: "stepper" as QCellKind, suffix: "คน", raw: lead.occupant_kids ?? "" },
                     { label: "สัตว์เลี้ยง", value: lead.occupant_pets != null ? `${lead.occupant_pets} ตัว` : null, field: "occupant_pets", kind: "stepper" as QCellKind, suffix: "ตัว", raw: lead.occupant_pets ?? "" },
+                    { label: "ผู้อยู่อาศัยรวม (ไม่นับสัตว์เลี้ยง)", value: lead.occupant_total != null ? `${lead.occupant_total} คน` : null, kind: "readonly" as QCellKind, raw: lead.occupant_total ?? "" },
                   ],
                 },
                 {
@@ -1774,15 +1824,35 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                     { label: "ประเภทธุรกิจ", value: qLabel(lead.business_type, "businessType"), field: "business_type", kind: "dropdown" as QCellKind, options: optsFromQ("businessType"), raw: lead.business_type ?? "" },
                     { label: "วันทำงาน/สัปดาห์", value: qLabel(lead.work_days_per_week, "workDaysPerWeek"), field: "work_days_per_week", kind: "dropdown" as QCellKind, options: optsFromQ("workDaysPerWeek"), raw: lead.work_days_per_week ?? "" },
                     { label: "จำนวนแอร์ (แยกช่วงเวลา)", value: null, field: "ac_split", kind: "ac_split" as QCellKind, raw: lead.ac_split ?? "" },
-                    { label: "ช่วงชาร์จ EV", value: qLabel(lead.ev_charge_period, "evChargePeriod"), field: "ev_charge_period", kind: "dropdown" as QCellKind, options: optsFromQ("evChargePeriod"), raw: lead.ev_charge_period ?? "" },
+                    // Mirrors the form's มี/ไม่มี. Stored as 'ev' inside the
+                    // appliances CSV, so it commits through setEvCharger()
+                    // instead of writing the chip value. "ไม่มี" (or tapping
+                    // มี again) removes it; the API then drops the charge
+                    // period and EV load answers, exactly like the form.
+                    { label: "ที่ชาร์จรถ EV", value: hasEvCharger(lead.pre_appliances) ? "มี" : "ไม่มี", field: "pre_appliances", kind: "dropdown" as QCellKind, options: [{ value: "yes", label: "มี" }, { value: "no", label: "ไม่มี" }], raw: hasEvCharger(lead.pre_appliances) ? "yes" : "no",
+                      commit: (next: string | number | null) => updateLeadField("pre_appliances", setEvCharger(lead.pre_appliances, next === "yes")) },
+                    // Only for homes that HAVE a charger — the API refuses a
+                    // period otherwise (migration 201 cleared the leftovers).
+                    ...(hasEvCharger(lead.pre_appliances) ? [
+                      { label: "ช่วงชาร์จ EV", value: qLabel(lead.ev_charge_period, "evChargePeriod"), field: "ev_charge_period", kind: "dropdown" as QCellKind, options: optsFromQ("evChargePeriod"), raw: lead.ev_charge_period ?? "" },
+                    ] : []),
+                    // Appliance count + hours → Load Assumption (§3) of the survey
+                    // report. `value` is the kWh summary so the filled count works.
+                    { label: "การใช้เครื่องใช้ไฟฟ้า (ประมาณการ kWh)", value: lead.load_profile ? (loadSummaryText(computeLoad({ load_profile: lead.load_profile, ac_split: lead.ac_split, appliances: lead.pre_appliances, ev_charge_period: lead.ev_charge_period, meter_size: lead.survey_meter_size || lead.meter_size, electrical_phase: lead.survey_electrical_phase || lead.pre_electrical_phase })) || "ตอบบางส่วน") : null, field: "load_profile", kind: "load_profile" as QCellKind, raw: lead.load_profile ?? "" },
                   ],
                 },
                 {
                   id: "q4",
-                  title: "แบบสอบถาม · แผนอนาคต",
+                  title: "แบบสอบถาม · แผนอนาคต (ภายใน 5 ปี)",
                   rows: [
-                    { label: "ซื้อ EV อนาคต", value: qLabel(lead.future_ev, "yesNoConsidering"), field: "future_ev", kind: "dropdown" as QCellKind, options: optsFromQ("yesNoConsidering"), raw: lead.future_ev ?? "" },
-                    { label: "ติด EV Charger", value: qLabel(lead.future_ev_charger, "yesNoConsidering"), field: "future_ev_charger", kind: "dropdown" as QCellKind, options: optsFromQ("yesNoConsidering"), raw: lead.future_ev_charger ?? "" },
+                    // Labels match the form's "แผน…" wording: the short "ติด EV
+                    // Charger" read as "has a charger now" and got answered มี
+                    // by homes that already had one (8 leads on dev, Sep 2026).
+                    // Charger options are มี/ไม่มี like the form and Dashboard
+                    // III (YES_NO_BIN) — "กำลังพิจารณา" was offered only here.
+                    { label: "แผนซื้อรถยนต์ EV (ภายใน 5 ปี)", value: qLabel(lead.future_ev, "yesNoConsidering"), field: "future_ev", kind: "dropdown" as QCellKind, options: optsFromQ("yesNoConsidering"), raw: lead.future_ev ?? "" },
+                    { label: "แผนติดตั้ง EV Charger (ภายใน 5 ปี)", value: qLabel(lead.future_ev_charger, "yesNoBin"), field: "future_ev_charger", kind: "dropdown" as QCellKind, options: optsFromQ("yesNoBin"), raw: lead.future_ev_charger ?? "",
+                      hint: hasEvCharger(lead.pre_appliances) ? "บ้านนี้มีที่ชาร์จแล้ว — ตอบ มี เฉพาะถ้าจะติดเพิ่ม" : undefined },
                     { label: "ต่อเติมบ้าน", value: qLabel(lead.future_extend_home, "yesNoBin"), field: "future_extend_home", kind: "dropdown" as QCellKind, options: optsFromQ("yesNoBin"), raw: lead.future_extend_home ?? "" },
                     { label: "สมาชิกเพิ่ม", value: qLabel(lead.future_more_members, "yesNoBin"), field: "future_more_members", kind: "dropdown" as QCellKind, options: optsFromQ("yesNoBin"), raw: lead.future_more_members ?? "" },
                     { label: "Smart Home", value: qLabel(lead.future_smart_home, "yesNoBin"), field: "future_smart_home", kind: "dropdown" as QCellKind, options: optsFromQ("yesNoBin"), raw: lead.future_smart_home ?? "" },
@@ -1923,6 +1993,24 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                                 s.rows.forEach((r, i) => {
                                   if (r.kind === "stepper") {
                                     group.push(r);
+                                  } else if (r.kind === "load_profile") {
+                                    flushGroup(`grp-${i}`);
+                                    out.push(
+                                      <div key={i}>
+                                        <label className="block text-xs text-gray-500 mb-1.5">{r.label}</label>
+                                        <LoadProfileField
+                                          key={lead.load_profile ?? ""}
+                                          value={lead.load_profile}
+                                          acSplit={lead.ac_split}
+                                          hasEv={hasEvCharger(lead.pre_appliances)}
+                                          evChargePeriod={lead.ev_charge_period}
+                                          meterSize={lead.survey_meter_size || lead.meter_size}
+                                          electricalPhase={lead.survey_electrical_phase || lead.pre_electrical_phase}
+                                          monthlyBill={lead.pre_monthly_bill || lead.survey_monthly_bill}
+                                          onCommit={(json) => updateLeadField("load_profile", json)}
+                                        />
+                                      </div>
+                                    );
                                   } else {
                                     flushGroup(`grp-${i}`);
                                     out.push(
@@ -1937,7 +2025,8 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                                         allowOther={r.allowOther}
                                         chipIcon={r.chipIcon}
                                         readonlyDisplay={r.value}
-                                        onCommit={(next) => r.field && updateLeadField(r.field, next)}
+                                        hint={r.hint}
+                                        onCommit={(next) => r.commit ? r.commit(next) : r.field && updateLeadField(r.field, next)}
                                       />
                                     );
                                   }
@@ -2040,7 +2129,8 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
             })()}
           </div>
         ) : tab === "workflow" ? (
-          <div className="p-4 space-y-3">
+          // pt-3 = ระยะเดียวกับ py-3 ของราง STEPS ข้างซ้าย ให้ขอบบนเริ่มเท่ากัน
+          <div className="px-4 pb-4 pt-3 space-y-3">
             {/* Latest Contact — ข้อมูลการติดต่อล่าสุด */}
             {(() => {
               // DB-first: every contact event lives in lead_activities (including register/walk-in)
@@ -2287,6 +2377,13 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                 >
                   Set Revisit Date
                 </button>
+                <ReopenLeadButton
+                  leadId={lead.id}
+                  status={lead.status}
+                  currentGrade={lead.customer_grade ?? null}
+                  lostReason={lead.lost_reason ?? null}
+                  onSaved={refresh}
+                />
               </div>
             )}
 
