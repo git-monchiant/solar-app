@@ -225,7 +225,7 @@ export function NewBoqModal({ projectId, saving, error, onConfirm, onClose }: Co
   const [margin, setMargin] = useState("15");
   const [source, setSource] = useState("");
   return (
-    <ModalShell title="เพิ่ม BOQ ตัวเลือกใหม่" subtitle="ได้เลขที่ BOQ ใหม่ (Rev 0) แล้วไปเติมรายการในหน้าทำ BOQ"
+    <ModalShell title="สร้าง BOQ ใหม่" subtitle="ได้เลขที่ BOQ ใหม่ (Rev 0) แล้วไปเติมรายการในหน้าทำ BOQ"
       confirmText="สร้าง BOQ" saving={saving} error={error} onClose={onClose} onConfirm={() => onConfirm({ option_label: label, margin_pct: margin, copy_from: source })}>
       <BoqSourceField projectId={projectId} value={source} labelCls={labelCls}
         onChange={(v, row) => { setSource(v); if (row?.margin_pct != null) setMargin(String(row.margin_pct)); }} />

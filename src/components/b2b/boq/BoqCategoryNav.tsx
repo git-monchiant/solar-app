@@ -13,7 +13,7 @@ const thb0 = (n: number) => formatTHB(Math.round(n));
 // เมนูหมวดค้างซ้ายของแท็บ "รายการ" (แผน 20261016-04 แบบ A+B) — กดแล้วเลื่อนไปการ์ดหมวดนั้น
 // แต่ละหมวด: ราคาขาย · แท่งขนาด (เทียบหมวดที่แพงสุด · สีเดียว) · จุดสถานะ (แดง รอราคา · เหลือง ราคาเปลี่ยน · เขียว มีรายการ)
 // หมวดที่ยังว่าง = แถวเรียบสีจาง "เลข ชื่อ +" (กดแล้วเปิดการ์ดเปล่าให้เลือกรายการ) อยู่ในกลุ่มพับได้ — เดิมเป็นชิปกว้างไม่เท่ากันเรียงยาว (ปรับ 16 ต.ค.)
-//   มาตรฐาน: กางเองเมื่อใบยังไม่มีรายการเลย · ส่วนเพิ่มเติมที่ยังไม่ได้เพิ่ม: พับไว้ก่อน · ผู้ใช้กดเองชนะเสมอ
+//   มาตรฐาน: กางไว้เป็นค่าเริ่มต้น (ผู้ใช้สั่ง 16 ต.ค.) · ส่วนเพิ่มเติมที่ยังไม่ได้เพิ่ม: พับไว้ก่อน · กดพับ/กางเองได้
 
 export default function BoqCategoryNav({ filled, empty, addons, addonChoices, calc, flags, active, readOnly, onGo, onOpenEmpty, onAddAddon }: {
   /** หมวดมาตรฐานที่มีรายการ */
@@ -32,9 +32,8 @@ export default function BoqCategoryNav({ filled, empty, addons, addonChoices, ca
   onOpenEmpty: (c: B2bCategory) => void;
   onAddAddon: (c: B2bCategory) => void;
 }) {
-  const [emptyOpen, setEmptyOpen] = useState<boolean | null>(null);
+  const [showEmpty, setShowEmpty] = useState(true);
   const [choicesOpen, setChoicesOpen] = useState(false);
-  const showEmpty = emptyOpen ?? filled.length === 0;
   const max = Math.max(1, ...[...filled, ...addons].map((c) => calc.categories[c.id]?.cost ?? 0));
   const head = "flex items-center justify-between px-2 pt-2 pb-1 text-xxs font-bold uppercase tracking-wider text-gray-400";
 
@@ -88,7 +87,7 @@ export default function BoqCategoryNav({ filled, empty, addons, addonChoices, ca
       {filled.map(row)}
       {empty.length > 0 && (
         <div className="mt-1 border-t border-gray-100">
-          {groupToggle("ยังไม่มีรายการ", empty.length, showEmpty, () => setEmptyOpen(!showEmpty))}
+          {groupToggle("ยังไม่มีรายการ", empty.length, showEmpty, () => setShowEmpty(!showEmpty))}
           {showEmpty && empty.map((c) => addRow(c, onOpenEmpty))}
         </div>
       )}

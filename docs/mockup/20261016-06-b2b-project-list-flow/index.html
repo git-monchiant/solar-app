@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup: รายการโครงการ B2B แบบ flow</title>
+<style>
+  /* ฟอนต์ของแอป (public/fonts) — เปิดไฟล์นี้จากในโปรเจกต์ · DB Heavent ไม่มี 600 ⇒ ใช้ 500/700 */
+  @font-face{font-family:'DB Heavent';src:url(../../../public/fonts/db_heavent_li_v3.2-webfont.woff) format('woff');font-weight:300}
+  @font-face{font-family:'DB Heavent';src:url(../../../public/fonts/db_heavent_v3.2-webfont.woff) format('woff');font-weight:400}
+  @font-face{font-family:'DB Heavent';src:url(../../../public/fonts/db_heavent_med_v3.2-webfont.woff) format('woff');font-weight:500}
+  @font-face{font-family:'DB Heavent';src:url(../../../public/fonts/db_heavent_bd_v3.2-webfont.woff) format('woff');font-weight:700}
+  :root{
+    --primary:#1ed0c7;--primary-d:#0f9f98;--primary-bg:#e8faf9;--navy:#1e3a8a;
+    --active:#8b5cf6;--active-d:#7c3aed;--active-bg:#f5f3ff;
+    --g50:#f9fafb;--g100:#f3f4f6;--g200:#e5e7eb;--g300:#d1d5db;--g400:#9ca3af;--g500:#6b7280;--g600:#4b5563;--g700:#374151;--g800:#1f2937;--g900:#111827;
+    --em:#059669;--em-bg:#ecfdf5;--amber:#b45309;--amber-bg:#fffbeb;--amber-bd:#fcd34d;--red:#dc2626;--red-bg:#fef2f2;--blue:#1d4ed8;--blue-bg:#eff6ff;
+    --page:#f4f6f8;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#d9dde3;font-family:'DB Heavent',sans-serif;color:var(--g800);font-size:17px;line-height:1.45;padding:24px 16px 64px}
+  button,input{font:inherit;color:inherit}
+  button{cursor:pointer;background:none;border:0}
+  .num{font-variant-numeric:tabular-nums}
+  .muted{color:var(--g500)} .b{font-weight:700} .m{font-weight:500}
+  .wrap{max-width:1400px;margin:0 auto}
+
+  /* ── ส่วนอธิบาย mockup ── */
+  .intro{background:#fff;border-radius:12px;padding:16px 20px;margin-bottom:10px}
+  .intro h1{font-size:26px;color:var(--navy);line-height:1.2}
+  .intro p{color:var(--g600)}
+  .cmp{width:100%;border-collapse:collapse;margin-top:10px;font-size:15px}
+  .cmp th,.cmp td{padding:6px 10px;border-bottom:1px solid var(--g100);text-align:left;vertical-align:top}
+  .cmp thead th{font-size:14px;color:var(--g700);font-weight:700;background:var(--g50)}
+  .cmp tbody th{font-weight:500;color:var(--g500);width:210px}
+  .switch{position:sticky;top:0;z-index:50;display:flex;gap:6px;background:#d9dde3;padding:10px 0;flex-wrap:wrap}
+  .switch button{background:#fff;border:1px solid var(--g300);border-radius:999px;padding:5px 16px;font-weight:700;font-size:16px;color:var(--g600)}
+  .switch button.on{background:var(--navy);border-color:var(--navy);color:#fff}
+  .rec{display:inline-block;background:#e8912a;color:#fff;border-radius:999px;font-size:12px;padding:0 8px;margin-left:4px;vertical-align:middle;line-height:18px}
+  .view{display:none}.view.on{display:block}
+  .notes{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+  .notes > div{background:#fff;border-radius:10px;padding:10px 14px;font-size:15px;color:var(--g600)}
+  .notes h4{font-size:15px;color:var(--g800)}
+  .notes ul{list-style:disc;margin-left:18px}
+  .scroll{overflow-x:auto;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,.12)}
+
+  /* ── โครงแอป ── */
+  .app{display:flex;min-width:1280px;background:var(--page);min-height:760px}
+  .side{width:56px;background:var(--navy);flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:16px;padding:16px 0}
+  .side i{width:22px;height:22px;border:2px solid rgba(219,234,254,.5);border-radius:6px}
+  .side i.on{background:rgba(255,255,255,.15);border-color:#fff}
+  .side hr{width:28px;border:0;border-top:1px solid rgba(255,255,255,.15)}
+  .main{flex:1;display:flex;flex-direction:column;min-width:0}
+  .hdr{background:#fff;border-bottom:1px solid var(--g200);padding:12px 24px}
+  .hdr h2{font-size:22px;line-height:1.2}
+  .hdr small{font-size:13px;color:var(--g500);letter-spacing:.06em;font-weight:500}
+  .body{padding:20px 24px;display:flex;flex-direction:column;gap:14px}
+
+  /* ── แถบ flow (pipeline) ── */
+  .pipe{display:grid;grid-template-columns:repeat(5,1fr);gap:0;background:#fff;border:1px solid var(--g200);border-radius:12px;overflow:hidden}
+  .pstep{position:relative;padding:12px 14px 12px 26px;text-align:left;border-right:1px solid var(--g100);transition:background .15s}
+  .pstep:first-child{padding-left:16px}
+  .pstep:last-child{border-right:0}
+  .pstep:hover{background:var(--g50)}
+  .pstep.on{background:var(--active-bg)}
+  /* ลูกศรคั่นขั้น */
+  .pstep:not(:last-child)::after{content:"";position:absolute;right:-9px;top:50%;width:16px;height:16px;background:inherit;border-top:1px solid var(--g200);border-right:1px solid var(--g200);transform:translateY(-50%) rotate(45deg);z-index:2;background:#fff}
+  .pstep.on:not(:last-child)::after{background:var(--active-bg)}
+  .pstep .no{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:999px;background:var(--g100);color:var(--g600);font-size:13px;font-weight:700;margin-right:6px}
+  .pstep.on .no{background:var(--active);color:#fff}
+  .pstep .lb{font-weight:700;font-size:16px;color:var(--g800)}
+  .pstep .cnt{font-size:30px;font-weight:700;line-height:1.1;margin-top:4px;color:var(--g900)}
+  .pstep .cnt span{font-size:14px;font-weight:500;color:var(--g500);margin-left:4px}
+  .pstep .val{font-size:14px;color:var(--g500)}
+  .pstep .todo{margin-top:4px;font-size:13px;display:flex;gap:6px;flex-wrap:wrap}
+  .dot{display:inline-block;width:7px;height:7px;border-radius:999px;margin-right:4px;vertical-align:middle}
+
+  /* ── แถวเครื่องมือ ── */
+  .tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .search{flex:1;min-width:240px;height:36px;border:1px solid var(--g200);border-radius:8px;padding:0 14px;background:#fff;color:var(--g400);display:flex;align-items:center;font-size:15px}
+  .chip{height:32px;border:1px solid var(--g200);border-radius:999px;padding:0 12px;background:#fff;font-size:14px;font-weight:700;color:var(--g600);display:inline-flex;align-items:center;gap:6px}
+  .chip.on{background:var(--primary);border-color:var(--primary);color:#fff}
+  .chip b{font-variant-numeric:tabular-nums}
+  .seg{display:inline-flex;border:1px solid var(--g200);border-radius:8px;overflow:hidden}
+  .seg span{padding:5px 12px;font-size:15px;font-weight:700;background:#fff;color:var(--g600)}
+  .seg span.on{background:var(--primary);color:#fff}
+  .btnp{height:36px;padding:0 18px;border-radius:8px;background:var(--primary);color:#fff;font-weight:700;font-size:16px}
+
+  /* ป้าย "รอใคร" — สีตามคนที่ต้องทำ (ไม่ใช่ตามขั้น) */
+  .wait{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:1px 9px;font-size:13px;font-weight:700;white-space:nowrap}
+  .w-us{background:var(--primary-bg);color:var(--primary-d)}
+  .w-rev{background:var(--active-bg);color:var(--active-d)}
+  .w-cust{background:var(--amber-bg);color:var(--amber)}
+  .w-acc{background:var(--blue-bg);color:var(--blue)}
+
+  /* ── แบบ A: ตาราง + รางขั้นในแถว ── */
+  .card{background:#fff;border:1px solid var(--g200);border-radius:12px;overflow:hidden}
+  table.list{width:100%;border-collapse:collapse;font-size:15px}
+  .list th{background:var(--g50);color:var(--g500);font-size:13px;font-weight:700;text-align:left;padding:8px 12px;white-space:nowrap}
+  .list td{padding:10px 12px;border-top:1px solid var(--g100);vertical-align:middle}
+  .list tr:hover td{background:#f7fefe;cursor:pointer}
+  .list .r{text-align:right}
+  .pname{font-weight:700;font-size:16px;color:var(--g900);line-height:1.25}
+  .psub{font-size:13px;color:var(--g500)}
+  .rail{display:flex;align-items:center}
+  .rail i{width:12px;height:12px;border-radius:999px;background:var(--g200);flex-shrink:0;position:relative}
+  .rail i.done{background:var(--primary)}
+  .rail i.cur{background:#fff;border:3px solid var(--active);width:16px;height:16px}
+  .rail em{width:14px;height:2px;background:var(--g200);flex-shrink:0}
+  .rail em.done{background:var(--primary)}
+  .slab{font-size:13px;font-weight:700;color:var(--active-d);margin-top:3px;white-space:nowrap}
+  .next{font-weight:500;color:var(--g900);font-size:15px;line-height:1.3}
+  .status{font-size:13px;color:var(--g500);line-height:1.3}
+  .days{font-size:14px;white-space:nowrap}
+  .stale{color:var(--red);font-weight:700}
+  .grpsep td{background:var(--g50)!important;font-size:13px;font-weight:700;color:var(--g500);padding:5px 12px}
+
+  /* ── ขั้นย่อย (ใช้ใน B และ C) ── */
+  .subs{display:flex;gap:3px}
+  .subs span{flex:1;height:6px;border-radius:3px;background:var(--g200)}
+  .subs span.done{background:var(--primary)}
+  .subs span.cur{background:var(--active)}
+  .subs span.back{background:var(--red)}
+  .sublbl{display:flex;gap:3px;margin-top:3px}
+  .sublbl span{flex:1;font-size:12px;color:var(--g400);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sublbl span.done{color:var(--primary-d)}
+  .sublbl span.cur{color:var(--active-d);font-weight:700}
+  .sublbl span.back{color:var(--red);font-weight:700}
+
+  /* ── แบบ B: จัดกลุ่มตามขั้น ── */
+  .flowb{position:relative;display:flex;flex-direction:column;gap:12px}
+  .flowb::before{content:"";position:absolute;left:19px;top:20px;bottom:20px;width:2px;background:var(--g200)}
+  .stg{position:relative;padding-left:52px}
+  .stg .circ{position:absolute;left:4px;top:8px;width:32px;height:32px;border-radius:999px;background:#fff;border:2px solid var(--g300);color:var(--g500);font-weight:700;display:flex;align-items:center;justify-content:center;font-size:15px;z-index:1}
+  .stg.has .circ{border-color:var(--active);color:var(--active-d)}
+  .stg .shead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;padding:8px 0 6px}
+  .stg .shead h3{font-size:19px}
+  .stg .shead .cnt{font-weight:700;color:var(--g600)}
+  .stg .shead .hint{font-size:14px;color:var(--g400)}
+  .stg .shead .sum{margin-left:auto;font-size:15px;color:var(--g600)}
+  .stg.empty .shead{opacity:.55}
+  .brow{display:grid;grid-template-columns:minmax(220px,1.3fr) minmax(260px,1.4fr) minmax(230px,1.3fr) 110px 120px 70px;gap:14px;align-items:center;padding:10px 14px;border-top:1px solid var(--g100)}
+  .brow:first-child{border-top:0}
+  .brow:hover{background:#f7fefe;cursor:pointer}
+
+  /* ── แบบ C: กระดาน flow ── */
+  .board{display:flex;gap:0;align-items:stretch}
+  .col{flex:1;min-width:0;background:#eef0f3;border-radius:12px;display:flex;flex-direction:column}
+  .arrow{width:22px;flex-shrink:0;display:flex;align-items:flex-start;justify-content:center;padding-top:16px;color:var(--g400);font-size:18px;font-weight:700}
+  .col .chd{padding:10px 12px;border-bottom:1px solid var(--g200)}
+  .col .chd .t{display:flex;align-items:center;gap:6px;font-weight:700}
+  .col .chd .t .no{width:22px;height:22px;border-radius:999px;background:var(--active);color:#fff;font-size:13px;display:inline-flex;align-items:center;justify-content:center}
+  .col .chd .t .n{margin-left:auto;min-width:22px;height:22px;border-radius:999px;background:#fff;font-size:13px;display:inline-flex;align-items:center;justify-content:center;padding:0 6px}
+  .col .chd .s{font-size:13px;color:var(--g500)}
+  .col .cbody{padding:8px;display:flex;flex-direction:column;gap:8px}
+  .kc{background:#fff;border:1px solid var(--g200);border-radius:10px;padding:9px 10px;display:flex;flex-direction:column;gap:5px}
+  .kc:hover{border-color:var(--primary);cursor:pointer}
+  .kc .top{display:flex;justify-content:space-between;font-size:12px;color:var(--g400)}
+  .kc .nm{font-weight:700;line-height:1.2;font-size:15px}
+  .kc .cs{font-size:13px;color:var(--g500);margin-top:-3px}
+  .kc .nx{font-size:14px;line-height:1.25;color:var(--g800)}
+  .kc .ft{display:flex;justify-content:space-between;align-items:center;font-size:13px}
+  .empty-col{font-size:13px;color:var(--g400);text-align:center;padding:14px 0}
+
+  /* ── มือถือ ── */
+  .phones{display:flex;gap:24px;flex-wrap:wrap;justify-content:center;padding:10px 0}
+  .phone{width:390px;background:var(--page);border-radius:28px;border:10px solid #1f2937;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.2)}
+  .phone .ph{background:#fff;border-bottom:1px solid var(--g200);padding:10px 14px}
+  .phone .ph h2{font-size:20px}
+  .mpipe{display:flex;gap:6px;overflow-x:auto;padding:10px 12px;background:#fff;border-bottom:1px solid var(--g200)}
+  .mpipe span{flex-shrink:0;border:1px solid var(--g200);border-radius:10px;padding:4px 10px;font-size:13px;line-height:1.2;text-align:center}
+  .mpipe span b{display:block;font-size:18px}
+  .mpipe span.on{background:var(--active-bg);border-color:var(--active);color:var(--active-d)}
+  .mlist{padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+  .mcard{background:#fff;border:1px solid var(--g200);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:6px}
+  .mbar{display:flex;justify-content:space-around;background:#fff;border-top:1px solid var(--g200);padding:8px 0;font-size:12px;color:var(--g500)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="intro">
+    <h1>รายการโครงการ B2B — ออกแบบใหม่ให้เห็น flow ขั้นตอน</h1>
+    <p>หน้าเดิม: ตารางมี "ขั้น" เป็นป้ายเดียว ไม่บอกว่า <b>ต่อไปต้องทำอะไร · รอใคร · ค้างมากี่วัน</b> และไม่เห็นภาพรวมว่าแต่ละขั้นมีกี่งาน
+      — mockup นี้ใช้ <b>ข้อมูลตัวอย่าง</b> (ชื่อ 5 โครงการจากฐาน dev + 4 โครงการสมมติ ให้เห็นครบทุกขั้น · สถานะสมมติ)</p>
+    <table class="cmp">
+      <thead><tr><th></th><th>A · แถบ flow + รายการ <span class="rec">แนะนำ</span></th><th>B · จัดกลุ่มตามขั้น</th><th>C · กระดาน flow</th></tr></thead>
+      <tbody>
+        <tr><th>หน้าตา</th><td>แถบ 5 ขั้นด้านบน (กดกรองได้) · ตารางมีรางขั้น ●●●○○ + "ต่อไป" + "รอใคร" ทุกแถว</td><td>ไล่ลงตามขั้น 01 → 05 เหมือนเส้นทาง · ในแต่ละขั้นเห็นขั้นย่อย (BOQ → ออกใบ → อนุมัติ → ส่งลูกค้า)</td><td>คอลัมน์ละขั้นมีลูกศรต่อกัน · การ์ดมีแถบขั้นย่อย + ต่อไป + รอใคร</td></tr>
+        <tr><th>เห็นภาพรวม flow</th><td>✓ แถบด้านบน (จำนวน · มูลค่า · ถึงตาเรากี่งาน)</td><td>✓✓ อ่านจากบนลงล่างเป็นลำดับงาน</td><td>✓✓ เห็นงานไหลซ้ายไปขวา</td></tr>
+        <tr><th>เห็นงานถัดไปรายโครงการ</th><td>✓✓ คอลัมน์ "ต่อไป" + ป้ายรอใคร</td><td>✓✓ + แถบขั้นย่อยละเอียดสุด</td><td>✓ (การ์ดแคบ ข้อความสั้น)</td></tr>
+        <tr><th>โครงการเยอะ (30+)</th><td>✓✓ ตารางยาวได้ · กรอง/ค้นหา/เรียงง่าย</td><td>✓ หน้ายาวขึ้นตามจำนวนขั้น</td><td>△ คอลัมน์ยาว ต้องเลื่อนในคอลัมน์</td></tr>
+        <tr><th>มือถือ</th><td>✓ แถบขั้นเลื่อนข้าง + การ์ด</td><td>✓ การ์ดเรียงตามกลุ่ม</td><td>△ ต้องเลื่อนข้างทีละคอลัมน์</td></tr>
+        <tr><th>ใช้แทน</th><td>มุมมอง "รายการ" เดิม</td><td>มุมมอง "รายการ" เดิม</td><td>มุมมอง "กระดาน" เดิม (ใช้คู่กับ A หรือ B ได้)</td></tr>
+      </tbody>
+    </table>
+    <p style="margin-top:8px;font-size:15px">ทุกแบบใช้ข้อมูลชุดเดียวกัน — ป้าย <span class="wait w-us">ถึงตาเรา</span> <span class="wait w-rev">รออนุมัติ</span> <span class="wait w-cust">รอลูกค้า</span> <span class="wait w-acc">รอบัญชี</span>
+      สีตาม "คนที่ต้องทำ" · ตัวเลขวัน = อยู่ในขั้นนี้มากี่วัน (เกิน 7 วันเป็นสีแดง)</p>
+  </div>
+
+  <div class="switch">
+    <button data-v="a" class="on">A · แถบ flow + รายการ ⭐</button>
+    <button data-v="b">B · จัดกลุ่มตามขั้น</button>
+    <button data-v="c">C · กระดาน flow</button>
+    <button data-v="m">มือถือ (แบบ A)</button>
+  </div>
+
+  <!-- ═══════════ A ═══════════ -->
+  <section class="view on" id="v-a">
+    <div class="notes">
+      <div><h4>อ่านยังไง</h4><ul>
+        <li>แถบบน = เส้นทางขาย 5 ขั้น · ตัวเลขใหญ่ = จำนวนโครงการ · ใต้ตัวเลข = มูลค่ารวม + ถึงตาเรากี่งาน · <b>กดขั้นไหน = กรองตารางเหลือขั้นนั้น</b> (ลองกดได้)</li>
+        <li>แต่ละแถว: รางขั้น ●●●○○ (จุดม่วง = ขั้นปัจจุบัน) · <b>ต่อไป</b> = งานที่ต้องทำ · ป้าย = รอใคร</li>
+      </ul></div>
+      <div><h4>ต่างจากเดิม</h4><ul>
+        <li>ชิปกรอง "ถึงตาเรา / รออนุมัติ / รอลูกค้า / รอบัญชี" — เปิดมาเห็นทันทีว่างานไหนต้องทำเอง</li>
+        <li>BOQ หลายขนาดแสดงช่วง "150 – 200 kWp · 2 ขนาด" แทน "— · 2 ตัวเลือก" · คอลัมน์ "อยู่ขั้นนี้" แทน "อัปเดตล่าสุด"</li>
+      </ul></div>
+    </div>
+    <div class="scroll"><div class="app">
+      <nav class="side"><i></i><hr><i class="on"></i><i></i><i></i><i></i><i></i><hr><i></i></nav>
+      <div class="main">
+        <div class="hdr"><h2>ทั้งหมด</h2><small>COMMERCIAL (B2B) · 9 โครงการ</small></div>
+        <div class="body">
+          <div class="pipe" id="pipeA"></div>
+          <div class="tools">
+            <div class="search">ค้นหา เลขที่ / โครงการ / ลูกค้า / ที่ตั้ง / ผู้ดูแล…</div>
+            <span class="chip on">ทั้งหมด <b>9</b></span>
+            <span class="chip"><i class="dot" style="background:var(--primary)"></i>ถึงตาเรา <b>6</b></span>
+            <span class="chip"><i class="dot" style="background:var(--active)"></i>รออนุมัติ <b>1</b></span>
+            <span class="chip"><i class="dot" style="background:#f59e0b"></i>รอลูกค้า <b>1</b></span>
+            <span class="chip"><i class="dot" style="background:var(--blue)"></i>รอบัญชี <b>1</b></span>
+            <span class="seg"><span class="on">รายการ</span><span>กระดาน</span></span>
+            <button class="btnp">+ สร้างโครงการ</button>
+          </div>
+          <div class="card">
+            <table class="list">
+              <thead><tr><th>โครงการ</th><th>ขั้นตอน</th><th>ต่อไป</th><th>รอ</th><th class="r">BOQ</th><th class="r">มูลค่า (ก่อน VAT)</th><th>ผู้ดูแล</th><th class="r">อยู่ขั้นนี้</th></tr></thead>
+              <tbody id="tbA"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div></div>
+  </section>
+
+  <!-- ═══════════ B ═══════════ -->
+  <section class="view" id="v-b">
+    <div class="notes">
+      <div><h4>อ่านยังไง</h4><ul>
+        <li>ไล่ลงเหมือนเส้นทาง 01 → 05 · หัวกลุ่มบอกว่าขั้นนี้ทำอะไร + จำนวน + มูลค่า · ขั้นที่ไม่มีงานจางลงเหลือบรรทัดเดียว</li>
+        <li>แถบขั้นย่อยในแถว: <span style="color:var(--primary-d)">ฟ้า = ทำแล้ว</span> · <span style="color:var(--active-d)">ม่วง = ตอนนี้</span> · <span style="color:var(--red)">แดง = ส่งกลับแก้</span> · เทา = ยังไม่ถึง</li>
+      </ul></div>
+      <div><h4>เหมาะกับ</h4><ul>
+        <li>ประชุมทีมขาย / ไล่งานรายสัปดาห์ — เห็นว่าแต่ละขั้นติดตรงขั้นย่อยไหน (เช่น ขั้น 02 มี 1 งานรออนุมัติ 1 งานรอส่งลูกค้า)</li>
+        <li>ถ้าโครงการเยอะมาก หน้าจะยาว — กดหัวกลุ่มพับได้</li>
+      </ul></div>
+    </div>
+    <div class="scroll"><div class="app">
+      <nav class="side"><i></i><hr><i class="on"></i><i></i><i></i><i></i><i></i><hr><i></i></nav>
+      <div class="main">
+        <div class="hdr"><h2>ทั้งหมด</h2><small>COMMERCIAL (B2B) · 9 โครงการ</small></div>
+        <div class="body">
+          <div class="tools">
+            <div class="search">ค้นหา เลขที่ / โครงการ / ลูกค้า / ที่ตั้ง / ผู้ดูแล…</div>
+            <span class="chip on">ทั้งหมด <b>9</b></span>
+            <span class="chip"><i class="dot" style="background:var(--primary)"></i>ถึงตาเรา <b>6</b></span>
+            <span class="chip"><i class="dot" style="background:var(--active)"></i>รออนุมัติ <b>1</b></span>
+            <span class="chip"><i class="dot" style="background:#f59e0b"></i>รอลูกค้า <b>1</b></span>
+            <span class="chip"><i class="dot" style="background:var(--blue)"></i>รอบัญชี <b>1</b></span>
+            <span class="seg"><span class="on">รายการ</span><span>กระดาน</span></span>
+            <button class="btnp">+ สร้างโครงการ</button>
+          </div>
+          <div class="flowb" id="flowB"></div>
+        </div>
+      </div>
+    </div></div>
+  </section>
+
+  <!-- ═══════════ C ═══════════ -->
+  <section class="view" id="v-c">
+    <div class="notes">
+      <div><h4>อ่านยังไง</h4><ul>
+        <li>คอลัมน์ละขั้น มีลูกศรต่อกัน · หัวคอลัมน์: จำนวน · มูลค่า · ถึงตาเรากี่งาน</li>
+        <li>การ์ด: แถบขั้นย่อย + ชื่อขั้นย่อยตอนนี้ · ต่อไป · รอใคร · มูลค่า · วันในขั้น</li>
+      </ul></div>
+      <div><h4>หมายเหตุ</h4><ul>
+        <li>ใช้แทน "กระดาน" เดิม (ตอนนี้การ์ดมีแค่ชื่อ/kWp/ราคา) — ใช้คู่กับแบบ A หรือ B ในปุ่มสลับ รายการ / กระดาน ได้</li>
+        <li>จอแคบ (&lt; 1280px) กระดานเลื่อนข้าง</li>
+      </ul></div>
+    </div>
+    <div class="scroll"><div class="app">
+      <nav class="side"><i></i><hr><i class="on"></i><i></i><i></i><i></i><i></i><hr><i></i></nav>
+      <div class="main">
+        <div class="hdr"><h2>ทั้งหมด</h2><small>COMMERCIAL (B2B) · 9 โครงการ</small></div>
+        <div class="body">
+          <div class="tools">
+            <div class="search">ค้นหา เลขที่ / โครงการ / ลูกค้า / ที่ตั้ง / ผู้ดูแล…</div>
+            <span class="chip on">ทั้งหมด <b>9</b></span>
+            <span class="chip"><i class="dot" style="background:var(--primary)"></i>ถึงตาเรา <b>6</b></span>
+            <span class="chip"><i class="dot" style="background:var(--active)"></i>รออนุมัติ <b>1</b></span>
+            <span class="chip"><i class="dot" style="background:#f59e0b"></i>รอลูกค้า <b>1</b></span>
+            <span class="chip"><i class="dot" style="background:var(--blue)"></i>รอบัญชี <b>1</b></span>
+            <span class="seg"><span>รายการ</span><span class="on">กระดาน</span></span>
+            <button class="btnp">+ สร้างโครงการ</button>
+          </div>
+          <div class="board" id="boardC"></div>
+        </div>
+      </div>
+    </div></div>
+  </section>
+
+  <!-- ═══════════ มือถือ ═══════════ -->
+  <section class="view" id="v-m">
+    <div class="notes">
+      <div><h4>มือถือ (แบบ A)</h4><ul>
+        <li>แถบขั้นเป็นปุ่มเลื่อนข้าง (จำนวนต่อขั้น) กดกรองได้ · ชิปรอใครอยู่ใต้ช่องค้นหา</li>
+        <li>การ์ด: ชื่อ + รางขั้น + ต่อไป + รอใคร + มูลค่า</li>
+      </ul></div>
+      <div><h4>แบบ B / C บนมือถือ</h4><ul>
+        <li>B = การ์ดแบบเดียวกันแต่มีหัวกลุ่มขั้นคั่น · C = กระดานเลื่อนข้างทีละคอลัมน์ (ใช้ยากกว่า)</li>
+      </ul></div>
+    </div>
+    <div class="phones">
+      <div class="phone">
+        <div class="ph"><h2>ทั้งหมด</h2><small class="muted" style="font-size:12px;letter-spacing:.06em">COMMERCIAL (B2B) · 9 โครงการ</small></div>
+        <div class="mpipe" id="mpipe"></div>
+        <div style="padding:10px 12px 0;display:flex;flex-direction:column;gap:8px">
+          <div class="search" style="min-width:0">ค้นหาโครงการ…</div>
+          <div style="display:flex;gap:6px;overflow-x:auto">
+            <span class="chip on">ทั้งหมด <b>9</b></span><span class="chip">ถึงตาเรา <b>6</b></span><span class="chip">รออนุมัติ <b>1</b></span><span class="chip">รอลูกค้า <b>1</b></span>
+          </div>
+        </div>
+        <div class="mlist" id="mlist"></div>
+        <div class="mbar"><span>HOME</span><span>PIPELINE</span><span>ME</span></div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+// ข้อมูลตัวอย่าง — 5 ชื่อจากฐาน dev (สถานะสมมติ) + 4 โครงการสมมติ
+const STEPS = [
+  { n: 1, label: "โอกาสขาย", hint: "รับเรื่อง → ทำ BOQ ประมาณการ" },
+  { n: 2, label: "ราคาประมาณการ", hint: "BOQ จาก Google Maps → ใบประมาณการ → อนุมัติ 3 ชั้น → ส่งลูกค้า" },
+  { n: 3, label: "สำรวจหน้างาน", hint: "นัดวัน → สำรวจ → บันทึกผล + รูป" },
+  { n: 4, label: "ราคายืนยัน / ต่อรอง", hint: "BOQ ตามผลสำรวจ → ใบยืนยัน → อนุมัติ 3 ชั้น → ส่งลูกค้า → ได้งาน" },
+  { n: 5, label: "ได้งาน", hint: "ทำสัญญา → รับเงินงวด 1 → เข้าขออนุญาต/จัดซื้อ" },
+];
+const SUBS = {
+  1: ["ข้อมูลลูกค้า", "ทำ BOQ"],
+  2: ["BOQ", "ออกใบ", "อนุมัติ 3 ชั้น", "ส่งลูกค้า"],
+  3: ["นัดวัน", "สำรวจ", "บันทึกผล"],
+  4: ["BOQ", "ออกใบ", "อนุมัติ 3 ชั้น", "ส่งลูกค้า"],
+  5: ["สัญญา", "รับเงินงวด 1"],
+};
+const WAIT = { us: ["ถึงตาเรา", "w-us"], rev: ["รออนุมัติ", "w-rev"], cust: ["รอลูกค้า", "w-cust"], acc: ["รอบัญชี", "w-acc"] };
+// done = ขั้นย่อยที่เสร็จแล้ว (ตัวถัดไป = ตอนนี้) · back = ขั้นย่อยที่ถูกส่งกลับแก้ · appr = อนุมัติแล้วกี่ชั้น
+const P = [
+  { code: "PRJ2610-006", name: "โรงงานแปรรูปอาหาร บางนา", cust: "บ. ฟู้ดเทค (สมมติ)", step: 1, done: 1, status: "โครงการใหม่ · ข้อมูลลูกค้าครบ", next: "ทำ BOQ ราคาประมาณการ", wait: "us", who: "Solar B2B", kwp: null, opts: 0, value: null, owner: "Admin", days: 0 },
+  { code: "PRJ2610-003", name: "โรงงาน Test", cust: "บ. A", step: 2, done: 2, appr: 1, status: "ใบประมาณการ · อนุมัติแล้ว 1/3", next: "ผู้ตรวจสอบ 2 ตรวจใบประมาณการ", wait: "rev", who: "ผู้ตรวจสอบ 2", kwp: "150 – 200 kWp", opts: 2, value: 3450000, owner: "Admin", days: 1 },
+  { code: "PRJ2610-004", name: "Home Solar K.Gig", cust: "เสนา", step: 2, done: 3, appr: 3, status: "อนุมัติครบ 3 ชั้น", next: "ส่งใบประมาณการให้ลูกค้า", wait: "us", who: "Solar B2B", kwp: "183.04 kWp", opts: 1, value: 861365, owner: "Admin", days: 0 },
+  { code: "PRJ2610-005", name: "โรงงาน Test 2", cust: "Test 2", step: 2, done: 1, status: "มี BOQ 2 ขนาด · ยังไม่ออกใบ", next: "ออกใบประมาณการ", wait: "us", who: "Solar B2B", kwp: "0.70 – 1.20 kWp", opts: 2, value: 267118, owner: "Admin", days: 0 },
+  { code: "PRJ2610-007", name: "คลังสินค้า วังน้อย", cust: "บ. โลจิสติกส์ (สมมติ)", step: 3, done: 1, status: "นัดสำรวจ ศ. 20 ต.ค. · ช่างเอ", next: "ไปสำรวจหน้างาน (อีก 4 วัน)", wait: "us", who: "ผู้สำรวจ", kwp: "498 kWp", opts: 1, value: 9850000, owner: "Admin", days: 3 },
+  { code: "PRJ2610-008", name: "ห้างสรรพสินค้า ชลบุรี", cust: "บ. รีเทล (สมมติ)", step: 4, done: 1, back: 1, status: "ส่งกลับแก้ · ผู้ตรวจสอบ 1: ปรับงวดเงิน", next: "แก้ใบแล้วส่งอนุมัติใหม่", wait: "us", who: "Solar B2B", kwp: "1,200 kWp", opts: 1, value: 24300000, owner: "Admin", days: 9 },
+  { code: "PRJ2610-002", name: "test solar", cust: "test solar sena", step: 4, done: 0, status: "สำรวจแล้ว · ยังไม่มี BOQ", next: "ทำ BOQ ตามผลสำรวจ", wait: "us", who: "Solar B2B", kwp: null, opts: 0, value: null, owner: "Admin", days: 1 },
+  { code: "PRJ2610-001", name: "A Solar Project", cust: "บ. A", step: 4, done: 4, appr: 3, status: "ส่งลูกค้าแล้ว 14 ต.ค. · รอตอบ", next: "ลูกค้าตอบรับ → กด \"ได้งาน\"", wait: "cust", who: "ลูกค้า", kwp: "70 kWp", opts: 1, value: 1003765, owner: "Admin", days: 2 },
+  { code: "PRJ2610-009", name: "โรงพยาบาล ระยอง", cust: "บ. เฮลท์แคร์ (สมมติ)", step: 5, done: 1, status: "สัญญา C-2610-01 · งวด 1 แนบหลักฐานแล้ว", next: "บัญชียืนยันรับเงินงวด 1 (30%)", wait: "acc", who: "บัญชี", kwp: "800 kWp", opts: 1, value: 15600000, owner: "Admin", days: 4 },
+];
+
+const fmt = (n) => n == null ? "—" : n.toLocaleString("en-US");
+const mb = (n) => (n / 1e6).toFixed(2) + " ลบ.";
+const pad = (n) => String(n).padStart(2, "0");
+const wait = (p) => `<span class="wait ${WAIT[p.wait][1]}">${WAIT[p.wait][0]}</span>`;
+const waitWho = (p) => `${wait(p)}<div class="psub" style="margin-top:2px">${p.who}</div>`;
+const days = (p) => p.days === 0 ? `<span class="days muted">วันนี้</span>` : `<span class="days ${p.days > 7 ? "stale" : ""}">${p.days} วัน${p.days > 7 ? " ⚠" : ""}</span>`;
+const boq = (p) => p.kwp ? `<div class="num">${p.kwp}</div>${p.opts > 1 ? `<div class="psub">${p.opts} ขนาด</div>` : ""}` : `<span class="muted">ยังไม่มี</span>`;
+const rail = (p) => STEPS.map((s, i) => `${i ? `<em class="${s.n <= p.step ? "done" : ""}"></em>` : ""}<i class="${s.n < p.step ? "done" : s.n === p.step ? "cur" : ""}" title="${pad(s.n)} ${s.label}"></i>`).join("");
+const subCls = (p, i) => p.back === i ? "back" : i < p.done ? "done" : i === p.done ? "cur" : "";
+const subs = (p, labels = true) => {
+  const L = SUBS[p.step];
+  const lab = (t, i) => t === "อนุมัติ 3 ชั้น" ? `อนุมัติ ${p.appr ?? 0}/3` : t;
+  return `<div class="subs">${L.map((t, i) => `<span class="${subCls(p, i)}"></span>`).join("")}</div>`
+    + (labels ? `<div class="sublbl">${L.map((t, i) => `<span class="${subCls(p, i)}">${lab(t, i)}</span>`).join("")}</div>` : "");
+};
+const curSub = (p) => { const L = SUBS[p.step]; const i = p.back ?? p.done; return i >= L.length ? "ครบทุกข้อ" : (L[i] === "อนุมัติ 3 ชั้น" ? `อนุมัติ ${p.appr ?? 0}/3` : L[i]); };
+const inStep = (n) => P.filter((p) => p.step === n);
+
+// ── A ──
+let filterA = 0;
+function renderA() {
+  document.getElementById("pipeA").innerHTML = STEPS.map((s) => {
+    const xs = inStep(s.n); const sum = xs.reduce((t, p) => t + (p.value ?? 0), 0); const us = xs.filter((p) => p.wait === "us").length;
+    return `<button class="pstep ${filterA === s.n ? "on" : ""}" data-s="${s.n}">
+      <div><span class="no">${pad(s.n)}</span><span class="lb">${s.label}</span></div>
+      <div class="cnt num">${xs.length}<span>โครงการ</span></div>
+      <div class="val num">${sum ? mb(sum) : "—"}</div>
+      <div class="todo">${us ? `<span class="wait w-us">ถึงตาเรา ${us}</span>` : ""}${xs.length - us ? `<span class="psub">รอคนอื่น ${xs.length - us}</span>` : ""}</div>
+    </button>`;
+  }).join("");
+  const rows = P.filter((p) => !filterA || p.step === filterA);
+  document.getElementById("tbA").innerHTML = rows.map((p) => `<tr>
+      <td><div class="pname">${p.name}</div><div class="psub">${p.code} · ${p.cust}</div></td>
+      <td><div class="rail">${rail(p)}</div><div class="slab">${pad(p.step)} ${STEPS[p.step - 1].label}</div></td>
+      <td><div class="next">${p.next}</div><div class="status">${p.status}</div></td>
+      <td>${waitWho(p)}</td>
+      <td class="r">${boq(p)}</td>
+      <td class="r num m">${fmt(p.value)}</td>
+      <td class="muted">${p.owner}</td>
+      <td class="r">${days(p)}</td>
+    </tr>`).join("") + (filterA ? `<tr class="grpsep"><td colspan="8">กรองขั้น ${pad(filterA)} อยู่ — กดขั้นเดิมอีกครั้งเพื่อดูทั้งหมด</td></tr>` : "");
+  document.querySelectorAll("#pipeA .pstep").forEach((b) => b.onclick = () => { const s = +b.dataset.s; filterA = filterA === s ? 0 : s; renderA(); });
+}
+
+// ── B ──
+function renderB() {
+  document.getElementById("flowB").innerHTML = STEPS.map((s) => {
+    const xs = inStep(s.n); const sum = xs.reduce((t, p) => t + (p.value ?? 0), 0);
+    return `<div class="stg ${xs.length ? "has" : "empty"}">
+      <div class="circ">${pad(s.n)}</div>
+      <div class="shead"><h3>${s.label}</h3><span class="cnt">${xs.length} โครงการ</span><span class="hint">${s.hint}</span><span class="sum num">${sum ? "มูลค่า " + mb(sum) : ""}</span></div>
+      ${xs.length ? `<div class="card">${xs.map((p) => `<div class="brow">
+          <div><div class="pname">${p.name}</div><div class="psub">${p.code} · ${p.cust}</div></div>
+          <div>${subs(p)}</div>
+          <div><div class="next">${p.next}</div><div class="status">${p.status}</div></div>
+          <div>${waitWho(p)}</div>
+          <div style="text-align:right"><div class="num m">${fmt(p.value)}</div><div class="psub">${p.kwp ?? "ยังไม่มี BOQ"}${p.opts > 1 ? ` · ${p.opts} ขนาด` : ""}</div></div>
+          <div style="text-align:right">${days(p)}</div>
+        </div>`).join("")}</div>` : ""}
+    </div>`;
+  }).join("");
+}
+
+// ── C ──
+function renderC() {
+  document.getElementById("boardC").innerHTML = STEPS.map((s, i) => {
+    const xs = inStep(s.n); const sum = xs.reduce((t, p) => t + (p.value ?? 0), 0); const us = xs.filter((p) => p.wait === "us").length;
+    return `${i ? `<div class="arrow">›</div>` : ""}<section class="col">
+      <div class="chd"><div class="t"><span class="no">${pad(s.n)}</span>${s.label}<span class="n">${xs.length}</span></div>
+        <div class="s num">${sum ? mb(sum) : "—"}${us ? ` · <span style="color:var(--primary-d);font-weight:700">ถึงตาเรา ${us}</span>` : ""}</div></div>
+      <div class="cbody">${xs.length ? xs.map((p) => `<div class="kc">
+          <div class="top"><span>${p.code}</span>${days(p)}</div>
+          <div class="nm">${p.name}</div><div class="cs">${p.cust}</div>
+          ${subs(p, false)}<div style="font-size:12px;color:var(--active-d);font-weight:700;margin-top:-2px">${curSub(p)}</div>
+          <div class="nx">→ ${p.next}</div>
+          <div class="ft">${wait(p)}<span class="num m">${p.value ? fmt(p.value) : "—"}</span></div>
+        </div>`).join("") : `<div class="empty-col">ไม่มีโครงการ</div>`}</div>
+    </section>`;
+  }).join("");
+}
+
+// ── มือถือ ──
+function renderM() {
+  document.getElementById("mpipe").innerHTML = `<span class="on"><b>9</b>ทั้งหมด</span>` + STEPS.map((s) => `<span><b>${inStep(s.n).length}</b>${pad(s.n)} ${s.label.split(" ")[0]}</span>`).join("");
+  document.getElementById("mlist").innerHTML = P.slice(0, 5).map((p) => `<div class="mcard">
+      <div style="display:flex;justify-content:space-between;gap:8px"><div><div class="pname">${p.name}</div><div class="psub">${p.code} · ${p.cust}</div></div>${days(p)}</div>
+      <div style="display:flex;align-items:center;gap:8px"><div class="rail">${rail(p)}</div><span class="slab" style="margin:0">${pad(p.step)} ${STEPS[p.step - 1].label}</span></div>
+      <div class="next">→ ${p.next}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center">${wait(p)}<span class="num m">${p.value ? fmt(p.value) : "—"}</span></div>
+    </div>`).join("");
+}
+
+renderA(); renderB(); renderC(); renderM();
+document.querySelectorAll(".switch button").forEach((b) => b.onclick = () => {
+  document.querySelectorAll(".switch button").forEach((x) => x.classList.toggle("on", x === b));
+  document.querySelectorAll(".view").forEach((v) => v.classList.toggle("on", v.id === "v-" + b.dataset.v));
+});
+</script>
+</body>
+</html>

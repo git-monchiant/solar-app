@@ -159,6 +159,10 @@ export type B2bProjectRow = {
   stage: number; sub: number | null; survey_date: string | null; close_reason: string | null;
   owner_id: number | null; owner_name: string | null;
   boq_count: number; boq_capacity_wp: number | null; boq_total_sale: number | null;
+  /** ขนาดเล็กสุด/ใหญ่สุดของ BOQ ทุกตัวเลือก (ไม่นับใบที่ยังว่าง) — รายการโชว์เป็นช่วง (แผน 20261016-06) */
+  boq_capacity_min_wp: number | null; boq_capacity_max_wp: number | null;
+  /** เวลาที่เข้าขั้นปัจจุบัน — การเปลี่ยนขั้นล่าสุดที่จบที่ขั้นนี้ (หาไม่เจอ = วันสร้าง) · กติกาเดียวกับ stageEnteredAt */
+  stage_since: string;
   updated_at: string;
 };
 

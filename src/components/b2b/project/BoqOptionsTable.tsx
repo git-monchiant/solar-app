@@ -8,21 +8,25 @@ import type { B2bProjectBoq } from "@/lib/b2b/project";
 // BOQ ของโครงการ — 1 แถว = 1 ตัวเลือกขนาด (Rev ล่าสุดของเลขที่นั้น) · กดแถวไปหน้าทำ BOQ
 // คอลัมน์ตัวเลขแบบหน้ารายการ BOQ (ก่อน VAT · บาท/Wp จากยอดขาย)
 // canView = role ดู BOQ ได้ — ไม่ได้ (บัญชี) ไม่มีคอลัมน์ต้นทุน/Margin (API ไม่ส่งมาอยู่แล้ว) และชื่อตัวเลือกไม่เป็นลิงก์
-export default function BoqOptionsTable({ boqs, onAdd, canAdd, canView }: { boqs: B2bProjectBoq[]; onAdd?: () => void; canAdd: boolean; canView: boolean }) {
+// addAbove = การ์ดขั้นด้านบนมีปุ่ม "+ สร้าง BOQ" เป็นปุ่มหลักอยู่แล้ว (ยังไม่มี BOQ) → ไม่โชว์ปุ่มซ้ำที่หัวตาราง (ผู้ใช้เลือก 16 ต.ค. 69)
+export default function BoqOptionsTable({ boqs, onAdd, canAdd, canView, addAbove = false }: {
+  boqs: B2bProjectBoq[]; onAdd?: () => void; canAdd: boolean; canView: boolean; addAbove?: boolean;
+}) {
   const num = "px-3 py-2 text-right tabular-nums whitespace-nowrap";
   const name = (b: B2bProjectBoq) => b.option_label || "ไม่ระบุชื่อตัวเลือก";
+  const startAbove = addAbove && boqs.length === 0;
   return (
     <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
       <div className="flex items-center gap-2 border-b border-gray-200 bg-gray-50 px-3 py-2">
         <h3 className="text-sm font-bold text-gray-900 whitespace-nowrap">BOQ ของโครงการ</h3>
         {/* มือถือซ่อนคำอธิบาย — แถวหัวแคบ ตัวหนังสือตัดหลายบรรทัดดันปุ่มเบี้ยว */}
         <span className="max-md:hidden text-xs text-gray-400">เลือกได้หลายขนาด · แต่ละตัวมี Rev ของตัวเอง</span>
-        {canAdd && onAdd && (
-          <button type="button" onClick={onAdd} className="ml-auto h-8 px-3 rounded-lg border border-gray-200 bg-white text-sm font-semibold text-gray-700 hover:bg-gray-50 whitespace-nowrap">+ BOQ ขนาดใหม่</button>
+        {canAdd && onAdd && !startAbove && (
+          <button type="button" onClick={onAdd} className="ml-auto h-8 px-3 rounded-lg border border-gray-200 bg-white text-sm font-semibold text-gray-700 hover:bg-gray-50 whitespace-nowrap">+ สร้าง BOQ</button>
         )}
       </div>
       {boqs.length === 0 ? (
-        <div className="px-4 py-6 text-center text-sm text-gray-400">ยังไม่มี BOQ{canAdd ? " — กด \"+ BOQ ขนาดใหม่\" เพื่อเริ่มทำราคา" : ""}</div>
+        <div className="px-4 py-6 text-center text-sm text-gray-400">ยังไม่มี BOQ{!canAdd ? "" : startAbove ? " — เริ่มจากปุ่ม \"+ สร้าง BOQ\" ด้านบน" : " — กด \"+ สร้าง BOQ\" เพื่อเริ่มทำราคา"}</div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] text-sm">

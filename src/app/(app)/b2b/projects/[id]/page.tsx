@@ -210,7 +210,7 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
     </dl>
   );
 
-  // ใบประมาณการ = ขั้น 02 · ใบยืนยัน = ขั้น 04
+  // ใบเสนอราคาประมาณการ = ขั้น 02 · ใบเสนอราคายืนยัน = ขั้น 04 (ชื่อเต็ม — ผู้ใช้เลือก 16 ต.ค. 69 กันสับสนกับใบ BOQ)
   const estimateQuotes = p.quotes.filter((q) => q.kind === "estimate");
   const confirmQuotes = p.quotes.filter((q) => q.kind === "confirmed");
   // ── งวดเงิน ──
@@ -368,7 +368,7 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
     <button type="button" className={primary ? btnPrimary : btn} disabled={sentQuotes.length === 0}
       title={sentQuotes.length ? undefined : "ต้องมีใบเสนอราคาที่อนุมัติครบ 3 ชั้นและส่งลูกค้าแล้ว"} onClick={() => openModal("won")}>ได้งาน</button>
   );
-  const newBoqButton = canEditBoq && <button type="button" className={btnPrimary} onClick={() => openModal("new_boq")}>+ BOQ ขนาดใหม่</button>;
+  const newBoqButton = canEditBoq && <button type="button" className={btnPrimary} onClick={() => openModal("new_boq")}>+ สร้าง BOQ</button>;
 
   const createQuote = (boqId: number) => run(async () => {
     if (!boqId) throw new Error("กรุณาเลือก BOQ");
@@ -459,8 +459,8 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
       history: infoGrid,
     },
     3200: {
-      summary: p.boqs.length ? `BOQ ${p.boqs.length} ตัวเลือก${estimateQuotes.length ? ` · ใบประมาณการ ${estimateQuotes.length} ใบ` : ""}` : "ข้ามขั้นนี้",
-      history: <><BoqOptionsTable boqs={p.boqs} canView={canViewBoq} canAdd={canEditBoq} onAdd={() => openModal("new_boq")} /><QuoteList title="ใบประมาณการ" quotes={estimateQuotes} canAdd={false} /></>,
+      summary: p.boqs.length ? `BOQ ${p.boqs.length} ตัวเลือก${estimateQuotes.length ? ` · ใบเสนอราคาประมาณการ ${estimateQuotes.length} ใบ` : ""}` : "ข้ามขั้นนี้",
+      history: <><BoqOptionsTable boqs={p.boqs} canView={canViewBoq} canAdd={canEditBoq} onAdd={() => openModal("new_boq")} /><QuoteList title="ใบเสนอราคาประมาณการ" quotes={estimateQuotes} canAdd={false} /></>,
     },
     3300: {
       summary: p.survey_done_at
@@ -469,7 +469,7 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
       history: <>{surveyInfo}{surveyFileList}</>,
     },
     3400: {
-      summary: `BOQ ${p.boqs.length} ตัวเลือก${confirmQuotes.length ? ` · ใบยืนยัน ${confirmQuotes.length} ใบ` : ""}`,
+      summary: `BOQ ${p.boqs.length} ตัวเลือก${confirmQuotes.length ? ` · ใบเสนอราคายืนยัน ${confirmQuotes.length} ใบ` : ""}`,
       history: <><BoqOptionsTable boqs={p.boqs} canView={canViewBoq} canAdd={canEditBoq} onAdd={() => openModal("new_boq")} /><QuoteList title="ใบเสนอราคายืนยัน" quotes={confirmQuotes} canAdd={false} /></>,
     },
     3500: {
@@ -518,7 +518,7 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
           primary: canEdit && <button type="button" className={btnPrimary} onClick={() => void moveTo(B2B_STAGE.estimate, "เริ่มทำ BOQ ราคาประมาณการ (Google Maps) — เพิ่มได้หลายขนาด")}>เริ่มทำราคาประมาณการ</button>,
         };
       case B2B_STAGE.estimate: {
-        const qf = quoteFlow(estimateQuotes, "ประมาณการ");
+        const qf = quoteFlow(estimateQuotes, "เสนอราคาประมาณการ");
         const scheduleIsPrimary = !!latestBoq && !qf.primary;
         const schedule = (primary: boolean) => <button type="button" className={primary ? btnPrimary : btn} onClick={() => openModal("schedule")}>ลูกค้าสนใจ · นัดสำรวจ</button>;
         return {
@@ -526,13 +526,13 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
           sub: "ลูกค้าสนใจแล้วนัดสำรวจได้เลย ไม่ต้องรอครบทุกข้อ",
           items: [boqItem("BOQ ราคาประมาณการ", "ทำจาก Google Maps · เพิ่มได้หลายขนาด"), ...afterBoq(qf.items)],
           actions: canEdit && (sentQuotes.length > 0 || !scheduleIsPrimary) && <>
-            {sentQuotes.length > 0 && <button type="button" className={btn} onClick={() => openModal("won")}>ได้งานจากใบประมาณการ</button>}
+            {sentQuotes.length > 0 && <button type="button" className={btn} onClick={() => openModal("won")}>ได้งานจากใบเสนอราคาประมาณการ</button>}
             {!scheduleIsPrimary && schedule(false)}
           </>,
           primary: canEdit && (!latestBoq ? newBoqButton : scheduleIsPrimary ? schedule(true) : qf.primary),
           body: <>
-            <BoqOptionsTable boqs={p.boqs} canView={canViewBoq} canAdd={canEditBoq} onAdd={() => openModal("new_boq")} />
-            <QuoteList title="ใบประมาณการ" quotes={estimateQuotes} canAdd={canEdit} onAdd={() => openModal("new_quote")} />
+            <BoqOptionsTable boqs={p.boqs} canView={canViewBoq} canAdd={canEditBoq} onAdd={() => openModal("new_boq")} addAbove={!latestBoq} />
+            <QuoteList title="ใบเสนอราคาประมาณการ" quotes={estimateQuotes} canAdd={canEdit} onAdd={() => openModal("new_quote")} />
           </>,
         };
       }
@@ -572,9 +572,9 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
           actions: canEdit && !canWin && wonButton(false),
           primary: canEdit && (canWin ? wonButton(true) : !latestBoq ? newBoqButton : qf.primary),
           body: <>
-            <BoqOptionsTable boqs={p.boqs} canView={canViewBoq} canAdd={canEditBoq} onAdd={() => openModal("new_boq")} />
+            <BoqOptionsTable boqs={p.boqs} canView={canViewBoq} canAdd={canEditBoq} onAdd={() => openModal("new_boq")} addAbove={!canWin && !latestBoq} />
             <QuoteList title="ใบเสนอราคายืนยัน" quotes={confirmQuotes} canAdd={canEdit} onAdd={() => openModal("new_quote")} />
-            {estimateQuotes.length > 0 && <QuoteList title="ใบประมาณการ (ขั้น 02)" quotes={estimateQuotes} canAdd={false} />}
+            {estimateQuotes.length > 0 && <QuoteList title="ใบเสนอราคาประมาณการ (ขั้น 02)" quotes={estimateQuotes} canAdd={false} />}
           </>,
         };
       }

@@ -59,11 +59,16 @@ export const toInstallment = (i: InstallmentDbRow): B2bInstallment => ({
 export const projectRowSelect = (extraCols = "", extraJoins = "") => `
   SELECT p.id, p.code, p.name, p.customer_id, c.name AS customer_name, p.location, p.stage, ${PROJECT_SUB_SQL("p")} AS sub,
          CONVERT(char(10), p.survey_date, 23) AS survey_date, p.close_reason, p.owner_id, ou.full_name AS owner_name,
-         (SELECT COUNT(*) FROM b2b_boqs b WHERE b.project_id = p.id AND b.is_latest = 1) AS boq_count,
-         lb.capacity_wp AS boq_capacity_wp, lb.total_sale AS boq_total_sale, p.updated_at${extraCols ? `, ${extraCols}` : ""}
+         bs.n AS boq_count, bs.min_wp AS boq_capacity_min_wp, bs.max_wp AS boq_capacity_max_wp,
+         lb.capacity_wp AS boq_capacity_wp, lb.total_sale AS boq_total_sale,
+         COALESCE((SELECT MAX(a.created_at) FROM b2b_project_activities a
+                   WHERE a.project_id = p.id AND a.to_stage = p.stage AND (a.from_stage IS NULL OR a.from_stage <> a.to_stage)), p.created_at) AS stage_since,
+         p.updated_at${extraCols ? `, ${extraCols}` : ""}
   FROM b2b_projects p
   JOIN b2b_customers c ON c.id = p.customer_id
   LEFT JOIN users ou ON ou.id = p.owner_id
+  OUTER APPLY (SELECT COUNT(*) AS n, MIN(CASE WHEN b.capacity_wp > 0 THEN b.capacity_wp END) AS min_wp, MAX(CASE WHEN b.capacity_wp > 0 THEN b.capacity_wp END) AS max_wp
+               FROM b2b_boqs b WHERE b.project_id = p.id AND b.is_latest = 1) bs
   OUTER APPLY (SELECT TOP 1 b.capacity_wp, b.total_sale FROM b2b_boqs b
                WHERE b.project_id = p.id AND b.is_latest = 1 ORDER BY b.updated_at DESC, b.id DESC) lb
   ${extraJoins}`;
@@ -75,6 +80,8 @@ export function toProjectRow(r: Record<string, unknown>): B2bProjectRow {
     stage: r.stage as number, sub: num(r.sub), survey_date: (r.survey_date as string) ?? null, close_reason: (r.close_reason as string) ?? null,
     owner_id: num(r.owner_id), owner_name: (r.owner_name as string) ?? null,
     boq_count: Number(r.boq_count ?? 0), boq_capacity_wp: num(r.boq_capacity_wp), boq_total_sale: num(r.boq_total_sale),
+    boq_capacity_min_wp: num(r.boq_capacity_min_wp), boq_capacity_max_wp: num(r.boq_capacity_max_wp),
+    stage_since: r.stage_since as string,
     updated_at: r.updated_at as string,
   };
 }
