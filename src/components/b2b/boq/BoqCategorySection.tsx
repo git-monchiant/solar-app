@@ -1,13 +1,17 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import { ChevronRightIcon } from "@/components/ui/icons";
 import { formatNumber, formatTHB } from "@/lib/utils/formatters";
 import { omQty, type OmParams } from "@/lib/b2b/boq-om";
 import type { CalcResult } from "@/lib/b2b/boq-calc";
 import { formatPrice, priceSuffix, type B2bCategory } from "@/lib/b2b/materials";
 import { BOQ_LINE_NOTE_MAX, BOQ_MAX_MANUAL_COST, BOQ_MAX_QTY, wattInModel, type BoqLine } from "@/lib/b2b/boq";
 
-// รายละเอียดหมวดหนึ่งของใบ BOQ — ตาราง "ลำดับ · รายการ · ยี่ห้อ · รุ่น · ปริมาณ · หน่วย · ต้นทุน · ราคาขาย" ตาม sheet EPCL - BOQS (คอลัมน์ % มีเฉพาะใน Excel — ผู้ใช้ไม่เอาบนจอ 6 ต.ค. 69)
+/** บาทเต็มจำนวน — formatTHB ค่าเริ่มต้นไม่ปัดเศษ (แสดงทศนิยมได้ถึง 3 ตำแหน่ง) */
+const thb0 = (n: number) => formatTHB(Math.round(n));
+
+// รายละเอียดหมวดหนึ่งของใบ BOQ — ตาราง "ลำดับ · รายการ (ยี่ห้อ · รุ่นใต้ชื่อ) · ปริมาณ · หน่วย · ต้นทุน · ราคาขาย" (ข้อมูลตาม sheet EPCL - BOQS) (คอลัมน์ % มีเฉพาะใน Excel — ผู้ใช้ไม่เอาบนจอ 6 ต.ค. 69)
 // หมวด 1–18: บรรทัดมาจาก Master อย่างเดียว (แก้ได้แค่จำนวน) · หมวดเสริม 19–25: ใส่ราคาเองได้ (เคาะ 6 ต.ค. 69)
 
 const money = (n: number) => formatTHB(n, { decimals: 2 });
@@ -47,7 +51,13 @@ function NoteField({ value, readOnly, onChange }: { value: string | null; readOn
   );
 }
 
-export default function BoqCategorySection({ category, lines, calc, optional = false, readOnly, omParams = null, extra, onChange, onRemove, onRefresh, onPick, onAddManual, onRemoveAddon }: {
+/** จำนวนบรรทัดที่ต้องจัดการในหมวด — ป้ายบนหัวการ์ด (หน้าแม่นับจากบรรทัดจริง) */
+export type CategoryFlags = { pending: number; changed: number };
+
+// การ์ดหมวดของแท็บ "รายการ" (แผน 20261016-04 แบบ A+B) — หัวการ์ดกดพับ/กาง · ตัวเลขหมวดอยู่ขวา · ปุ่มเพิ่มรายการอยู่ในตัวการ์ด
+// visible = ตัวกรอง/ค้นหาของแท็บ — ซ่อนบรรทัดที่ไม่ตรง แต่เลขลำดับคงตามใบ (ตรงกับข้อความ "หมวด X ลำดับ N" ตอนบันทึก)
+export default function BoqCategorySection({ category, lines, calc, optional = false, readOnly, omParams = null, extra, open, onToggle, share = null, flags,
+  visible, highlight = false, scrollMarginTop, onChange, onRemove, onRefresh, onPick, onAddManual, onRemoveAddon }: {
   category: B2bCategory;
   lines: BoqLine[];
   calc: CalcResult;
@@ -58,6 +68,14 @@ export default function BoqCategorySection({ category, lines, calc, optional = f
   omParams?: OmParams | null;
   /** กล่องใต้หัวหมวด (หมวด 13 = ช่องตั้งค่า O&M) */
   extra?: ReactNode;
+  open: boolean;
+  onToggle: () => void;
+  /** % ของต้นทุนรวมก่อน VAT (ทางเลือก = null) */
+  share?: number | null;
+  flags: CategoryFlags;
+  visible?: (l: BoqLine) => boolean;
+  highlight?: boolean;
+  scrollMarginTop?: number;
   onChange: (key: string, patch: Partial<BoqLine>) => void;
   onRemove: (key: string) => void;
   onRefresh: (key: string) => void;
@@ -67,49 +85,80 @@ export default function BoqCategorySection({ category, lines, calc, optional = f
 }) {
   const sum = calc.categories[category.id];
   const empty = lines.length === 0;
+  const rows = lines.map((l, i) => ({ l, i })).filter(({ l }) => !visible || visible(l));
+  const btn = "h-8 rounded-lg px-3 text-xs font-semibold whitespace-nowrap";
+  const actions = !readOnly && (
+    <>
+      <button type="button" onClick={onPick} style={{ minHeight: 0 }} className={`${btn} border border-primary/30 bg-white text-primary hover:bg-primary/5`}>+ เลือกจาก Master</button>
+      {category.is_addon && (
+        <button type="button" onClick={onAddManual} style={{ minHeight: 0 }} className={`${btn} border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100`}>+ ใส่ราคาเอง</button>
+      )}
+      {onRemoveAddon && empty && (
+        <button type="button" onClick={onRemoveAddon} style={{ minHeight: 0 }} className="text-xs text-gray-400 hover:text-red-600">เอาหมวดนี้ออก</button>
+      )}
+    </>
+  );
+  const pill = "rounded-full px-2 py-0.5 text-xxs font-semibold whitespace-nowrap";
+  const fig = (label: string, value: string, strong = false) => (
+    <div><div className="text-xxs text-gray-400">{label}</div><div className={`text-sm tabular-nums ${strong ? "font-bold text-gray-900" : "text-gray-700"}`}>{value}</div></div>
+  );
 
   return (
-    <section id={`cat-${category.id}`} className="scroll-mt-24 rounded-xl border border-gray-300 bg-white overflow-hidden">
-      <div className={`flex flex-wrap items-center gap-2 px-4 ${empty ? "py-2" : "py-3 border-b border-gray-200"}`}>
-        <h3 className={`text-sm font-bold ${empty ? "text-gray-400" : "text-gray-900"}`}>{category.id}. {category.name}</h3>
-        {category.is_addon && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xxs font-bold uppercase tracking-wide text-amber-700">ส่วนเพิ่มเติม{optional ? " · ทางเลือก (ไม่รวมในยอด)" : ""}</span>}
-        {!empty && <span className="text-xs text-gray-500 tabular-nums">ต้นทุน {money(sum.cost)} · ขาย <span className="font-medium text-gray-800">{money(sum.sale)}</span></span>}
-        {!readOnly && (
-          <div className="ml-auto flex items-center gap-2">
-            <button type="button" onClick={onPick} style={{ minHeight: 0 }}
-              className="h-8 rounded-lg border border-primary/30 bg-primary/5 px-3 text-xs font-semibold text-primary hover:bg-primary/10">+ เลือกจาก Master</button>
-            {category.is_addon && (
-              <button type="button" onClick={onAddManual} style={{ minHeight: 0 }}
-                className="h-8 rounded-lg border border-amber-300 bg-amber-50 px-3 text-xs font-semibold text-amber-700 hover:bg-amber-100">+ ใส่ราคาเอง</button>
-            )}
-            {onRemoveAddon && empty && (
-              <button type="button" onClick={onRemoveAddon} style={{ minHeight: 0 }} className="text-xs text-gray-400 hover:text-red-600">เอาหมวดนี้ออก</button>
-            )}
+    <section id={`cat-${category.id}`} style={{ scrollMarginTop }}
+      className={`rounded-xl border bg-white overflow-hidden transition-shadow ${highlight ? "border-primary ring-4 ring-primary/20" : "border-gray-200"}`}>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-3 md:px-4">
+        <button type="button" onClick={onToggle} style={{ minHeight: 0 }} aria-expanded={open} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+          <ChevronRightIcon className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${open ? "rotate-90" : ""}`} strokeWidth={2.5} />
+          <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-xs font-bold ${empty ? "bg-gray-50 text-gray-400" : "bg-gray-100 text-gray-600"}`}>{category.id}</span>
+          <span className="min-w-0">
+            <span className={`block text-sm font-bold leading-snug ${empty ? "text-gray-400" : "text-gray-900"}`}>{category.name}</span>
+            <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-gray-400">
+              {empty ? "ยังไม่มีรายการ" : `${lines.length} รายการ`}
+              {category.is_addon && <span className={`${pill} ${optional ? "bg-gray-100 text-gray-500" : "bg-amber-50 text-amber-700"}`}>ส่วนเพิ่มเติม · {optional ? "ทางเลือก (ไม่รวมในยอด)" : "รวมในราคา"}</span>}
+              {flags.pending > 0 && <span className={`${pill} bg-red-50 text-red-600`}>รอราคา {flags.pending}</span>}
+              {flags.changed > 0 && <span className={`${pill} bg-amber-100 text-amber-800`}>ราคาเปลี่ยน {flags.changed}</span>}
+              {omParams && lines.some((l) => l.om_role) && <span className={`${pill} bg-primary/10 text-primary`}>คิดจากช่องตั้งค่า O&amp;M</span>}
+            </span>
+          </span>
+        </button>
+        {empty ? (
+          <div className="flex flex-wrap items-center gap-2">{actions}</div>
+        ) : (
+          <div className="flex items-center gap-4 text-right">
+            {fig("ต้นทุน", thb0(sum.cost))}
+            {fig("ราคาขาย", thb0(sum.sale), true)}
+            <div className="max-sm:hidden">{fig("สัดส่วน", share == null ? "—" : `${share.toFixed(1)}%`)}</div>
           </div>
         )}
       </div>
-      {extra}
 
-      {!empty && (
+      {open && (extra || !empty) && (
+        <div className="border-t border-gray-100">
+          {extra}
+          {!empty && actions && (
+            <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 bg-gray-50 px-3 py-2 md:px-4">{actions}</div>
+          )}
+          {!empty && rows.length === 0 && <div className="px-4 py-3 text-sm text-gray-400">ไม่มีบรรทัดตามตัวกรอง/คำค้นในหมวดนี้</div>}
+        </div>
+      )}
+
+      {open && !empty && rows.length > 0 && (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1140px] table-fixed text-sm">
+          <table className="w-full min-w-[820px] table-fixed text-sm">
             <thead>
               <tr className="bg-gray-50 text-left text-xs text-gray-500">
                 <th className={`${cell} w-[32px] text-right`}>#</th>
-                <th className={cell}>รายการ</th>
-                <th className={`${cell} w-[90px]`}>ยี่ห้อ</th>
-                <th className={`${cell} w-[140px]`}>รุ่น / ขนาด</th>
-                <th className={`${cell} w-[86px] text-right`}>ปริมาณ</th>
-                <th className={`${cell} w-[64px]`}>หน่วย</th>
-                <th className={`${cell} w-[108px] text-right`}>ต้นทุน/หน่วย</th>
-                <th className={`${cell} w-[112px] text-right`}>ต้นทุนรวม</th>
-                <th className={`${cell} w-[100px] text-right`}>ขาย/หน่วย</th>
-                <th className={`${cell} w-[116px] text-right`}>ราคาขายรวม</th>
+                <th className={cell}>รายการ <span className="font-normal text-gray-400">· ยี่ห้อ · รุ่น / ขนาด</span></th>
+                <th className={`${cell} w-[90px] text-right`}>ปริมาณ</th>
+                <th className={`${cell} w-[72px]`}>หน่วย</th>
+                <th className={`${cell} w-[112px] text-right`}>ต้นทุน/หน่วย</th>
+                <th className={`${cell} w-[118px] text-right`}>ต้นทุนรวม</th>
+                <th className={`${cell} w-[124px] text-right`}>ราคาขายรวม</th>
                 <th className={`${cell} w-[32px]`} />
               </tr>
             </thead>
             <tbody>
-              {lines.map((l, i) => {
+              {rows.map(({ l, i }) => {
                 const r = calc.lines[l.key];
                 const manual = l.line_type === "manual";
                 const pct = l.price_basis === "pct_category" || l.price_basis === "pct_sale";
@@ -121,10 +170,25 @@ export default function BoqCategorySection({ category, lines, calc, optional = f
                   <tr key={l.key} className={`border-t border-gray-100 align-top ${l.unit_cost == null ? "bg-red-50/40" : changed ? "bg-amber-50/50" : ""}`}>
                     <td className={`${cell} text-right tabular-nums text-gray-400`}>{i + 1}</td>
                     <td className={cell}>
+                      {/* ยี่ห้อ · รุ่น อยู่ใต้ชื่อ (แบบ A+B — ตารางแคบลงพอวางข้างเมนูหมวด) */}
                       {manual && !readOnly ? (
-                        <input className={input} value={l.name} placeholder="ชื่อรายการ" onChange={(e) => onChange(l.key, { name: e.target.value })} />
+                        <>
+                          <input className={input} value={l.name} placeholder="ชื่อรายการ" onChange={(e) => onChange(l.key, { name: e.target.value })} />
+                          <div className="mt-1 grid grid-cols-2 gap-1">
+                            <input className={input} value={l.brand ?? ""} placeholder="ยี่ห้อ" onChange={(e) => onChange(l.key, { brand: e.target.value || null })} />
+                            <input className={input} value={l.model ?? ""} placeholder="รุ่น / ขนาด" onChange={(e) => onChange(l.key, { model: e.target.value || null })} />
+                          </div>
+                        </>
                       ) : (
-                        <div className="text-gray-900 break-words">{l.name}</div>
+                        <>
+                          <div className="text-gray-900 break-words">{l.name}</div>
+                          {(l.brand || l.model || l.spec_watt) && (
+                            <div className="text-xs text-gray-500 break-words">
+                              {[l.brand, l.model].filter(Boolean).join(" · ")}
+                              {l.spec_watt && !wattInModel(l.model, l.spec_watt) ? <span className="text-gray-400">{l.brand || l.model ? " · " : ""}{l.spec_watt} W</span> : null}
+                            </div>
+                          )}
+                        </>
                       )}
                       <div className="mt-0.5 flex flex-wrap gap-1">
                         {l.subgroup && <span title={l.subgroup} className="max-w-full truncate text-xxs text-gray-400">{l.subgroup}</span>}
@@ -148,14 +212,6 @@ export default function BoqCategorySection({ category, lines, calc, optional = f
                       </div>
                       {om && <div className="mt-0.5 text-xxs text-primary">จำนวน = {om.how}</div>}
                       <NoteField value={l.note} readOnly={readOnly} onChange={(note) => onChange(l.key, { note })} />
-                    </td>
-                    <td className={cell}>
-                      {manual && !readOnly ? <input className={input} value={l.brand ?? ""} onChange={(e) => onChange(l.key, { brand: e.target.value || null })} />
-                        : <span className="text-gray-600 break-words">{l.brand ?? ""}</span>}
-                    </td>
-                    <td className={cell}>
-                      {manual && !readOnly ? <input className={input} value={l.model ?? ""} onChange={(e) => onChange(l.key, { model: e.target.value || null })} />
-                        : <span className="text-gray-600 break-words">{l.model ?? ""}{l.spec_watt && !wattInModel(l.model, l.spec_watt) ? <span className="text-gray-400"> · {l.spec_watt} W</span> : null}</span>}
                     </td>
                     <td className={`${cell} text-right`}>
                       {l.price_basis === "system_wp" ? (
@@ -192,8 +248,10 @@ export default function BoqCategorySection({ category, lines, calc, optional = f
                       )}
                     </td>
                     <td className={`${cell} text-right tabular-nums`}>{r ? money(r.cost) : "—"}</td>
-                    <td className={`${cell} text-right tabular-nums text-gray-600`}>{r && l.unit_cost != null ? money(r.sale_unit) : "—"}</td>
-                    <td className={`${cell} text-right tabular-nums font-medium`}>{r ? money(r.sale) : "—"}</td>
+                    <td className={`${cell} text-right tabular-nums`}>
+                      <div className="font-medium">{r ? money(r.sale) : "—"}</div>
+                      {r && l.unit_cost != null && <div className="text-xxs text-gray-400">ต่อหน่วย {money(r.sale_unit)}</div>}
+                    </td>
                     <td className={cell}>
                       {!readOnly && (
                         <button type="button" title="ลบบรรทัด" onClick={() => onRemove(l.key)} style={{ minHeight: 0 }}

@@ -1,0 +1,981 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup: หน้าทำ BOQ 3 แบบ</title>
+<style>
+  /* ฟอนต์ของแอป (public/fonts) — เปิดไฟล์นี้จากในโปรเจกต์ · DB Heavent ไม่มี 600 ⇒ ใช้ 500/700 */
+  @font-face{font-family:'DB Heavent';src:url(../../../public/fonts/db_heavent_li_v3.2-webfont.woff) format('woff');font-weight:300}
+  @font-face{font-family:'DB Heavent';src:url(../../../public/fonts/db_heavent_v3.2-webfont.woff) format('woff');font-weight:400}
+  @font-face{font-family:'DB Heavent';src:url(../../../public/fonts/db_heavent_med_v3.2-webfont.woff) format('woff');font-weight:500}
+  @font-face{font-family:'DB Heavent';src:url(../../../public/fonts/db_heavent_bd_v3.2-webfont.woff) format('woff');font-weight:700}
+  :root{
+    --primary:#1ed0c7;--primary-d:#0f9f98;--primary-bg:#e8faf9;--navy:#1e3a8a;
+    --g50:#f9fafb;--g100:#f3f4f6;--g200:#e5e7eb;--g300:#d1d5db;--g400:#9ca3af;--g500:#6b7280;--g600:#4b5563;--g700:#374151;--g800:#1f2937;--g900:#111827;
+    --em:#059669;--em-bg:#ecfdf5;--amber:#b45309;--amber2:#f59e0b;--amber-bg:#fffbeb;--red:#dc2626;--red-bg:#fef2f2;--blue:#1d4ed8;--blue-bg:#eff6ff;
+    --page:#f4f6f8;
+    /* กราฟสัดส่วนต้นทุน — categorical slot 1–5 (ตรวจ validate_palette.js แล้ว: adjacent CVD ≥ 9.1 · ป้ายตัวเลขอยู่ใน legend) + อื่นๆ เทา */
+    --s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100;--s5:#e87ba4;--s-other:#c4c9d1;
+    /* แท่งขนาดหมวด (ชุดเดียว) — สีเดียว */
+    --bar:#3b9cd9;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  [hidden]{display:none!important}
+  body{background:#d9dde3;font-family:'DB Heavent',sans-serif;color:var(--g800);font-size:17px;line-height:1.45;padding:24px 16px 64px}
+  button,input,select{font:inherit;color:inherit}
+  button{cursor:pointer;background:none;border:0}
+  .num{font-variant-numeric:tabular-nums}
+  .muted{color:var(--g500)} .b{font-weight:700} .m{font-weight:500}
+  .wrap{max-width:1360px;margin:0 auto}
+
+  /* ── ส่วนอธิบาย mockup ── */
+  .intro{background:#fff;border-radius:12px;padding:16px 20px;margin-bottom:10px}
+  .intro h1{font-size:26px;color:var(--navy);line-height:1.2}
+  .intro p{color:var(--g600)}
+  .cmp{width:100%;border-collapse:collapse;margin-top:10px;font-size:15px}
+  .cmp th,.cmp td{padding:6px 10px;border-bottom:1px solid var(--g100);text-align:left;vertical-align:top}
+  .cmp thead th{font-size:14px;color:var(--g700);font-weight:700;background:var(--g50)}
+  .cmp tbody th{font-weight:500;color:var(--g500);width:200px}
+  .switch{position:sticky;top:0;z-index:50;display:flex;gap:6px;background:#d9dde3;padding:10px 0;flex-wrap:wrap}
+  .switch button{background:#fff;border:1px solid var(--g300);border-radius:999px;padding:5px 16px;font-weight:700;font-size:16px;color:var(--g600)}
+  .switch button.on{background:var(--navy);border-color:var(--navy);color:#fff}
+  .rec{display:inline-block;background:#e8912a;color:#fff;border-radius:999px;font-size:12px;padding:0 8px;margin-left:4px;vertical-align:middle;line-height:18px}
+  .view{display:none}.view.on{display:block}
+  .notes{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+  .notes > div{background:#fff;border-radius:10px;padding:10px 14px;font-size:15px;color:var(--g600)}
+  .notes h4{font-size:15px;color:var(--g800)}
+  .notes ul{list-style:disc;margin-left:18px}
+  .scroll{overflow-x:auto;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,.12)}
+  /* จอกว้างพอ: ไม่เป็นกล่องเลื่อน ⇒ header / เมนูหมวด / หัวตาราง / แผงขวา ค้างตามการเลื่อนหน้าได้จริง (ใต้แถบสลับแบบ 54px) */
+  @media (min-width:1340px){ .scroll{overflow:visible} .app{border-radius:12px} }
+
+  /* ── โครงแอป ── */
+  .app{display:flex;min-width:1280px;background:var(--page);min-height:900px}
+  .side{width:56px;background:var(--navy);flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:16px;padding:16px 0}
+  .side i{width:22px;height:22px;border:2px solid rgba(219,234,254,.5);border-radius:6px}
+  .side i.on{background:rgba(255,255,255,.15);border-color:#fff}
+  .side hr{width:28px;border:0;border-top:1px solid rgba(255,255,255,.15)}
+  .main{flex:1;display:flex;flex-direction:column;min-width:0}
+
+  /* header กระชับ (ทุกแบบ) */
+  .hdr{background:#fff;border-bottom:1px solid var(--g200);display:flex;align-items:center;gap:14px;padding:10px 20px;position:sticky;top:54px;z-index:5;height:66px}
+  .hdr .back{color:var(--g400);font-size:26px;line-height:1;font-weight:700}
+  .hdr .t{flex:1;min-width:0}
+  .hdr .t1{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .hdr h2{font-size:23px;line-height:1.15;color:var(--g900)}
+  .hdr .meta{font-size:14px;color:var(--g500);display:flex;gap:2px 10px;flex-wrap:wrap;align-items:center}
+  .hdr .meta b{font-weight:500;color:var(--g700)}
+  .rev{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--g200);border-radius:8px;padding:0 8px;height:26px;font-size:14px;font-weight:700;color:var(--g700);background:#fff}
+  .rev::after{content:'▾';font-size:11px;color:var(--g400)}
+  .dirty{display:inline-flex;align-items:center;gap:6px;font-size:14px;font-weight:700;color:var(--amber);white-space:nowrap}
+  .dirty::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--amber2)}
+  .pill{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:1px 10px;font-size:13px;font-weight:700;white-space:nowrap}
+  .p-pri{background:var(--primary-bg);color:var(--primary-d)} .p-em{background:var(--em-bg);color:var(--em)} .p-amber{background:var(--amber-bg);color:var(--amber)}
+  .p-red{background:var(--red-bg);color:var(--red)} .p-gray{background:var(--g100);color:var(--g500)} .p-blue{background:var(--blue-bg);color:var(--blue)}
+  .btn{height:36px;padding:0 14px;border-radius:9px;border:1px solid var(--g200);background:#fff;color:var(--g700);font-size:15px;font-weight:700;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+  .btn.pri{background:var(--primary);border-color:var(--primary);color:#fff;box-shadow:0 2px 6px rgba(30,208,199,.35)}
+  .btn.xl{border-color:#a7f3d0;background:var(--em-bg);color:var(--em)}
+  .btn.sm{height:30px;font-size:14px;padding:0 10px;border-radius:8px}
+  .btn.ghost{border-color:transparent;background:none;color:var(--primary-d);padding:0 6px}
+  .lnk{color:var(--primary-d);font-weight:700;font-size:14px;white-space:nowrap;cursor:pointer}
+
+  .card{background:#fff;border:1px solid var(--g200);border-radius:14px}
+  .card-h{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--g100)}
+  .card-h h3{font-size:17px;color:var(--g900)}
+  .card-h .sub{font-size:13.5px;color:var(--g400)}
+
+  /* ── KPI ── */
+  .kpis{display:grid;grid-template-columns:1.35fr 1fr 1fr 1.15fr 1.25fr;gap:12px}
+  .kpi{background:#fff;border:1px solid var(--g200);border-radius:14px;padding:12px 16px;position:relative;overflow:hidden}
+  .kpi .k{font-size:14px;color:var(--g500);display:flex;align-items:center;gap:6px}
+  .kpi .k i{width:22px;height:22px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;font-style:normal;font-size:13px}
+  .kpi .v{font-size:27px;font-weight:700;color:var(--g900);line-height:1.15;font-variant-numeric:tabular-nums;margin-top:2px}
+  .kpi .v small{font-size:15px;color:var(--g500);font-weight:500}
+  .kpi .s{font-size:14px;color:var(--g500);font-variant-numeric:tabular-nums}
+  .kpi.hero{background:linear-gradient(135deg,#0f9f98 0%,#1ed0c7 100%);border-color:transparent;color:#fff}
+  .kpi.hero .k,.kpi.hero .s,.kpi.hero .v small{color:rgba(255,255,255,.85)}
+  .kpi.hero .v{color:#fff;font-size:31px}
+  .kpi.hero::after{content:'';position:absolute;right:-30px;top:-30px;width:120px;height:120px;border-radius:50%;background:rgba(255,255,255,.12)}
+  .kpi .two{display:flex;gap:16px;margin-top:2px}
+  .kpi .two div{font-size:13px;color:var(--g500)}
+  .kpi .two b{display:block;font-size:24px;color:var(--g900);font-variant-numeric:tabular-nums;line-height:1.15}
+  .mg{width:64px;height:30px;border:1px solid var(--g300);border-radius:8px;text-align:right;padding:0 8px;font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;background:#fff}
+  .mg:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(30,208,199,.18)}
+  .alerts{list-style:none;margin-top:4px;display:flex;flex-direction:column;gap:4px}
+  .alerts li{display:flex;align-items:center;gap:8px;font-size:14.5px;cursor:pointer;border-radius:8px;padding:3px 6px;margin:0 -6px}
+  .alerts li:hover{background:var(--g50)}
+  .alerts .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+  .alerts .go{margin-left:auto;color:var(--primary-d);font-weight:700;font-size:13px;white-space:nowrap}
+  .alerts .tx{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .kpi.warn{border-color:#fde68a;background:linear-gradient(180deg,#fffdf5,#fff)}
+
+  /* ── สัดส่วนต้นทุน (stacked bar) ── */
+  .compo{padding:12px 16px}
+  .compo-h{display:flex;align-items:baseline;gap:8px;margin-bottom:8px}
+  .compo-h h3{font-size:16px}
+  .sbar{display:flex;height:16px;border-radius:4px;overflow:hidden;background:var(--g100)}
+  .sbar span{height:100%;border-right:2px solid #fff;cursor:pointer;transition:filter .1s}
+  .sbar span:last-child{border-right:0}
+  .sbar span:hover{filter:brightness(.92)}
+  .legend{display:flex;flex-wrap:wrap;gap:4px 18px;margin-top:8px;font-size:14px}
+  .legend div{display:flex;align-items:center;gap:6px;color:var(--g700)}
+  .legend i{width:10px;height:10px;border-radius:3px;flex-shrink:0}
+  .legend .amt{color:var(--g500);font-variant-numeric:tabular-nums}
+  .tip{position:fixed;pointer-events:none;background:var(--g900);color:#fff;font-size:14px;line-height:1.35;padding:6px 10px;border-radius:8px;z-index:100;display:none;white-space:nowrap;box-shadow:0 6px 18px rgba(0,0,0,.2)}
+
+  /* ── แบบ A ── */
+  .a-body{padding:16px 20px 28px;display:flex;flex-direction:column;gap:14px}
+  .a-cols{display:grid;grid-template-columns:290px 1fr;gap:14px;align-items:start}
+  .nav{position:sticky;top:132px;padding:8px;max-height:calc(100vh - 148px);overflow-y:auto}
+  .nav h4{font-size:13px;font-weight:700;color:var(--g400);letter-spacing:.05em;padding:6px 8px 4px;display:flex;justify-content:space-between}
+  .nv{display:grid;grid-template-columns:22px 1fr auto;gap:2px 8px;align-items:center;padding:6px 8px;border-radius:10px;cursor:pointer}
+  .nv:hover{background:var(--g50)}
+  .nv.on{background:var(--primary-bg)}
+  .nv .no{font-size:13px;color:var(--g400);font-weight:700;text-align:right}
+  .nv .nm{font-size:15px;color:var(--g800);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}
+  .nv .am{font-size:13.5px;color:var(--g600);font-variant-numeric:tabular-nums;display:flex;align-items:center;gap:5px}
+  .nv .st{width:7px;height:7px;border-radius:50%}
+  .nv .bar{grid-column:2/4;height:4px;border-radius:4px;background:var(--g100);overflow:hidden}
+  .nv .bar b{display:block;height:100%;background:var(--bar);border-radius:4px}
+  .nv.empty .nm,.nv.empty .no{color:var(--g400);font-weight:400}
+  .nav .grp{border-top:1px solid var(--g100);margin-top:6px;padding-top:4px}
+  .nav .addchips{display:flex;flex-wrap:wrap;gap:4px;padding:2px 8px 6px}
+  .chip{border:1px dashed var(--g300);border-radius:999px;padding:0 9px;font-size:13px;color:var(--g500);background:#fff;cursor:pointer;white-space:nowrap}
+  .chip:hover{border-color:var(--primary);color:var(--primary-d)}
+
+  .cat{scroll-margin-top:132px;overflow:hidden}
+  .cat.hl{box-shadow:0 0 0 3px rgba(30,208,199,.35)}
+  .cat-h{display:flex;align-items:center;gap:10px;padding:12px 16px;cursor:pointer}
+  .cat-h .caret{width:22px;height:22px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;color:var(--g400);transition:transform .15s;flex-shrink:0}
+  .cat.open .cat-h .caret{transform:rotate(90deg)}
+  .cat-h .no{width:28px;height:28px;border-radius:8px;background:var(--g100);color:var(--g600);font-weight:700;font-size:14px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+  .cat-h h3{font-size:17px;color:var(--g900);line-height:1.2}
+  .cat-h .cnt{font-size:13.5px;color:var(--g400)}
+  .cat-h .fig{margin-left:auto;display:flex;gap:18px;align-items:center;text-align:right}
+  .cat-h .fig div{font-size:12.5px;color:var(--g400);line-height:1.15}
+  .cat-h .fig b{display:block;font-size:16px;color:var(--g800);font-weight:500;font-variant-numeric:tabular-nums}
+  .cat-h .fig .sale b{color:var(--g900);font-weight:700}
+  .cat-b{display:none;border-top:1px solid var(--g100)}
+  .cat.open .cat-b{display:block}
+  .cat-tools{display:flex;gap:8px;align-items:center;padding:8px 16px;background:var(--g50);border-bottom:1px solid var(--g100);font-size:14px;color:var(--g500)}
+  table.lines{width:100%;border-collapse:collapse;font-size:15.5px}
+  table.lines th{font-size:13px;color:var(--g400);font-weight:700;text-align:left;padding:7px 12px;border-bottom:1px solid var(--g100);white-space:nowrap}
+  table.lines td{padding:8px 12px;border-bottom:1px solid var(--g100);vertical-align:middle}
+  table.lines tr:last-child td{border-bottom:0}
+  table.lines .r{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  table.lines .nm b{font-weight:500;color:var(--g900)}
+  table.lines .nm small{display:block;font-size:13px;color:var(--g400)}
+  table.lines .nm .tags{display:flex;gap:4px;margin-top:2px;flex-wrap:wrap}
+  .qty{display:inline-block;min-width:76px;border:1px solid var(--g200);border-radius:8px;padding:2px 8px;text-align:right;background:#fff}
+  .qty.ro{border-color:transparent;background:var(--g50)}
+  tr.pend td:first-child{box-shadow:inset 3px 0 0 var(--red)}
+  tr.pend{background:#fffafa}
+  tr.chg td:first-child{box-shadow:inset 3px 0 0 var(--amber2)}
+  .more-b{color:var(--g300);font-size:20px;letter-spacing:1px}
+  .ph{padding:14px 16px;font-size:14.5px;color:var(--g400)}
+  .omset{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:10px 16px;background:var(--primary-bg);border-bottom:1px solid #c7f2ef;font-size:14px}
+  .omset .pill{background:#fff;color:var(--g700);border:1px solid #c7f2ef;font-weight:500}
+  .omset .pill b{font-weight:700}
+
+  /* ── แบบ B ── */
+  .tabs{display:flex;gap:4px;background:#fff;border-bottom:1px solid var(--g200);padding:0 20px;position:sticky;top:120px;z-index:4}
+  .tab{padding:10px 14px;font-size:15px;font-weight:700;color:var(--g500);border-bottom:2px solid transparent;display:flex;gap:6px;align-items:center}
+  .tab.on{color:var(--primary-d);border-color:var(--primary)}
+  .tab .c{font-size:12px;background:var(--g100);color:var(--g500);border-radius:999px;padding:0 7px}
+  .b-body{padding:16px 20px 28px;display:flex;flex-direction:column;gap:14px}
+  .b-grid{display:grid;grid-template-columns:1.55fr 1fr;gap:14px;align-items:start}
+  .rank{padding:6px 16px 12px}
+  .rk{display:grid;grid-template-columns:24px 230px 1fr 110px 52px;gap:10px;align-items:center;padding:5px 0;font-size:15px;cursor:pointer;border-radius:8px}
+  .rk:hover .nm{color:var(--primary-d)}
+  .rk .no{font-size:13px;color:var(--g400);text-align:right;font-weight:700}
+  .rk .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--g700)}
+  .rk .tr{height:12px;background:var(--g100);border-radius:4px;overflow:hidden}
+  .rk .tr b{display:block;height:100%;background:var(--bar);border-radius:4px}
+  .rk .am{text-align:right;font-variant-numeric:tabular-nums;color:var(--g800);font-weight:500}
+  .rk .pc{text-align:right;font-variant-numeric:tabular-nums;color:var(--g400);font-size:14px}
+  .info{padding:8px 16px 12px;font-size:15px}
+  .info dl{display:grid;grid-template-columns:110px 1fr;gap:5px 10px}
+  .info dt{color:var(--g500)} .info dd{color:var(--g800)}
+  .revs{display:flex;gap:6px;flex-wrap:wrap}
+  .toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .search{flex:1;min-width:240px;height:36px;border:1px solid var(--g200);border-radius:9px;padding:0 12px;background:#fff;color:var(--g400);display:flex;align-items:center}
+  .fchip{height:32px;border:1px solid var(--g200);border-radius:999px;padding:0 12px;font-size:14px;font-weight:700;background:#fff;color:var(--g600);display:inline-flex;align-items:center;gap:5px}
+  .fchip.on{background:var(--g900);border-color:var(--g900);color:#fff}
+  .fchip .n{font-variant-numeric:tabular-nums;opacity:.8}
+  tr.grp td{background:var(--g50);font-weight:700;color:var(--g800);cursor:pointer}
+  tr.grp td .no{display:inline-flex;width:24px;height:24px;border-radius:7px;background:#fff;border:1px solid var(--g200);align-items:center;justify-content:center;font-size:13px;margin-right:6px;color:var(--g500)}
+  .set-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
+  .field{display:flex;flex-direction:column;gap:3px}
+  .field label{font-size:13.5px;color:var(--g500);font-weight:700}
+  .inp{height:36px;border:1px solid var(--g200);border-radius:9px;padding:0 12px;background:#fff;display:flex;align-items:center;font-size:16px}
+  .inp.ro{background:var(--g50);color:var(--g500)}
+  .seg{display:inline-flex;border:1px solid var(--g200);border-radius:9px;overflow:hidden}
+  .seg span{padding:3px 12px;font-size:14px;font-weight:700;color:var(--g500);cursor:pointer}
+  .seg span.on{background:var(--g900);color:#fff}
+  .addrow{display:flex;align-items:center;gap:10px;padding:9px 16px;border-top:1px solid var(--g100);font-size:15px}
+  .addrow .am{margin-left:auto;font-variant-numeric:tabular-nums;color:var(--g600)}
+
+  /* ── แบบ A+B ── */
+  .mini{display:flex;border:1px solid var(--g200);border-radius:10px;overflow:hidden;flex-shrink:0}
+  .mini div{padding:3px 12px;line-height:1.2}
+  .mini div+div{border-left:1px solid var(--g200)}
+  .mini span{display:block;font-size:12px;color:var(--g500);white-space:nowrap}
+  .mini b{font-size:17px;font-variant-numeric:tabular-nums;white-space:nowrap}
+  #ab-nav{top:176px;max-height:calc(100vh - 192px)}
+  #ab-cats .cat{scroll-margin-top:176px}
+
+  /* ── แบบ C ── */
+  .c-body{display:grid;grid-template-columns:1fr 330px;gap:14px;padding:14px 20px 28px;align-items:start}
+  .sheet{overflow:clip}   /* clip ไม่ใช่ hidden — ไม่งั้นหัวตาราง sticky ไม่ทำงาน */
+  .sheet-tools{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--g200)}
+  table.grid{width:100%;border-collapse:collapse;font-size:15px}
+  table.grid thead th{position:sticky;top:120px;background:#fff;font-size:12.5px;color:var(--g500);font-weight:700;text-align:left;padding:7px 10px;border-bottom:2px solid var(--g200);white-space:nowrap;z-index:1}
+  table.grid td{padding:6px 10px;border-bottom:1px solid var(--g100)}
+  table.grid .r{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  table.grid tr.g td{background:#f3f6f9;font-weight:700;border-bottom:1px solid var(--g200);cursor:pointer}
+  table.grid tr.g td:first-child{white-space:nowrap}
+  table.grid tr.g .cn{font-weight:400;color:var(--g400);font-size:13.5px;margin-left:6px}
+  table.grid tr.g.empty td{color:var(--g400);font-weight:400;background:#fafbfc}
+  table.grid td.sel{outline:2px solid var(--primary);outline-offset:-2px;background:#fff}
+  table.grid tr.ph td{color:var(--g400);font-size:14px}
+  .rail{position:sticky;top:134px;display:flex;flex-direction:column;gap:12px}
+  .rcpt{padding:14px 16px}
+  .rcpt h3{font-size:17px;margin-bottom:6px}
+  .rl{display:flex;justify-content:space-between;gap:10px;padding:4px 0;font-size:15.5px;font-variant-numeric:tabular-nums}
+  .rl span:first-child{color:var(--g600)}
+  .rl.sub{border-top:1px dashed var(--g300);margin-top:4px;padding-top:8px;font-weight:700}
+  .rl.opt span{color:var(--g400)}
+  .grand{margin-top:8px;background:var(--g900);color:#fff;border-radius:12px;padding:10px 14px}
+  .grand .k{font-size:14px;color:rgba(255,255,255,.7)}
+  .grand .v{font-size:30px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.15}
+  .grand .s{font-size:14px;color:rgba(255,255,255,.7);font-variant-numeric:tabular-nums}
+  .mgrow{display:flex;align-items:center;gap:8px;margin-top:10px}
+  .qchips{display:flex;gap:4px}
+  .qchips span{border:1px solid var(--g200);border-radius:999px;padding:0 9px;font-size:13.5px;font-weight:700;color:var(--g500);cursor:pointer}
+  .qchips span:hover{border-color:var(--primary);color:var(--primary-d)}
+  .rail .btns{display:flex;flex-direction:column;gap:8px}
+  .rail .btns .btn{justify-content:center;height:42px}
+
+  /* ── มือถือ ── */
+  .phones{display:flex;gap:28px;justify-content:center;flex-wrap:wrap}
+  .phone{width:390px;height:844px;background:var(--page);border-radius:36px;border:10px solid #111827;position:relative;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+  .phone .cap{position:absolute;top:-34px;left:0;right:0;text-align:center;font-weight:700;color:var(--g600)}
+  .ph-wrap{position:relative;margin-top:34px}
+  .m-scroll{position:absolute;inset:0 0 120px 0;overflow-y:auto}
+  .m-hdr{background:#fff;border-bottom:1px solid var(--g200);padding:10px 14px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:2}
+  .m-hdr h2{font-size:19px;line-height:1.15}
+  .m-hdr .meta{font-size:13px;color:var(--g500)}
+  .m-kpis{display:flex;gap:10px;overflow-x:auto;padding:12px 14px 4px;scrollbar-width:none}
+  .m-kpis .kpi{min-width:170px;padding:10px 12px}
+  .m-kpis .kpi .v{font-size:23px}
+  .m-kpis .kpi.hero .v{font-size:25px}
+  .m-sec{padding:8px 14px}
+  .m-alert{display:flex;align-items:center;gap:8px;background:var(--amber-bg);border:1px solid #fde68a;border-radius:12px;padding:8px 12px;font-size:14.5px;color:var(--amber);font-weight:700}
+  .m-cat{display:grid;grid-template-columns:28px 1fr auto;gap:2px 10px;align-items:center;background:#fff;border:1px solid var(--g200);border-radius:12px;padding:9px 12px;margin-bottom:8px}
+  .m-cat .no{width:28px;height:28px;border-radius:8px;background:var(--g100);color:var(--g600);font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;grid-row:span 2}
+  .m-cat .nm{font-size:15.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .m-cat .am{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;text-align:right}
+  .m-cat .sub{font-size:12.5px;color:var(--g400);display:flex;gap:6px;align-items:center}
+  .m-cat .bar{height:4px;border-radius:4px;background:var(--g100);overflow:hidden;grid-column:2/4}
+  .m-cat .bar b{display:block;height:100%;background:var(--bar)}
+  .m-line{background:#fff;border:1px solid var(--g200);border-radius:12px;padding:10px 12px;margin-bottom:8px}
+  .m-line.pend{border-color:#fecaca;background:#fffafa}
+  .m-line .t{font-weight:500;font-size:15.5px;line-height:1.25}
+  .m-line .t small{display:block;font-size:13px;color:var(--g400);font-weight:400}
+  .m-line .r2{display:flex;align-items:center;gap:8px;margin-top:6px;font-size:14px;color:var(--g500)}
+  .m-line .r2 .tot{margin-left:auto;font-size:16px;font-weight:700;color:var(--g900);font-variant-numeric:tabular-nums}
+  .step{display:inline-flex;align-items:center;border:1px solid var(--g200);border-radius:9px;overflow:hidden}
+  .step span{padding:2px 10px;font-weight:700;color:var(--g500)}
+  .step b{padding:2px 8px;min-width:46px;text-align:center;border-left:1px solid var(--g200);border-right:1px solid var(--g200);font-variant-numeric:tabular-nums;color:var(--g900)}
+  .m-act{position:absolute;left:0;right:0;bottom:64px;background:#fff;border-top:1px solid var(--g200);padding:8px 12px;display:flex;gap:8px;align-items:center}
+  .m-act .btn{height:42px}
+  .m-act .grow{flex:1;justify-content:center}
+  .m-nav{position:absolute;left:0;right:0;bottom:0;height:64px;background:#fff;border-top:1px solid var(--g200);display:flex}
+  .m-nav div{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:12px;color:var(--g400);gap:3px}
+  .m-nav i{width:20px;height:20px;border:2px solid currentColor;border-radius:6px}
+  .m-nav .on{color:var(--navy);font-weight:700}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="intro">
+    <h1>Mockup: หน้าทำ BOQ · 3 แบบให้เลือก</h1>
+    <p>ข้อมูลตัวอย่าง: ใบ BOQ ขนาด 998.64 kWp (แผง Jinko 730 W × 1,368) · ตัวเลขทุกจุดคิดจากชุดข้อมูลเดียวกัน — <b>ลองแก้ Margin</b> แล้วยอดทุกที่เปลี่ยนตาม · กดสลับแบบที่แถบด้านล่าง</p>
+    <table class="cmp">
+      <thead><tr><th></th><th>A · แดชบอร์ด + เมนูหมวด ⭐</th><th>B · แท็บ ภาพรวม / รายการ / ตั้งค่า</th><th>C · ชีตเดียว + แผงสรุปขวา</th></tr></thead>
+      <tbody>
+        <tr><th>เปิดหน้ามาเห็น</th><td>ตัวเลขหลัก + สัดส่วนต้นทุน + สิ่งที่ต้องจัดการ</td><td>ภาพรวมเต็มหน้า (กราฟ + รายการต้องจัดการ)</td><td>ตารางรายการทันที · ยอดอยู่ขวาตลอด</td></tr>
+        <tr><th>ไปแก้หมวดที่ต้องการ</th><td>คลิกเมนูซ้าย 1 ครั้ง</td><td>แท็บ "รายการ" แล้วกรอง</td><td>เลื่อน / พับหมวด</td></tr>
+        <tr><th>เหมาะกับ</th><td>คนทำ BOQ + ผู้ตรวจสอบ</td><td>ผู้ตรวจสอบ / ผู้บริหารที่เปิดดู</td><td>ทีมที่ชินกับไฟล์ Excel</td></tr>
+        <tr><th>ข้อควรคิด</th><td>จอเล็กกว่า 1280 px เมนูซ้ายต้องพับ</td><td>สลับแท็บไปมาระหว่างแก้กับดูยอด</td><td>หน้าแน่น ดูเป็น dashboard น้อยกว่า</td></tr>
+        <tr><th>ขนาดงานแก้</th><td>กลาง</td><td>กลาง</td><td>กลาง–เล็ก</td></tr>
+      </tbody>
+    </table>
+    <p style="margin-top:8px;font-size:15px"><b>A+B · ผสม</b> (เพิ่มตามที่ถาม): แท็บแบบ B — <b>ภาพรวม</b> = dashboard ของ A + ต้นทุนเรียงหมวดของ B · <b>รายการ</b> = เมนูหมวดซ้าย + การ์ดหมวดของ A พร้อมค้นหา/ตัวกรองของ B · <b>ตั้งค่าใบ</b> แบบ B · ยอดหลักย่ออยู่ที่ header ทุกแท็บ</p>
+  </div>
+
+  <div class="switch" role="tablist">
+    <button data-v="a" class="on">A · แดชบอร์ด + เมนูหมวด <span class="rec">แนะนำ</span></button>
+    <button data-v="b">B · แท็บ ภาพรวม / รายการ / ตั้งค่า</button>
+    <button data-v="ab">A+B · ผสม <span class="rec" style="background:var(--primary-d)">ใหม่</span></button>
+    <button data-v="c">C · ชีตเดียว + แผงสรุปขวา</button>
+    <button data-v="m">มือถือ (แบบ A)</button>
+  </div>
+
+  <!-- ═══════════════════════ แบบ A ═══════════════════════ -->
+  <section class="view on" id="v-a">
+    <div class="notes">
+      <div>
+        <h4>เปลี่ยนอะไร</h4>
+        <ul>
+          <li>Header กระชับ: ปุ่ม <b>บันทึก / Excel / ออก Rev</b> อยู่บน · หัวใบที่แก้ไม่ได้ (ลูกค้า ที่ตั้ง) กลายเป็นบรรทัดข้อมูลเล็ก</li>
+          <li>แถบตัวเลขหลักแบบ dashboard: ราคาขาย · ขนาดระบบ · บาท/Wp · กำไร (แก้ Margin ตรงนี้) · <b>ต้องจัดการ</b></li>
+          <li>แถบสัดส่วนต้นทุน — เห็นทันทีว่าเงินก้อนใหญ่อยู่หมวดไหน</li>
+          <li>เมนูหมวดค้างซ้าย: ยอด + แท่งขนาด + จุดสถานะ (แดง = รอราคา · เหลือง = ราคาเปลี่ยน) · หมวดว่างย่อเป็นชิปเล็ก</li>
+        </ul>
+      </div>
+      <div>
+        <h4>ลองกด</h4>
+        <ul>
+          <li>แก้ช่อง Margin ในการ์ดกำไร</li>
+          <li>คลิกหมวดในเมนูซ้าย / รายการใน "ต้องจัดการ" → เลื่อนไปหมวดนั้น</li>
+          <li>คลิกหัวหมวดเพื่อพับ/กาง · ชี้ที่แถบสัดส่วนต้นทุน</li>
+        </ul>
+        <h4 style="margin-top:6px">ตารางรายการ</h4>
+        <ul><li>คอลัมน์เท่าเดิม แต่ยี่ห้อ/รุ่นย้ายไปใต้ชื่อ · ป้ายรอราคา/ราคาเปลี่ยนมีแถบสีซ้ายบรรทัด</li></ul>
+      </div>
+    </div>
+    <div class="scroll"><div class="app">
+      <div class="side"><i></i><i class="on"></i><i></i><i></i><hr><i></i><i></i><i></i><hr><i></i></div>
+      <div class="main">
+        <div class="hdr" data-hdr></div>
+        <div class="a-body">
+          <div class="kpis" data-kpis="a"></div>
+          <div class="card compo" data-compo></div>
+          <div class="a-cols">
+            <div class="card nav" id="a-nav"></div>
+            <div style="display:flex;flex-direction:column;gap:10px" id="a-cats"></div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+  </section>
+
+  <!-- ═══════════════════════ แบบ B ═══════════════════════ -->
+  <section class="view" id="v-b">
+    <div class="notes">
+      <div>
+        <h4>เปลี่ยนอะไร</h4>
+        <ul>
+          <li>แยก 3 แท็บ: <b>ภาพรวม</b> (dashboard) · <b>รายการ</b> (ตารางแก้) · <b>ตั้งค่าใบ</b> (ชื่อตัวเลือก · Margin · ส่วนเพิ่มเติม · O&amp;M)</li>
+          <li>ภาพรวม: ต้นทุนเรียงตามหมวด (แท่งยาว = ก้อนใหญ่) · ต้องจัดการ · ข้อมูลใบ + ประวัติ Rev + ใบเสนอราคาที่อ้าง</li>
+          <li>รายการ: ค้นหาในใบ + ตัวกรอง (รอราคา / ราคาเปลี่ยน / ใส่ราคาเอง) · หมวดเป็นแถวกลุ่มพับได้</li>
+        </ul>
+      </div>
+      <div>
+        <h4>ลองกด</h4>
+        <ul><li>สลับแท็บ · กดหมวดในกราฟ → ไปแท็บรายการที่หมวดนั้น · ชิปตัวกรองในแท็บรายการ</li></ul>
+        <h4 style="margin-top:6px">ข้อควรคิด</h4>
+        <ul><li>คนทำ BOQ ต้องสลับไปภาพรวมเพื่อดูยอดรวม (header มียอดขายย่อไว้ให้)</li></ul>
+      </div>
+    </div>
+    <div class="scroll"><div class="app">
+      <div class="side"><i></i><i class="on"></i><i></i><i></i><hr><i></i><i></i><i></i><hr><i></i></div>
+      <div class="main">
+        <div class="hdr" data-hdr="b"></div>
+        <div class="tabs" id="b-tabs">
+          <button class="tab on" data-t="ov">ภาพรวม</button>
+          <button class="tab" data-t="it">รายการ <span class="c" data-count></span></button>
+          <button class="tab" data-t="st">ตั้งค่าใบ</button>
+        </div>
+        <div class="b-body" data-p="ov">
+          <div class="kpis" data-kpis="b" style="grid-template-columns:1.35fr 1fr 1fr 1.15fr"></div>
+          <div class="b-grid">
+            <div class="card"><div class="card-h"><h3>ต้นทุนตามหมวด</h3><span class="sub">เรียงจากมากไปน้อย · กดเพื่อไปแก้รายการ</span></div><div class="rank" id="b-rank"></div></div>
+            <div style="display:flex;flex-direction:column;gap:14px">
+              <div class="card"><div class="card-h"><h3>ต้องจัดการ</h3><span class="pill p-amber" data-alertn></span></div><div style="padding:8px 16px 12px"><ul class="alerts" data-alerts="b"></ul></div></div>
+              <div class="card"><div class="card-h"><h3>ข้อมูลใบ</h3><span class="lnk" style="margin-left:auto">แก้ในหน้าโครงการ</span></div>
+                <div class="info"><dl>
+                  <dt>โครงการ</dt><dd>PRJ2610-001 · A Solar Project</dd>
+                  <dt>ลูกค้า</dt><dd>บ. A จำกัด</dd>
+                  <dt>ที่ตั้ง</dt><dd>นิคมบางปู สมุทรปราการ · <span class="lnk">แผนที่</span></dd>
+                  <dt>Revision</dt><dd class="revs"><span class="pill p-gray">Rev 0 · 15 ต.ค.</span><span class="pill p-gray">Rev 1 · 16 ต.ค.</span><span class="pill p-pri">Rev 2 ล่าสุด</span></dd>
+                  <dt>ใบเสนอราคา</dt><dd>SSE-MS-RPPS-690012 · <span class="pill p-gray">ร่าง</span></dd>
+                </dl></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="b-body" data-p="it" hidden>
+          <div class="toolbar">
+            <div class="search">ค้นหาในใบนี้ — ชื่อ / ยี่ห้อ / รุ่น…</div>
+            <span id="b-filters" style="display:flex;gap:6px"></span>
+            <button class="btn pri sm">+ เลือกจาก Master</button>
+          </div>
+          <div class="card" style="overflow:hidden"><table class="lines" id="b-table"></table></div>
+        </div>
+        <div class="b-body" data-p="st" hidden>
+          <div class="set-grid">
+            <div class="card"><div class="card-h"><h3>ตัวเลือก &amp; กำไร</h3></div>
+              <div style="padding:12px 16px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                <div class="field" style="grid-column:1/3"><label>ชื่อตัวเลือก (ขนาด / รุ่นแผง)</label><div class="inp">998.64 kWp · Jinko 730</div></div>
+                <div class="field"><label>Margin (% ของราคาขาย)</label><div style="display:flex;align-items:center;gap:8px"><input class="mg" value="15"><span class="muted">%</span></div></div>
+                <div class="field"><label>VAT</label><div class="inp ro">7%</div></div>
+              </div>
+            </div>
+            <div class="card"><div class="card-h"><h3>ส่วนเพิ่มเติม (Optional Add-on)</h3><span class="lnk" style="margin-left:auto">+ เพิ่มหมวด</span></div>
+              <div id="b-addons"></div>
+            </div>
+            <div class="card" style="grid-column:1/3"><div class="card-h"><h3>ช่องตั้งค่า O&amp;M (หมวด 13)</h3><span class="sub">จำนวนในหมวด 13 คิดจากช่องเหล่านี้</span></div>
+              <div style="padding:12px 16px;display:grid;grid-template-columns:repeat(8,1fr);gap:10px" id="b-om"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+  </section>
+
+  <!-- ═══════════════════════ แบบ A+B ═══════════════════════ -->
+  <section class="view" id="v-ab">
+    <div class="notes">
+      <div>
+        <h4>ผสมอย่างไร</h4>
+        <ul>
+          <li>โครงเป็น<b>แท็บแบบ B</b> แต่ใส่ของ A ลงไป: <b>ภาพรวม</b> = การ์ดตัวเลข + ต้องจัดการ + สัดส่วนต้นทุน (A) + ต้นทุนเรียงหมวด + ข้อมูลใบ (B)</li>
+          <li><b>รายการ</b> = เมนูหมวดค้างซ้าย + การ์ดหมวดพับ/กาง (A) + ค้นหา/ตัวกรอง รอราคา · ราคาเปลี่ยน (B)</li>
+          <li><b>ตั้งค่าใบ</b> = ชื่อตัวเลือก · Margin · ส่วนเพิ่มเติม รวม/ทางเลือก · ช่องตั้งค่า O&amp;M (B)</li>
+          <li>แก้จุดอ่อนของ B: <b>ยอดขาย · บาท/Wp · กำไร ย่ออยู่ที่ header ทุกแท็บ</b> แก้รายการแล้วเห็นยอดเปลี่ยนโดยไม่ต้องสลับแท็บ</li>
+        </ul>
+      </div>
+      <div>
+        <h4>ลองกด</h4>
+        <ul>
+          <li>สลับแท็บ · ในภาพรวมกดหมวดในกราฟ / รายการใน "ต้องจัดการ" → ไปแท็บรายการที่หมวดนั้น</li>
+          <li>แท็บรายการ: ชิปตัวกรอง "รอราคา" → เหลือเฉพาะหมวดที่ต้องแก้</li>
+        </ul>
+        <h4 style="margin-top:6px">ข้อเสนอ</h4>
+        <ul><li>เปิดหน้า: Solar B2B เข้าแท็บ<b>รายการ</b> · ผู้ตรวจสอบเข้าแท็บ<b>ภาพรวม</b> · งานแก้มากกว่า A เล็กน้อย (เพิ่มแท็บ)</li></ul>
+      </div>
+    </div>
+    <div class="scroll"><div class="app">
+      <div class="side"><i></i><i class="on"></i><i></i><i></i><hr><i></i><i></i><i></i><hr><i></i></div>
+      <div class="main">
+        <div class="hdr" data-hdr="ab"></div>
+        <div class="tabs" id="ab-tabs">
+          <button class="tab on" data-t="ov">ภาพรวม</button>
+          <button class="tab" data-t="it">รายการ <span class="c" data-count></span></button>
+          <button class="tab" data-t="st">ตั้งค่าใบ</button>
+          <span style="margin-left:auto;align-self:center;font-size:13px;color:var(--g400)">เปิดหน้า: Solar B2B → รายการ · ผู้ตรวจสอบ → ภาพรวม</span>
+        </div>
+        <div class="b-body" data-ap="ov">
+          <div class="kpis" data-kpis="a"></div>
+          <div class="card compo" data-compo></div>
+          <div class="b-grid">
+            <div class="card"><div class="card-h"><h3>ต้นทุนตามหมวด</h3><span class="sub">เรียงจากมากไปน้อย · กดเพื่อไปแก้รายการ</span></div><div class="rank" id="ab-rank"></div></div>
+            <div class="card"><div class="card-h"><h3>ข้อมูลใบ</h3><span class="lnk" style="margin-left:auto">แก้ในหน้าโครงการ</span></div>
+              <div class="info"><dl>
+                <dt>โครงการ</dt><dd>PRJ2610-001 · A Solar Project</dd>
+                <dt>ลูกค้า</dt><dd>บ. A จำกัด</dd>
+                <dt>ที่ตั้ง</dt><dd>นิคมบางปู สมุทรปราการ · <span class="lnk">แผนที่</span></dd>
+                <dt>Revision</dt><dd class="revs"><span class="pill p-gray">Rev 0 · 15 ต.ค.</span><span class="pill p-gray">Rev 1 · 16 ต.ค.</span><span class="pill p-pri">Rev 2 ล่าสุด</span></dd>
+                <dt>ใบเสนอราคา</dt><dd>SSE-MS-RPPS-690012 · <span class="pill p-gray">ร่าง</span></dd>
+                <dt>O&amp;M</dt><dd>2 ปี · ปีละ 2 ครั้ง · ไป-กลับ 44 km · <span class="lnk" data-abt="st">แก้ในตั้งค่าใบ</span></dd>
+              </dl></div>
+            </div>
+          </div>
+        </div>
+        <div class="a-body" data-ap="it" hidden>
+          <div class="a-cols">
+            <div class="card nav" id="ab-nav"></div>
+            <div style="display:flex;flex-direction:column;gap:10px;min-width:0">
+              <div class="toolbar"><div class="search">ค้นหาในใบนี้ — ชื่อ / ยี่ห้อ / รุ่น…</div><span id="ab-filters" style="display:flex;gap:6px"></span></div>
+              <div id="ab-cats" style="display:flex;flex-direction:column;gap:10px"></div>
+            </div>
+          </div>
+        </div>
+        <div class="b-body" data-ap="st" hidden>
+          <div class="set-grid">
+            <div class="card"><div class="card-h"><h3>ตัวเลือก &amp; กำไร</h3></div>
+              <div style="padding:12px 16px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                <div class="field" style="grid-column:1/3"><label>ชื่อตัวเลือก (ขนาด / รุ่นแผง)</label><div class="inp">998.64 kWp · Jinko 730</div></div>
+                <div class="field"><label>Margin (% ของราคาขาย)</label><div style="display:flex;align-items:center;gap:8px"><input class="mg" value="15"><span class="muted">%</span></div></div>
+                <div class="field"><label>VAT</label><div class="inp ro">7%</div></div>
+              </div>
+            </div>
+            <div class="card"><div class="card-h"><h3>ส่วนเพิ่มเติม (Optional Add-on)</h3><span class="lnk" style="margin-left:auto">+ เพิ่มหมวด</span></div><div id="ab-addons"></div></div>
+            <div class="card" style="grid-column:1/3"><div class="card-h"><h3>ช่องตั้งค่า O&amp;M (หมวด 13)</h3><span class="sub">จำนวนในหมวด 13 คิดจากช่องเหล่านี้</span></div>
+              <div style="padding:12px 16px;display:grid;grid-template-columns:repeat(8,1fr);gap:10px" id="ab-om"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+  </section>
+
+  <!-- ═══════════════════════ แบบ C ═══════════════════════ -->
+  <section class="view" id="v-c">
+    <div class="notes">
+      <div>
+        <h4>เปลี่ยนอะไร</h4>
+        <ul>
+          <li>ตารางเดียวยาวแบบไฟล์ EPCL - BOQS แต่ทันสมัย: หัวคอลัมน์ค้าง · หมวดเป็นแถวกลุ่มพร้อมยอดหมวด พับได้ · ซ่อนหมวดว่าง</li>
+          <li>แผงสรุปขวาค้างตลอด (แบบใบเสร็จ): วัสดุ / ค่าแรง / วิศวกรรม / ส่วนเพิ่ม → รวมก่อน VAT → รวมสุทธิ · Margin มีปุ่มลัด</li>
+          <li>ปุ่มบันทึก / Excel / ออก Rev อยู่ในแผงขวา</li>
+        </ul>
+      </div>
+      <div>
+        <h4>ลองกด</h4>
+        <ul><li>แถวหมวดเพื่อพับ/กาง · ปุ่มลัด Margin 10/12/15/18% · ติ๊ก "แสดงหมวดว่าง"</li></ul>
+        <h4 style="margin-top:6px">ข้อควรคิด</h4>
+        <ul><li>คล้ายของเดิม (ตาราง) มากที่สุด — เปลี่ยนน้อย ทีมคุ้นเร็ว แต่ "dashboard" น้อยกว่า A</li></ul>
+      </div>
+    </div>
+    <div class="scroll"><div class="app">
+      <div class="side"><i></i><i class="on"></i><i></i><i></i><hr><i></i><i></i><i></i><hr><i></i></div>
+      <div class="main">
+        <div class="hdr" data-hdr="c"></div>
+        <div class="c-body">
+          <div class="card sheet">
+            <div class="sheet-tools">
+              <div class="search" style="min-width:0">ค้นหาในใบนี้…</div>
+              <label style="display:flex;gap:6px;align-items:center;font-size:14.5px;color:var(--g600);white-space:nowrap"><input type="checkbox" id="c-empty"> แสดงหมวดว่าง</label>
+              <button class="btn sm">พับทั้งหมด</button>
+            </div>
+            <table class="grid" id="c-grid"></table>
+          </div>
+          <div class="rail">
+            <div class="card rcpt" id="c-rcpt"></div>
+            <div class="card" style="padding:12px 16px"><h3 style="font-size:16px;margin-bottom:4px">ต้องจัดการ</h3><ul class="alerts" data-alerts="c"></ul></div>
+            <div class="btns"><button class="btn pri">บันทึก</button><div style="display:flex;gap:8px"><button class="btn xl" style="flex:1">ดาวน์โหลด Excel</button><button class="btn" style="flex:1">ออก Revision ใหม่</button></div></div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+  </section>
+
+  <!-- ═══════════════════════ มือถือ ═══════════════════════ -->
+  <section class="view" id="v-m">
+    <div class="notes">
+      <div>
+        <h4>มือถือ (แบบ A)</h4>
+        <ul>
+          <li>ตัวเลขหลักเป็นการ์ดเลื่อนซ้าย-ขวา · แถบเตือน "ต้องจัดการ" · สัดส่วนต้นทุน</li>
+          <li>หมวดเป็นรายการการ์ด (ยอด + แท่งขนาด + สถานะ) · กดเข้าไปแก้ทีละหมวด</li>
+          <li>ในหมวด: บรรทัดเป็นการ์ด ปุ่ม − / + ปรับจำนวน · แถบบันทึกค้างเหนือเมนูล่าง</li>
+        </ul>
+      </div>
+      <div><h4>ข้อควรคิด</h4><ul><li>มือถือเหมาะกับการดู/ปรับจำนวนเล็กน้อย — การทำ BOQ ใหม่ทั้งใบยังเหมาะกับจอคอม</li></ul></div>
+    </div>
+    <div class="phones">
+      <div class="ph-wrap"><div class="phone"><div class="cap" style="top:-30px">หน้าใบ (ภาพรวม + หมวด)</div>
+        <div class="m-scroll" id="m1"></div>
+        <div class="m-act"><span class="dirty" style="font-size:13px">ยังไม่บันทึก</span><button class="btn xl" style="width:auto">Excel</button><button class="btn pri grow">บันทึก</button></div>
+        <div class="m-nav"><div><i></i>HOME</div><div class="on"><i></i>BOQ</div><div><i></i>PIPELINE</div><div><i></i>ME</div></div>
+      </div></div>
+      <div class="ph-wrap"><div class="phone"><div class="cap" style="top:-30px">กดเข้าหมวด 2 Inverter</div>
+        <div class="m-scroll" id="m2"></div>
+        <div class="m-act"><button class="btn" style="width:auto">+ เลือกจาก Master</button><button class="btn pri grow">บันทึก</button></div>
+        <div class="m-nav"><div><i></i>HOME</div><div class="on"><i></i>BOQ</div><div><i></i>PIPELINE</div><div><i></i>ME</div></div>
+      </div></div>
+    </div>
+  </section>
+</div>
+<div class="tip" id="tip"></div>
+
+<script>
+// ── ข้อมูลตัวอย่าง (ต้นทุนก่อน Margin) ──────────────────────────────
+const WP = 998640;
+const L = (name, brand, model, qty, unit, price, o = {}) => ({ name, brand, model, qty, unit, price, ...o });
+const OM = { years: 2, visits: 2, staff: 2, days: 2, km: 44, leads: 1, workers: 5 };
+const CATS = [
+  { id: 1, name: 'Solar Cell PV Module', lines: [L('PV Module', 'Jinko Solar', 'Tiger Neo 730W', 1368, 'แผง', 3285, { hint: '4.50 บาท/W × 730 W' })] },
+  { id: 2, name: 'Inverter', lines: [
+    L('Inverter', 'Huawei', 'SUN2000-150K-MG0', 6, 'Set.', 189000),
+    L('Smart Dongle', 'Huawei', 'SDongleA-05', 1, 'Set.', null),
+    L('Smart Power Meter DTSU666-H (3P)', 'Huawei', 'DTSU666-H (3P)', 1, 'Set.', 2520)] },
+  { id: 3, name: 'Mounting & Walkway', n: 6, cost: 1348164 },
+  { id: 4, name: 'Solar Control box & MDB Modify & Zero Export', n: 5, cost: 285000 },
+  { id: 5, name: 'Monitoring System', n: 2, cost: 78000 },
+  { id: 6, name: 'DC Cable & Accessories', lines: [
+    L('DC Cable 1x6 sq.mm', 'Helukabel', 'H1Z2Z2-K 1x6', 12000, 'M.', 32),
+    L('PV Cable Connector MC4', 'Stäubli', 'MC4-Evo 2', 1400, 'Pair', 85, { note: 'รวมเผื่อหน้างาน 5%' })] },
+  { id: 7, name: 'AC Cable & Accessories', n: 9, cost: 420000, changed: 1 },
+  { id: 8, name: 'Ground Cable & System', n: 4, cost: 96000 },
+  { id: 9, name: 'Conduit and Perforated Tray', n: 7, cost: 310000, pending: 1 },
+  { id: 10, name: 'PV Cleaning System', n: 3, cost: 145000 },
+  { id: 11, name: 'Inverter Station', n: 2, cost: 180000 },
+  { id: 12, name: 'Service & Safety', n: 6, cost: 103560 },
+  { id: 13, name: 'Operation & Maintenance', om: true, lines: [
+    L('ค่าเดินทางรถบริษัท', '', '', OM.km * OM.days * OM.visits * OM.years, 'km', 6, { how: '44 km × 2 วัน × 2 ครั้ง × 2 ปี' }),
+    L('ค่าที่พักพนักงาน', '', '', 0, 'ห้อง-คืน', 750, { how: 'ในพื้นที่ ไม่ค้างคืน' }),
+    L('ค่าเบี้ยเลี้ยงพนักงาน', '', '', 0, 'คน-วัน', 300, { how: 'ในพื้นที่ ไม่มีเบี้ยเลี้ยง' }),
+    L('ค่ารถผู้รับเหมา', '', '', 352, 'km', 10, { how: '44 km × 2 วัน × 2 ครั้ง × 2 ปี' }),
+    L('ค่าแรงหัวหน้าช่างผู้รับเหมา', '', '', 8, 'คน-วัน', 1500, { how: '1 คน × 2 วัน × 2 ครั้ง × 2 ปี' }),
+    L('ค่าแรงช่างผู้รับเหมา', '', '', 40, 'คน-วัน', 800, { how: '5 คน × 2 วัน × 2 ครั้ง × 2 ปี' }),
+    L('Buffer on-site service — ค่าเดินทาง', '', '', 176, 'km', 6, { how: '44 km × 2 วัน × 2 ปี' }),
+    L('Buffer on-site service — ต่อพนักงาน', '', '', 4, 'คน-ปี', 1000, { how: '2 คน × 2 ปี' }),
+    L('ค่าเครื่องมือบำรุงรักษา และทำความสะอาด', '', '', 2, 'ปี', 5000, { how: '2 ปี' }),
+    L('ค่า Report Monthly & Yearly', '', '', 2, 'ปี', 3500, { how: '2 ปี' })] },
+  { id: 14, name: 'Civil Work & Other', n: 0, cost: 0 },
+  { id: 15, name: 'Accessories', n: 1, cost: 85000 },
+  { id: 16, name: 'Optional & Optimizer', n: 0, cost: 0 },
+  { id: 17, name: 'Installation', lines: [L('ค่าแรงติดตั้งระบบ', '', '', WP, 'Wp', 1.2, { hint: 'ค่าต่อ Wp · จำนวน = ขนาดระบบ' })] },
+  { id: 18, name: 'Engineering Management & Permit & Insurance', n: 8, cost: 420000 },
+  { id: 20, name: 'ระบบล่อฟ้า (Lightning Protection System)', addon: 'included', n: 3, cost: 180000 },
+  { id: 25, name: 'Battery Energy', addon: 'optional', n: 2, cost: 2450000 },
+];
+for (const c of CATS) {
+  if (c.lines) { c.n = c.lines.length; c.cost = c.lines.reduce((s, l) => s + (l.price ?? 0) * l.qty, 0); c.pending = c.lines.filter((l) => l.price == null).length; }
+}
+// สีสัดส่วนต้นทุน — ผูกกับหมวด (ไม่ใช่ลำดับ) · หมวดอื่นรวมเป็น "อื่นๆ"
+const COLOR = { 1: 'var(--s1)', 3: 'var(--s2)', 17: 'var(--s3)', 2: 'var(--s4)', 6: 'var(--s5)' };
+
+let margin = 15;
+const sale = (cost) => cost / (1 - margin / 100);
+const f0 = (n) => Math.round(n).toLocaleString('en-US');
+const f2 = (n) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const mil = (n) => (n / 1e6).toFixed(2) + ' ล.';
+const std = () => CATS.filter((c) => !c.addon);
+const totals = () => {
+  const cost = CATS.filter((c) => c.addon !== 'optional').reduce((s, c) => s + c.cost, 0);
+  const opt = CATS.filter((c) => c.addon === 'optional').reduce((s, c) => s + c.cost, 0);
+  return { cost, sale: sale(cost), opt: sale(opt) };
+};
+const alerts = () => {
+  const out = [];
+  for (const c of CATS) {
+    if (c.pending) out.push({ cat: c.id, tone: 'var(--red)', text: `รอราคา ${c.pending} บรรทัด · ${c.id}. ${c.name}` });
+    if (c.changed) out.push({ cat: c.id, tone: 'var(--amber2)', text: `ราคาใน Master เปลี่ยน ${c.changed} บรรทัด · ${c.id}. ${c.name}` });
+  }
+  out.push({ cat: 13, tone: 'var(--blue)', text: 'O&M 2 ปี · ใบเสนอราคาต้องเขียนตรงกัน' });
+  return out;
+};
+const status = (c) => (c.pending ? 'var(--red)' : c.changed ? 'var(--amber2)' : c.n ? 'var(--em)' : 'transparent');
+
+// ── header ────────────────────────────────────────────────────────
+function hdr(kind) {
+  const t = totals();
+  // A+B: ยอดหลักย่ออยู่ที่ header ทุกแท็บ
+  const mini = kind === 'ab' ? `<div class="mini"><div><span>ราคาขาย (ก่อน VAT)</span><b>฿${f0(t.sale)}</b></div><div><span>ขาย บาท/Wp</span><b>${(t.sale / WP).toFixed(2)}</b></div><div><span>กำไร · Margin ${margin}%</span><b style="color:var(--em)">฿${f0(t.sale - t.cost)}</b></div></div>` : '';
+  const right = kind === 'c'
+    ? `<span class="dirty">มีการแก้ไขที่ยังไม่บันทึก</span>`
+    : kind === 'ab'
+    ? `${mini}<span class="dirty">ยังไม่บันทึก</span><button class="btn xl">⬇ Excel</button><button class="btn">ออก Rev</button><button class="btn pri">บันทึก</button>`
+    : `${kind === 'b' ? `<div style="text-align:right;margin-right:6px"><div style="font-size:12.5px;color:var(--g500)">ราคาขาย (ก่อน VAT)</div><div class="b num" style="font-size:19px">฿${f0(t.sale)}</div></div>` : ''}
+       <span class="dirty">ยังไม่บันทึก</span><button class="btn xl">⬇ Excel</button><button class="btn">ออก Revision ใหม่</button><button class="btn pri">บันทึก</button>`;
+  return `<span class="back">‹</span>
+    <div class="t">
+      <div class="t1"><h2>A Solar Project</h2><span class="pill p-pri">998.64 kWp · Jinko 730</span><span class="rev">Rev 2 (ล่าสุด)</span><span class="pill p-gray">ร่าง · แก้ได้</span></div>
+      <div class="meta"><span>BOQ2610-001</span><span>PRJ2610-001 · บ. A จำกัด</span><span>นิคมบางปู สมุทรปราการ</span><span>บันทึกล่าสุด <b>16 ต.ค. 69 14:20</b> · Admin</span></div>
+    </div>${right}`;
+}
+
+// ── KPI ───────────────────────────────────────────────────────────
+function kpis(kind) {
+  const t = totals();
+  const profit = t.sale - t.cost;
+  const al = alerts().filter((a) => a.tone !== 'var(--blue)');
+  const tiles = [
+    `<div class="kpi hero"><div class="k">ราคาขาย (ก่อน VAT)</div><div class="v">฿${f0(t.sale)}</div><div class="s">รวม VAT 7% ฿${f0(t.sale * 1.07)}${t.opt ? ` · ทางเลือก +฿${f0(t.opt)}` : ''}</div></div>`,
+    `<div class="kpi"><div class="k"><i style="background:#e0f2fe">☀</i>ขนาดระบบ</div><div class="v">998.64 <small>kWp</small></div><div class="s">1,368 แผง · Jinko 730 W</div></div>`,
+    `<div class="kpi"><div class="k"><i style="background:#ede9fe">⚡</i>ราคาต่อวัตต์</div><div class="two"><div>ขาย<b>${(t.sale / WP).toFixed(2)}</b></div><div>ต้นทุน<b>${(t.cost / WP).toFixed(2)}</b></div></div><div class="s">บาท/Wp</div></div>`,
+    `<div class="kpi"><div class="k"><i style="background:var(--em-bg)">↗</i>กำไร</div><div class="v" style="color:var(--em)">฿${f0(profit)}</div><div class="s" style="display:flex;align-items:center;gap:6px">Margin <span data-mgslot></span> % ของราคาขาย</div></div>`,
+  ];
+  if (kind === 'a') tiles.push(`<div class="kpi warn"><div class="k"><i style="background:var(--amber-bg)">!</i>ต้องจัดการ <span class="pill p-amber" style="margin-left:auto">${al.length}</span></div><ul class="alerts" data-alerts="a"></ul></div>`);
+  return tiles.join('');
+}
+
+// ── สัดส่วนต้นทุน ─────────────────────────────────────────────────
+function compo() {
+  const t = totals();
+  const segs = [];
+  let other = 0; let nOther = 0;
+  for (const c of CATS.filter((x) => x.addon !== 'optional' && x.cost > 0)) {
+    if (COLOR[c.id]) segs.push({ name: `${c.id}. ${c.name}`, cost: c.cost, color: COLOR[c.id], cat: c.id }); else { other += c.cost; nOther++; }
+  }
+  segs.sort((a, b) => b.cost - a.cost);
+  segs.push({ name: `อื่นๆ (${nOther} หมวด)`, cost: other, color: 'var(--s-other)' });
+  const pct = (x) => (x / t.cost * 100);
+  return `<div class="compo-h"><h3>สัดส่วนต้นทุน</h3><span class="muted" style="font-size:14px">ต้นทุนรวม ฿${f0(t.cost)} (ไม่รวมส่วนเพิ่มแบบทางเลือก)</span></div>
+    <div class="sbar">${segs.map((s) => `<span style="width:${pct(s.cost)}%;background:${s.color}" data-tip="${s.name}|฿${f0(s.cost)} · ${pct(s.cost).toFixed(1)}%" ${s.cat ? `data-go="${s.cat}"` : ''}></span>`).join('')}</div>
+    <div class="legend">${segs.map((s) => `<div><i style="background:${s.color}"></i>${s.name}<span class="amt">${mil(s.cost)} · ${pct(s.cost).toFixed(1)}%</span></div>`).join('')}</div>`;
+}
+
+// ── แบบ A: เมนูหมวด + การ์ดหมวด ─────────────────────────────────
+const OPEN = new Set([2, 6, 13]);
+function aNav() {
+  const max = Math.max(...CATS.map((c) => c.cost));
+  const row = (c) => `<div class="nv${c.n ? '' : ' empty'}" data-go="${c.id}"><span class="no">${c.id}</span><span class="nm" title="${c.name}">${c.name}</span>
+      <span class="am">${c.n ? mil(sale(c.cost)) : ''}<i class="st" style="background:${status(c)}"></i></span>
+      ${c.n ? `<span></span><span class="bar"><b style="width:${(c.cost / max * 100).toFixed(1)}%"></b></span>` : ''}</div>`;
+  const filled = std().filter((c) => c.n);
+  const empty = std().filter((c) => !c.n);
+  return `<h4><span>หมวดมาตรฐาน</span><span>ขาย</span></h4>${filled.map(row).join('')}
+    ${empty.length ? `<div class="grp"><h4><span>ยังไม่มีรายการ</span></h4><div class="addchips">${empty.map((c) => `<span class="chip">+ ${c.id}. ${c.name}</span>`).join('')}</div></div>` : ''}
+    <div class="grp"><h4><span>ส่วนเพิ่มเติม</span></h4>${CATS.filter((c) => c.addon).map(row).join('')}
+    <div class="addchips"><span class="chip">+ เพิ่มส่วนเพิ่มเติม</span></div></div>`;
+}
+function lineRows(c) {
+  if (!c.lines) return `<tr><td colspan="7" class="ph">${c.n} รายการ — mockup แสดงรายละเอียดเฉพาะหมวด 1, 2, 6, 13, 17</td></tr>`;
+  return c.lines.map((l) => {
+    const pend = l.price == null;
+    const cost = (l.price ?? 0) * l.qty;
+    const tags = [
+      pend ? '<span class="pill p-red">รอราคา (Purchase)</span>' : '',
+      l.note ? `<span class="pill p-gray">หมายเหตุ: ${l.note}</span>` : '',
+      l.how ? `<span style="font-size:13px;color:var(--primary-d)">จำนวน = ${l.how}</span>` : '',
+      l.hint ? `<span style="font-size:13px;color:var(--g400)">${l.hint}</span>` : '',
+    ].filter(Boolean).join('');
+    return `<tr class="${pend ? 'pend' : ''}">
+      <td class="nm"><b>${l.name}</b>${l.brand || l.model ? `<small>${[l.brand, l.model].filter(Boolean).join(' · ')}</small>` : ''}${tags ? `<div class="tags">${tags}</div>` : ''}</td>
+      <td class="r"><span class="qty${c.om || l.unit === 'Wp' ? ' ro' : ''}">${f0(l.qty)}</span></td><td class="muted">${l.unit}</td>
+      <td class="r">${pend ? '—' : f2(l.price)}</td><td class="r">${pend ? '—' : f2(cost)}</td><td class="r b">${pend ? '—' : f2(sale(cost))}</td>
+      <td class="r"><span class="more-b">⋯</span></td></tr>`;
+  }).join('');
+}
+const THEAD = '<thead><tr><th>รายการ</th><th class="r">จำนวน</th><th>หน่วย</th><th class="r">ต้นทุน/หน่วย</th><th class="r">ต้นทุนรวม</th><th class="r">ราคาขายรวม</th><th></th></tr></thead>';
+function aCats(prefix = 'a', filter = 'all') {
+  const t = totals();
+  const match = (c) => filter === 'all' || (filter === 'pend' && c.pending) || (filter === 'chg' && c.changed);
+  const list = CATS.filter((c) => c.n && match(c));
+  if (!list.length) return '<div class="card ph">ไม่มีหมวดตามตัวกรองนี้</div>';
+  return list.map((c) => {
+    const tags = [
+      c.addon ? `<span class="pill ${c.addon === 'optional' ? 'p-gray' : 'p-blue'}">${c.addon === 'optional' ? 'ทางเลือก · ไม่รวมในยอด' : 'ส่วนเพิ่ม · รวมในราคา'}</span>` : '',
+      c.pending ? `<span class="pill p-red">รอราคา ${c.pending}</span>` : '',
+      c.changed ? `<span class="pill p-amber">ราคาเปลี่ยน ${c.changed}</span>` : '',
+      c.om ? '<span class="pill p-pri">คิดจากช่องตั้งค่า O&amp;M</span>' : '',
+    ].join('');
+    const om = c.om ? `<div class="omset"><b style="color:var(--primary-d)">ช่องตั้งค่า O&amp;M</b>
+        <span class="pill"><b>2</b> ปี</span><span class="pill">ปีละ <b>2</b> ครั้ง</span><span class="pill"><b>2</b> คน × <b>2</b> วัน</span><span class="pill">ไป-กลับ <b>44</b> km</span>
+        <span class="pill">ผู้รับเหมา หัวหน้า <b>1</b> · ช่าง <b>5</b></span><span class="pill">ในพื้นที่</span><span class="lnk" style="margin-left:auto">แก้ช่องตั้งค่า</span></div>` : '';
+    return `<div class="card cat${OPEN.has(c.id) ? ' open' : ''}" id="${prefix}-cat-${c.id}">
+      <div class="cat-h" data-toggle="${c.id}"><span class="caret">›</span><span class="no">${c.id}</span>
+        <div><h3>${c.name}</h3><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="cnt">${c.n} รายการ</span>${tags}</div></div>
+        <div class="fig"><div>ต้นทุน<b>${f0(c.cost)}</b></div><div class="sale">ราคาขาย<b>${f0(sale(c.cost))}</b></div><div>สัดส่วน<b>${c.addon === 'optional' ? '—' : (c.cost / t.cost * 100).toFixed(1) + '%'}</b></div></div>
+      </div>
+      <div class="cat-b">${om}<div class="cat-tools"><button class="btn sm">+ เลือกจาก Master</button>${c.addon ? '<button class="btn sm">+ ใส่ราคาเอง</button>' : ''}<span style="margin-left:auto">${c.lines ? 'แก้จำนวนในตารางได้เลย · ⋯ = หมายเหตุ / ใช้ราคาใหม่ / ลบ' : ''}</span></div>
+        <table class="lines">${THEAD}<tbody>${lineRows(c)}</tbody></table></div>
+    </div>`;
+  }).join('');
+}
+
+// ── แบบ B ─────────────────────────────────────────────────────────
+function bRank(attr = 'bgo') {
+  const list = CATS.filter((c) => c.n && c.addon !== 'optional').sort((a, b) => b.cost - a.cost);
+  const t = totals(); const max = list[0].cost;
+  return list.map((c) => `<div class="rk" data-${attr}="${c.id}"><span class="no">${c.id}</span><span class="nm" title="${c.name}">${c.name}${c.pending ? ' <span class="pill p-red">รอราคา</span>' : c.changed ? ' <span class="pill p-amber">ราคาเปลี่ยน</span>' : ''}</span>
+    <span class="tr"><b style="width:${(c.cost / max * 100).toFixed(1)}%"></b></span><span class="am">${f0(sale(c.cost))}</span><span class="pc">${(c.cost / t.cost * 100).toFixed(1)}%</span></div>`).join('');
+}
+let bFilter = 'all';
+// ตัวกรอง: ทั้งหมด = ทุกหมวด · รอราคา/ราคาเปลี่ยน = เฉพาะหมวดที่มี (บรรทัดตัวอย่างกรองเหลือเฉพาะบรรทัดที่ตรง)
+function bTable() {
+  const match = (c) => bFilter === 'all' || (bFilter === 'pend' && c.pending) || (bFilter === 'chg' && c.changed);
+  const rows = CATS.filter((c) => c.n && match(c)).map((c) => {
+    const cc = bFilter === 'pend' && c.lines ? { ...c, lines: c.lines.filter((l) => l.price == null) } : c;
+    return `<tr class="grp" id="b-cat-${c.id}"><td colspan="5"><span class="no">${c.id}</span>${c.name} <span class="muted" style="font-weight:400;font-size:14px">· ${c.n} รายการ</span></td><td class="r">${f0(sale(c.cost))}</td><td></td></tr>${lineRows(cc)}`;
+  }).join('');
+  return THEAD + `<tbody>${rows || '<tr><td colspan="7" class="ph">ไม่มีบรรทัดตามตัวกรองนี้</td></tr>'}</tbody>`;
+}
+function bFilters(attr = 'bf', cur = bFilter) {
+  const nAll = CATS.reduce((s, c) => s + (c.n || 0), 0);
+  const nPend = CATS.reduce((s, c) => s + (c.pending || 0), 0);
+  const nChg = CATS.reduce((s, c) => s + (c.changed || 0), 0);
+  document.querySelectorAll('[data-count]').forEach((e) => (e.textContent = nAll));
+  return [['all', 'ทั้งหมด', nAll], ['pend', 'รอราคา', nPend], ['chg', 'ราคาเปลี่ยน', nChg], ['man', 'ใส่ราคาเอง', 0]]
+    .map(([k, l, n]) => `<button class="fchip${cur === k ? ' on' : ''}" data-${attr}="${k}">${l} <span class="n">${n}</span></button>`).join('');
+}
+let abFilter = 'all';
+function bAddons() {
+  return CATS.filter((c) => c.addon).map((c) => `<div class="addrow"><span class="b">${c.id}.</span> ${c.name}
+    <span class="seg"><span class="${c.addon === 'included' ? 'on' : ''}">รวมในราคา</span><span class="${c.addon === 'optional' ? 'on' : ''}">ทางเลือก</span></span><span class="am">${f0(sale(c.cost))}</span></div>`).join('');
+}
+function bOm() {
+  return [['รับประกัน O&M', '2', 'ปี'], ['เข้าปีละ', '2', 'ครั้ง'], ['พนักงาน', '2', 'คน'], ['วัน/ครั้ง', '2', 'วัน'], ['คืนพักแรม', '1', 'คืน'], ['ระยะทางไป-กลับ', '44', 'km'], ['หัวหน้าช่าง', '1', 'คน'], ['ช่าง', '5', 'คน']]
+    .map(([l, v, u]) => `<div class="field"><label>${l} (${u})</label><div class="inp" style="justify-content:flex-end">${v}</div></div>`).join('');
+}
+
+// ── แบบ C ─────────────────────────────────────────────────────────
+const C_CLOSED = new Set([3, 4, 5, 7, 8, 9, 10, 11, 12, 15, 18, 20, 25]);
+function cGrid() {
+  const showEmpty = document.getElementById('c-empty')?.checked;
+  const head = '<thead><tr><th style="width:58px">#</th><th>รายการ</th><th>ยี่ห้อ</th><th>รุ่น / ขนาด</th><th class="r">จำนวน</th><th>หน่วย</th><th class="r">ต้นทุน/หน่วย</th><th class="r">ต้นทุนรวม</th><th class="r">ขาย/หน่วย</th><th class="r">ราคาขายรวม</th></tr></thead>';
+  const body = CATS.filter((c) => c.n || showEmpty).map((c) => {
+    const open = c.n && !C_CLOSED.has(c.id);
+    const g = `<tr class="g${c.n ? '' : ' empty'}" data-cg="${c.id}"><td>${c.n ? (open ? '▾' : '▸') : ''} ${c.id}</td><td colspan="6">${c.name}<span class="cn">${c.n ? `${c.n} รายการ` : 'ยังไม่มีรายการ · + เลือกจาก Master'}</span>${c.pending ? ' <span class="pill p-red">รอราคา ' + c.pending + '</span>' : ''}${c.changed ? ' <span class="pill p-amber">ราคาเปลี่ยน</span>' : ''}${c.addon === 'optional' ? ' <span class="pill p-gray">ทางเลือก</span>' : ''}</td>
+      <td class="r">${c.n ? f2(c.cost) : ''}</td><td></td><td class="r">${c.n ? f2(sale(c.cost)) : ''}</td></tr>`;
+    if (!open) return g;
+    const lines = c.lines ? c.lines.map((l, i) => {
+      const pend = l.price == null; const cost = (l.price ?? 0) * l.qty;
+      return `<tr${pend ? ' class="pend"' : ''}><td class="muted">${i + 1}</td><td>${l.name}${pend ? ' <span class="pill p-red">รอราคา</span>' : ''}${l.how ? `<div style="font-size:12.5px;color:var(--primary-d)">${l.how}</div>` : ''}</td><td class="muted">${l.brand}</td><td class="muted">${l.model}</td>
+        <td class="r${c.id === 2 && i === 0 ? ' sel' : ''}">${f0(l.qty)}</td><td class="muted">${l.unit}</td><td class="r">${pend ? '—' : f2(l.price)}</td><td class="r">${pend ? '—' : f2(cost)}</td><td class="r muted">${pend ? '—' : f2(sale(l.price))}</td><td class="r">${pend ? '—' : f2(sale(cost))}</td></tr>`;
+    }).join('') : `<tr class="ph"><td></td><td colspan="9">${c.n} รายการ — mockup แสดงรายละเอียดเฉพาะหมวด 1, 2, 6, 13, 17</td></tr>`;
+    return g + lines;
+  }).join('');
+  return head + `<tbody>${body}</tbody>`;
+}
+function cRcpt() {
+  const t = totals();
+  const sum = (ids) => sale(CATS.filter((c) => ids.includes(c.id)).reduce((s, c) => s + c.cost, 0));
+  const mat = sum([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+  const lab = sum([17]); const eng = sum([18]); const add = sum([20]);
+  return `<h3>สรุปราคา</h3>
+    <div class="rl"><span>วัสดุอุปกรณ์ (หมวด 1–16)</span><span>${f0(mat)}</span></div>
+    <div class="rl"><span>ค่าแรงติดตั้ง (หมวด 17)</span><span>${f0(lab)}</span></div>
+    <div class="rl"><span>วิศวกรรม · ขออนุญาต · ประกัน (18)</span><span>${f0(eng)}</span></div>
+    <div class="rl"><span>ส่วนเพิ่มที่รวมในราคา</span><span>${f0(add)}</span></div>
+    <div class="rl sub"><span>รวมก่อน VAT</span><span>${f0(t.sale)}</span></div>
+    <div class="rl"><span>VAT 7%</span><span>${f0(t.sale * 0.07)}</span></div>
+    <div class="grand"><div class="k">รวมสุทธิ</div><div class="v">฿${f0(t.sale * 1.07)}</div><div class="s">ขาย ${(t.sale / WP).toFixed(2)} · ต้นทุน ${(t.cost / WP).toFixed(2)} บาท/Wp · 998.64 kWp</div></div>
+    <div class="rl opt" style="margin-top:6px"><span>ทางเลือก (ไม่รวม) · Battery</span><span>+${f0(t.opt)}</span></div>
+    <div class="mgrow"><span class="muted" style="font-size:14.5px">Margin</span><span data-mgslot></span><span class="muted">%</span>
+      <span class="qchips">${[10, 12, 15, 18].map((v) => `<span data-qm="${v}">${v}%</span>`).join('')}</span></div>
+    <div class="rl" style="color:var(--em)"><span style="color:var(--em)">กำไร</span><span class="b">฿${f0(t.sale - t.cost)}</span></div>`;
+}
+
+// ── มือถือ ─────────────────────────────────────────────────────────
+function mobile1() {
+  const max = Math.max(...CATS.map((c) => c.cost));
+  return `<div class="m-hdr"><span style="font-size:24px;color:var(--g400);font-weight:700">‹</span><div style="flex:1;min-width:0"><h2>A Solar Project</h2><div class="meta">BOQ2610-001 · Rev 2 · 998.64 kWp</div></div><span style="font-size:22px;color:var(--g400)">⋯</span></div>
+    <div class="m-kpis">${kpis('m')}</div>
+    <div class="m-sec"><div class="m-alert">! ต้องจัดการ 3 · รอราคา 2 · ราคาเปลี่ยน 1 <span style="margin-left:auto">›</span></div></div>
+    <div class="m-sec"><div class="card compo" style="padding:10px 12px">${compo()}</div></div>
+    <div class="m-sec"><div style="font-size:13px;font-weight:700;color:var(--g400);margin:2px 0 6px">หมวด (${CATS.filter((c) => c.n).length})</div>
+      ${CATS.filter((c) => c.n).map((c) => `<div class="m-cat"><span class="no">${c.id}</span><span class="nm">${c.name}</span><span class="am">${mil(sale(c.cost))}</span>
+        <span class="sub">${c.n} รายการ ${c.pending ? '<span class="pill p-red">รอราคา</span>' : ''}${c.changed ? '<span class="pill p-amber">ราคาเปลี่ยน</span>' : ''}${c.addon === 'optional' ? '<span class="pill p-gray">ทางเลือก</span>' : ''}</span><span></span>
+        <span class="bar"><b style="width:${(c.cost / max * 100).toFixed(1)}%"></b></span></div>`).join('')}</div>`;
+}
+function mobile2() {
+  const c = CATS.find((x) => x.id === 2);
+  return `<div class="m-hdr"><span style="font-size:24px;color:var(--g400);font-weight:700">‹</span><div style="flex:1;min-width:0"><h2>2. Inverter</h2><div class="meta">${c.n} รายการ · ขาย ฿${f0(sale(c.cost))}</div></div></div>
+    <div class="m-sec" style="padding-top:12px">
+      ${c.lines.map((l) => {
+        const pend = l.price == null; const cost = (l.price ?? 0) * l.qty;
+        return `<div class="m-line${pend ? ' pend' : ''}"><div class="t">${l.name}<small>${[l.brand, l.model].filter(Boolean).join(' · ')}</small></div>
+          ${pend ? '<div style="margin-top:4px"><span class="pill p-red">รอราคา (Purchase)</span></div>' : ''}
+          <div class="r2"><span class="step"><span>−</span><b>${f0(l.qty)}</b><span>+</span></span>${l.unit}<span>× ${pend ? '—' : f0(l.price)}</span><span class="tot">${pend ? '—' : '฿' + f0(sale(cost))}</span></div></div>`;
+      }).join('')}
+      <div class="chip" style="display:inline-block;margin-top:4px">+ หมายเหตุรายบรรทัด กด ⋯ ที่การ์ด</div>
+    </div>`;
+}
+
+// ── วาด + ผูกปุ่ม ──────────────────────────────────────────────────
+function render() {
+  document.querySelectorAll('[data-hdr]').forEach((e) => (e.innerHTML = hdr(e.dataset.hdr)));
+  document.querySelectorAll('[data-kpis]').forEach((e) => (e.innerHTML = kpis(e.dataset.kpis)));
+  document.querySelectorAll('[data-compo]').forEach((e) => (e.innerHTML = compo()));
+  document.getElementById('a-nav').innerHTML = aNav();
+  document.getElementById('a-cats').innerHTML = aCats();
+  document.getElementById('b-rank').innerHTML = bRank();
+  document.getElementById('b-table').innerHTML = bTable();
+  document.getElementById('b-filters').innerHTML = bFilters();
+  document.getElementById('b-addons').innerHTML = bAddons();
+  document.getElementById('b-om').innerHTML = bOm();
+  document.getElementById('ab-nav').innerHTML = aNav();
+  document.getElementById('ab-cats').innerHTML = aCats('ab', abFilter);
+  document.getElementById('ab-rank').innerHTML = bRank('abgo');
+  document.getElementById('ab-filters').innerHTML = bFilters('abf', abFilter);
+  document.getElementById('ab-addons').innerHTML = bAddons();
+  document.getElementById('ab-om').innerHTML = bOm();
+  document.getElementById('c-grid').innerHTML = cGrid();
+  document.getElementById('c-rcpt').innerHTML = cRcpt();
+  document.getElementById('m1').innerHTML = mobile1();
+  document.getElementById('m2').innerHTML = mobile2();
+  const al = alerts();
+  document.querySelectorAll('[data-alerts]').forEach((e) => (e.innerHTML = al.map((a) => `<li data-go="${a.cat}" title="${a.text}"><i class="dot" style="background:${a.tone}"></i><span class="tx">${a.text}</span><span class="go">ไป ›</span></li>`).join('')));
+  document.querySelectorAll('[data-alertn]').forEach((e) => (e.textContent = al.length));
+  // ช่อง Margin: ช่องเดียวต่อจุด ย้ายตัวเดิมกลับเข้าที่ (ไม่สร้างใหม่ = ไม่หลุดโฟกัสตอนพิมพ์)
+  document.querySelectorAll('[data-mgslot]').forEach((slot, i) => {
+    let inp = MG[i];
+    if (!inp) { inp = document.createElement('input'); inp.className = 'mg'; MG[i] = inp; }
+    inp.value = String(margin);
+    slot.replaceWith(inp);
+  });
+}
+const MG = [];
+function setMargin(v, src) {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0 || n >= 100) return;
+  margin = n;
+  const active = document.activeElement;
+  render();
+  document.querySelectorAll('input.mg').forEach((e) => { if (e !== src) e.value = String(margin); });
+  if (active && active.classList?.contains('mg')) active.focus();
+}
+document.addEventListener('input', (e) => { if (e.target.classList.contains('mg')) setMargin(e.target.value, e.target); });
+
+document.addEventListener('click', (e) => {
+  const sw = e.target.closest('.switch button');
+  if (sw) {
+    document.querySelectorAll('.switch button').forEach((b) => b.classList.toggle('on', b === sw));
+    document.querySelectorAll('.view').forEach((v) => v.classList.toggle('on', v.id === `v-${sw.dataset.v}`));
+    return;
+  }
+  const tg = e.target.closest('[data-toggle]');
+  if (tg) { const id = Number(tg.dataset.toggle); OPEN.has(id) ? OPEN.delete(id) : OPEN.add(id); tg.closest('.cat').classList.toggle('open'); return; }
+  const abgo = e.target.closest('[data-abgo]') || (e.target.closest('#v-ab') && e.target.closest('[data-go]'));
+  if (abgo) {
+    const id = Number(abgo.dataset.abgo ?? abgo.dataset.go);
+    abTab('it');
+    if (abFilter !== 'all' && !document.getElementById(`ab-cat-${id}`)) { abFilter = 'all'; render(); }
+    OPEN.add(id);
+    const el = document.getElementById(`ab-cat-${id}`);
+    if (el) { el.classList.add('open'); el.scrollIntoView({ behavior: 'smooth', block: 'start' }); el.classList.add('hl'); setTimeout(() => el.classList.remove('hl'), 1200); }
+    document.querySelectorAll('#ab-nav .nv').forEach((n) => n.classList.toggle('on', Number(n.dataset.go) === id));
+    return;
+  }
+  const abt = e.target.closest('#ab-tabs .tab, [data-abt]');
+  if (abt) { abTab(abt.dataset.t ?? abt.dataset.abt); return; }
+  const abf = e.target.closest('[data-abf]');
+  if (abf) { abFilter = abf.dataset.abf; document.getElementById('ab-filters').innerHTML = bFilters('abf', abFilter); document.getElementById('ab-cats').innerHTML = aCats('ab', abFilter); return; }
+  const go = e.target.closest('[data-go]');
+  if (go) {
+    const view = go.closest('.view')?.id;
+    const id = Number(go.dataset.go);
+    if (view === 'v-a') {
+      OPEN.add(id);
+      const el = document.getElementById(`a-cat-${id}`);
+      if (el) { el.classList.add('open'); el.scrollIntoView({ behavior: 'smooth', block: 'start' }); el.classList.add('hl'); setTimeout(() => el.classList.remove('hl'), 1200); }
+      document.querySelectorAll('#a-nav .nv').forEach((n) => n.classList.toggle('on', Number(n.dataset.go) === id));
+    } else if (view === 'v-b') { bTab('it'); document.getElementById(`b-cat-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+    else if (view === 'v-c') { C_CLOSED.delete(id); render(); document.querySelector(`#c-grid [data-cg="${id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+    return;
+  }
+  const bgo = e.target.closest('[data-bgo]');
+  if (bgo) { bTab('it'); document.getElementById(`b-cat-${bgo.dataset.bgo}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
+  const tab = e.target.closest('#b-tabs .tab');
+  if (tab) { bTab(tab.dataset.t); return; }
+  const bf = e.target.closest('[data-bf]');
+  if (bf) { bFilter = bf.dataset.bf; document.getElementById('b-filters').innerHTML = bFilters(); document.getElementById('b-table').innerHTML = bTable(); return; }
+  const cg = e.target.closest('[data-cg]');
+  if (cg) { const id = Number(cg.dataset.cg); C_CLOSED.has(id) ? C_CLOSED.delete(id) : C_CLOSED.add(id); document.getElementById('c-grid').innerHTML = cGrid(); return; }
+  const qm = e.target.closest('[data-qm]');
+  if (qm) { setMargin(qm.dataset.qm); return; }
+});
+function abTab(t) {
+  document.querySelectorAll('#ab-tabs .tab').forEach((x) => x.classList.toggle('on', x.dataset.t === t));
+  document.querySelectorAll('#v-ab [data-ap]').forEach((p) => (p.hidden = p.dataset.ap !== t));
+}
+function bTab(t) {
+  document.querySelectorAll('#b-tabs .tab').forEach((x) => x.classList.toggle('on', x.dataset.t === t));
+  document.querySelectorAll('#v-b [data-p]').forEach((p) => (p.hidden = p.dataset.p !== t));
+}
+document.getElementById('c-empty').addEventListener('change', () => (document.getElementById('c-grid').innerHTML = cGrid()));
+
+// tooltip แถบสัดส่วนต้นทุน
+const tip = document.getElementById('tip');
+document.addEventListener('mousemove', (e) => {
+  const s = e.target.closest('[data-tip]');
+  if (!s) { tip.style.display = 'none'; return; }
+  const [a, b] = s.dataset.tip.split('|');
+  tip.innerHTML = `<b>${a}</b><br>${b}`;
+  tip.style.display = 'block';
+  tip.style.left = Math.min(e.clientX + 12, innerWidth - tip.offsetWidth - 8) + 'px';
+  tip.style.top = e.clientY + 14 + 'px';
+});
+render();
+</script>
+</body>
+</html>
