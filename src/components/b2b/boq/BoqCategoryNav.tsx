@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+import { ChevronRightIcon } from "@/components/ui/icons";
 import { formatTHB } from "@/lib/utils/formatters";
 import type { CalcResult } from "@/lib/b2b/boq-calc";
 import type { B2bCategory } from "@/lib/b2b/materials";
@@ -10,7 +12,8 @@ const thb0 = (n: number) => formatTHB(Math.round(n));
 
 // เมนูหมวดค้างซ้ายของแท็บ "รายการ" (แผน 20261016-04 แบบ A+B) — กดแล้วเลื่อนไปการ์ดหมวดนั้น
 // แต่ละหมวด: ราคาขาย · แท่งขนาด (เทียบหมวดที่แพงสุด · สีเดียว) · จุดสถานะ (แดง รอราคา · เหลือง ราคาเปลี่ยน · เขียว มีรายการ)
-// หมวดมาตรฐานที่ยังว่างย่อเป็นชิป "+ ชื่อหมวด" (กดแล้วเปิดการ์ดเปล่าให้เลือกรายการ) · ส่วนเพิ่มเติมแยกกลุ่มท้าย
+// หมวดที่ยังว่าง = แถวเรียบสีจาง "เลข ชื่อ +" (กดแล้วเปิดการ์ดเปล่าให้เลือกรายการ) อยู่ในกลุ่มพับได้ — เดิมเป็นชิปกว้างไม่เท่ากันเรียงยาว (ปรับ 16 ต.ค.)
+//   มาตรฐาน: กางเองเมื่อใบยังไม่มีรายการเลย · ส่วนเพิ่มเติมที่ยังไม่ได้เพิ่ม: พับไว้ก่อน · ผู้ใช้กดเองชนะเสมอ
 
 export default function BoqCategoryNav({ filled, empty, addons, addonChoices, calc, flags, active, readOnly, onGo, onOpenEmpty, onAddAddon }: {
   /** หมวดมาตรฐานที่มีรายการ */
@@ -29,9 +32,28 @@ export default function BoqCategoryNav({ filled, empty, addons, addonChoices, ca
   onOpenEmpty: (c: B2bCategory) => void;
   onAddAddon: (c: B2bCategory) => void;
 }) {
+  const [emptyOpen, setEmptyOpen] = useState<boolean | null>(null);
+  const [choicesOpen, setChoicesOpen] = useState(false);
+  const showEmpty = emptyOpen ?? filled.length === 0;
   const max = Math.max(1, ...[...filled, ...addons].map((c) => calc.categories[c.id]?.cost ?? 0));
   const head = "flex items-center justify-between px-2 pt-2 pb-1 text-xxs font-bold uppercase tracking-wider text-gray-400";
-  const chip = "max-w-full truncate rounded-full border border-dashed border-gray-300 bg-white px-2.5 py-0.5 text-xs text-gray-500 hover:border-primary hover:text-primary";
+
+  const groupToggle = (label: string, n: number, isOpen: boolean, onClick: () => void) => (
+    <button type="button" onClick={onClick} style={{ minHeight: 0 }} aria-expanded={isOpen}
+      className="flex w-full items-center gap-1.5 px-2 pt-2 pb-1 text-left text-xxs font-bold uppercase tracking-wider text-gray-400 hover:text-gray-600">
+      <span>{label}</span>
+      <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-gray-100 px-1 tabular-nums text-gray-500">{n}</span>
+      <ChevronRightIcon className={`ml-auto h-3 w-3 transition-transform ${isOpen ? "rotate-90" : ""}`} strokeWidth={2.5} />
+    </button>
+  );
+  const addRow = (c: B2bCategory, onClick: (c: B2bCategory) => void) => (
+    <button key={c.id} type="button" onClick={() => onClick(c)} style={{ minHeight: 0 }} title={c.name}
+      className="group grid w-full grid-cols-[22px_1fr_auto] items-center gap-x-2 rounded-lg px-2 py-1 text-left hover:bg-gray-50">
+      <span className="text-right text-xs text-gray-300">{c.id}</span>
+      <span className="truncate text-sm text-gray-400 group-hover:text-gray-700">{c.name}</span>
+      {!readOnly && <span className="text-base font-semibold leading-none text-gray-300 group-hover:text-primary">+</span>}
+    </button>
+  );
 
   const row = (c: B2bCategory) => {
     const r = calc.categories[c.id];
@@ -66,14 +88,8 @@ export default function BoqCategoryNav({ filled, empty, addons, addonChoices, ca
       {filled.map(row)}
       {empty.length > 0 && (
         <div className="mt-1 border-t border-gray-100">
-          <div className={head}><span>ยังไม่มีรายการ</span></div>
-          <div className="flex flex-wrap gap-1 px-2 pb-1">
-            {empty.map((c) => (
-              <button key={c.id} type="button" onClick={() => onOpenEmpty(c)} style={{ minHeight: 0 }} className={chip} title={c.name}>
-                {readOnly ? "" : "+ "}{c.id}. {c.name}
-              </button>
-            ))}
-          </div>
+          {groupToggle("ยังไม่มีรายการ", empty.length, showEmpty, () => setEmptyOpen(!showEmpty))}
+          {showEmpty && empty.map((c) => addRow(c, onOpenEmpty))}
         </div>
       )}
       {(addons.length > 0 || (!readOnly && addonChoices.length > 0)) && (
@@ -81,11 +97,10 @@ export default function BoqCategoryNav({ filled, empty, addons, addonChoices, ca
           <div className={head}><span>ส่วนเพิ่มเติม</span></div>
           {addons.map(row)}
           {!readOnly && addonChoices.length > 0 && (
-            <div className="flex flex-wrap gap-1 px-2 pb-1 pt-1">
-              {addonChoices.map((c) => (
-                <button key={c.id} type="button" onClick={() => onAddAddon(c)} style={{ minHeight: 0 }} className={chip} title={c.name}>+ {c.id}. {c.name}</button>
-              ))}
-            </div>
+            <>
+              {groupToggle("ยังไม่ได้เพิ่ม", addonChoices.length, choicesOpen, () => setChoicesOpen(!choicesOpen))}
+              {choicesOpen && addonChoices.map((c) => addRow(c, onAddAddon))}
+            </>
           )}
         </div>
       )}

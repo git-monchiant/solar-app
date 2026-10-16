@@ -171,9 +171,9 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
     if (ok) await act({ action: "move", to_stage: to }, `โครงการอยู่ขั้น ${stageLabel(to)} แล้ว`);
   };
   const createBoq = (v: { option_label: string; margin_pct: string; copy_from: string }) => run(async () => {
-    const r = await apiFetch("/api/b2b/boqs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project_id: p.id, ...v }) }) as { id: number; copied: { lines: number; inactive: number } | null };
+    const r = await apiFetch("/api/b2b/boqs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project_id: p.id, ...v }) }) as { id: number; copied: { lines: number; inactive: number; om_reset?: boolean } | null };
     const msg = copiedMessage(r.copied);
-    if (msg) toast({ message: msg, variant: r.copied?.inactive ? "warning" : "success" });
+    if (msg) toast({ message: msg, variant: r.copied?.inactive || r.copied?.om_reset ? "warning" : "success" });
     router.push(`/b2b/boq/${r.id}`);
   });
   const addNote = async (message: string) => {

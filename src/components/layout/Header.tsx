@@ -7,7 +7,8 @@ import NotificationBell from "./NotificationBell";
 
 interface HeaderProps {
   title: string;
-  subtitle?: string;
+  /** แสดงเป็นตัวพิมพ์ใหญ่ทั้งบรรทัด — ส่วนที่ต้องคงตัวพิมพ์เดิมห่อ span className="normal-case" (เช่น "Rev" ของใบ BOQ) */
+  subtitle?: React.ReactNode;
   backHref?: string;
   /** โลโก้หน้าชื่อระบบ (ใช้ที่ /home) */
   logoSrc?: string;

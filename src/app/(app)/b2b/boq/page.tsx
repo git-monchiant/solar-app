@@ -87,9 +87,9 @@ export default function B2bBoqListPage() {
   const create = async () => {
     setError(""); setSaving(true);
     try {
-      const r = await apiFetch("/api/b2b/boqs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) }) as { id: number; copied: { lines: number; inactive: number } | null };
+      const r = await apiFetch("/api/b2b/boqs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) }) as { id: number; copied: { lines: number; inactive: number; om_reset?: boolean } | null };
       const msg = copiedMessage(r.copied);
-      if (msg) toast({ message: msg, variant: r.copied?.inactive ? "warning" : "success" });
+      if (msg) toast({ message: msg, variant: r.copied?.inactive || r.copied?.om_reset ? "warning" : "success" });
       router.push(`/b2b/boq/${r.id}`);
     } catch (e) {
       setError(e instanceof Error && e.message ? e.message : "สร้างใบ BOQ ไม่สำเร็จ");
@@ -164,7 +164,7 @@ export default function B2bBoqListPage() {
                   <th className="px-3 py-2 font-semibold">โครงการ</th>
                   <th className="px-3 py-2 font-semibold w-[22%]">ลูกค้า</th>
                   <th className={`${numCls} font-semibold ${fit}`}>kWp</th>
-                  <th className={`${numCls} font-semibold ${fit}`}>ขาย บาท/Wp</th>
+                  <th className={`${numCls} font-semibold ${fit}`}>ราคาขาย/Wp</th>
                   <th className={`${numCls} font-semibold ${fit}`}>ราคาขาย (ก่อน VAT)</th>
                   <th className={`pl-6 pr-3 py-2 font-semibold ${fit}`}>บันทึกล่าสุด</th>
                 </tr>

@@ -3,6 +3,7 @@ import { requireAnyActiveRole } from "@/lib/auth";
 import { getB2bDb, sql } from "@/lib/b2b/db";
 import { B2B_BOQ_VIEW_ROLES, B2B_BOQ_ROLES, readBoqHeader } from "@/lib/b2b/boq";
 import { BoqLimitError, copyBoqLines, nextDocNo, storeTotals } from "@/lib/b2b/boq-server";
+import { isOmRole, omQty, parseOmParams } from "@/lib/b2b/boq-om";
 import { isClosedStage } from "@/lib/b2b/project";
 import { logActivity } from "@/lib/b2b/project-server";
 
@@ -54,7 +55,7 @@ export async function POST(req: NextRequest) {
     if (!p) { await tx.rollback(); return NextResponse.json({ error: "ไม่พบโครงการ" }, { status: 404 }); }
     if (isClosedStage(p.stage)) { await tx.rollback(); return NextResponse.json({ error: "โครงการปิดอยู่ — เปิดกลับก่อนจึงเพิ่ม BOQ ได้" }, { status: 409 }); }
     const src = copyFrom == null ? null : (await new sql.Request(tx).input("c", sql.Int, copyFrom)
-      .query(`SELECT id, doc_no, revision, margin_pct FROM b2b_boqs WHERE id = @c`)).recordset[0];
+      .query(`SELECT id, doc_no, revision, margin_pct, project_id, om_params FROM b2b_boqs WHERE id = @c`)).recordset[0];
     if (copyFrom != null && !src) { await tx.rollback(); return NextResponse.json({ error: "ไม่พบใบ BOQ ต้นทาง" }, { status: 404 }); }
     const noMargin = body.margin_pct == null || body.margin_pct === "";
     const parsed = readBoqHeader({ ...body, project_name: p.name, margin_pct: noMargin && src ? Number(src.margin_pct) : body.margin_pct }, { create: true });
@@ -79,12 +80,28 @@ export async function POST(req: NextRequest) {
         OUTPUT INSERTED.id, INSERTED.doc_no
         VALUES (@doc, 0, @pid, @label, @project, @customer, @location, @lat, @lng, @margin, @note, 0, 0, 0, @u, @u)`);
     const newId = r.recordset[0].id as number;
-    let copied: { lines: number; inactive: number } | null = null;
+    let copied: { lines: number; inactive: number; om_reset: boolean } | null = null;
     if (src) {
-      await new sql.Request(tx).input("id", sql.Int, newId).input("src", sql.Int, src.id).query(`
-        UPDATE b SET vat_pct = s.vat_pct, addon_modes = s.addon_modes, om_params = s.om_params
+      // ช่องตั้งค่า O&M: ใบจากโครงการอื่น = ไซต์อื่น → ระยะทางไป-กลับเป็น 0 ให้กรอกใหม่ (ช่องอื่นคงเดิม · แผน 20261016-05)
+      const sp = parseOmParams(src.om_params);
+      const srcOm = "value" in sp ? sp.value : null;
+      const omReset = !!srcOm && src.project_id !== p.id && srcOm.distance_km !== 0;
+      const om = srcOm && omReset ? { ...srcOm, distance_km: 0 } : srcOm;
+      await new sql.Request(tx).input("id", sql.Int, newId).input("src", sql.Int, src.id).input("om", sql.NVarChar(500), om ? JSON.stringify(om) : null).query(`
+        UPDATE b SET vat_pct = s.vat_pct, addon_modes = s.addon_modes, om_params = @om
         FROM b2b_boqs b CROSS JOIN b2b_boqs s WHERE b.id = @id AND s.id = @src`);
-      copied = await copyBoqLines(tx, src.id, newId);
+      copied = { ...(await copyBoqLines(tx, src.id, newId)), om_reset: omReset };
+      if (om && omReset) {
+        // บรรทัดสูตร O&M คิดจำนวนใหม่ตามช่องตั้งค่าที่เปลี่ยน (ไม่งั้นยอดหัวใบยังเป็นของระยะทางเดิมจนกดบันทึก)
+        const omLines = (await new sql.Request(tx).input("id", sql.Int, newId).query(`
+          SELECT i.id, m.om_role FROM b2b_boq_items i JOIN b2b_materials m ON m.id = i.material_id
+          WHERE i.boq_id = @id AND m.om_role IS NOT NULL`)).recordset;
+        for (const l of omLines) {
+          if (!isOmRole(l.om_role)) continue;
+          await new sql.Request(tx).input("i", sql.Int, l.id).input("q", sql.Decimal(14, 3), omQty(l.om_role, om).qty)
+            .query(`UPDATE b2b_boq_items SET qty = @q WHERE id = @i`);
+        }
+      }
       await storeTotals(tx, newId);
     }
     const from = src ? ` (คัดลอกจาก ${src.doc_no} Rev ${src.revision})` : "";

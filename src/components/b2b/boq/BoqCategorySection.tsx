@@ -4,7 +4,7 @@ import { useState, type ReactNode } from "react";
 import { ChevronRightIcon } from "@/components/ui/icons";
 import { formatNumber, formatTHB } from "@/lib/utils/formatters";
 import { omQty, type OmParams } from "@/lib/b2b/boq-om";
-import type { CalcResult } from "@/lib/b2b/boq-calc";
+import type { AddonMode, CalcResult } from "@/lib/b2b/boq-calc";
 import { formatPrice, priceSuffix, type B2bCategory } from "@/lib/b2b/materials";
 import { BOQ_LINE_NOTE_MAX, BOQ_MAX_MANUAL_COST, BOQ_MAX_QTY, wattInModel, type BoqLine } from "@/lib/b2b/boq";
 
@@ -35,13 +35,13 @@ function QtyInput({ value, onChange }: { value: number; onChange: (n: number) =>
   );
 }
 
-/** หมายเหตุรายบรรทัด (แผน 20261016-02) — ไม่มีหมายเหตุ = ปุ่ม "+ หมายเหตุ" · กดแล้วออกจากช่องโดยไม่พิมพ์ = ปิดช่องเฉยๆ (ไม่นับเป็นงานค้าง) */
-function NoteField({ value, readOnly, onChange }: { value: string | null; readOnly: boolean; onChange: (v: string | null) => void }) {
-  const [open, setOpen] = useState(false);
+/** หมายเหตุรายบรรทัด (แผน 20261016-02) — ช่องกรอก · เปิดจากปุ่ม "+ หมายเหตุ" ท้ายบรรทัดยี่ห้อ · รุ่น (แถวเหลือ 2 บรรทัด — ปรับ 16 ต.ค.)
+ *  กดแล้วออกจากช่องโดยไม่พิมพ์ = ปิดช่องเฉยๆ (ไม่นับเป็นงานค้าง) */
+function NoteField({ value, readOnly, open, setOpen, onChange }: {
+  value: string | null; readOnly: boolean; open: boolean; setOpen: (open: boolean) => void; onChange: (v: string | null) => void;
+}) {
   if (readOnly) return value ? <div className="mt-1 whitespace-pre-wrap break-words text-xs text-gray-500">หมายเหตุ: {value}</div> : null;
-  if (!value && !open) {
-    return <button type="button" onClick={() => setOpen(true)} style={{ minHeight: 0 }} className="mt-0.5 text-xxs text-gray-400 hover:text-primary">+ หมายเหตุ</button>;
-  }
+  if (!value && !open) return null;
   return (
     <input autoFocus={!value} maxLength={BOQ_LINE_NOTE_MAX} value={value ?? ""} placeholder="หมายเหตุ เช่น ราคารวมขนส่ง · ลูกค้าขอรุ่นนี้"
       className="mt-1 h-7 w-full rounded-md border border-gray-200 bg-white px-2 text-xs text-gray-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
@@ -57,7 +57,7 @@ export type CategoryFlags = { pending: number; changed: number };
 // การ์ดหมวดของแท็บ "รายการ" (แผน 20261016-04 แบบ A+B) — หัวการ์ดกดพับ/กาง · ตัวเลขหมวดอยู่ขวา · ปุ่มเพิ่มรายการอยู่ในตัวการ์ด
 // visible = ตัวกรอง/ค้นหาของแท็บ — ซ่อนบรรทัดที่ไม่ตรง แต่เลขลำดับคงตามใบ (ตรงกับข้อความ "หมวด X ลำดับ N" ตอนบันทึก)
 export default function BoqCategorySection({ category, lines, calc, optional = false, readOnly, omParams = null, extra, open, onToggle, share = null, flags,
-  visible, highlight = false, scrollMarginTop, onChange, onRemove, onRefresh, onPick, onAddManual, onRemoveAddon }: {
+  visible, highlight = false, scrollMarginTop, onChange, onRemove, onRefresh, onPick, onAddManual, onRemoveAddon, onAddonMode }: {
   category: B2bCategory;
   lines: BoqLine[];
   calc: CalcResult;
@@ -82,9 +82,19 @@ export default function BoqCategorySection({ category, lines, calc, optional = f
   onPick: () => void;
   onAddManual: () => void;
   onRemoveAddon?: () => void;
+  /** หมวดเสริม: รวมในราคา / เสนอเป็นทางเลือก — ปุ่มสลับบนหัวการ์ด (เดิมอยู่แท็บตั้งค่าใบ — ยุบ 16 ต.ค.) */
+  onAddonMode?: (mode: AddonMode) => void;
 }) {
   const sum = calc.categories[category.id];
   const empty = lines.length === 0;
+  // บรรทัดที่เปิดช่องหมายเหตุไว้ (ยังไม่ได้พิมพ์) — ปุ่มเปิดอยู่คนละที่กับช่อง จึงเก็บสถานะไว้ที่การ์ด
+  const [notesOpen, setNotesOpen] = useState<Set<string>>(() => new Set());
+  const setNoteOpen = (key: string, on: boolean) => setNotesOpen((s) => {
+    if (s.has(key) === on) return s;
+    const n = new Set(s);
+    if (on) n.add(key); else n.delete(key);
+    return n;
+  });
   const rows = lines.map((l, i) => ({ l, i })).filter(({ l }) => !visible || visible(l));
   const btn = "h-8 rounded-lg px-3 text-xs font-semibold whitespace-nowrap";
   const actions = !readOnly && (
@@ -114,13 +124,24 @@ export default function BoqCategorySection({ category, lines, calc, optional = f
             <span className={`block text-sm font-bold leading-snug ${empty ? "text-gray-400" : "text-gray-900"}`}>{category.name}</span>
             <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-gray-400">
               {empty ? "ยังไม่มีรายการ" : `${lines.length} รายการ`}
-              {category.is_addon && <span className={`${pill} ${optional ? "bg-gray-100 text-gray-500" : "bg-amber-50 text-amber-700"}`}>ส่วนเพิ่มเติม · {optional ? "ทางเลือก (ไม่รวมในยอด)" : "รวมในราคา"}</span>}
+              {category.is_addon && (readOnly || !onAddonMode) && <span className={`${pill} ${optional ? "bg-gray-100 text-gray-500" : "bg-amber-50 text-amber-700"}`}>ส่วนเพิ่มเติม · {optional ? "ทางเลือก (ไม่รวมในยอด)" : "รวมในราคา"}</span>}
               {flags.pending > 0 && <span className={`${pill} bg-red-50 text-red-600`}>รอราคา {flags.pending}</span>}
               {flags.changed > 0 && <span className={`${pill} bg-amber-100 text-amber-800`}>ราคาเปลี่ยน {flags.changed}</span>}
               {omParams && lines.some((l) => l.om_role) && <span className={`${pill} bg-primary/10 text-primary`}>คิดจากช่องตั้งค่า O&amp;M</span>}
             </span>
           </span>
         </button>
+        {/* ปุ่มสลับอยู่นอกปุ่มพับ/กาง (ปุ่มซ้อนปุ่มไม่ได้) */}
+        {category.is_addon && !readOnly && onAddonMode && (
+          <span className="inline-flex shrink-0 overflow-hidden rounded-lg border border-gray-200" role="group" aria-label="ส่วนเพิ่มเติมนี้">
+            {(["included", "optional"] as const).map((m) => (
+              <button key={m} type="button" onClick={() => onAddonMode(m)} style={{ minHeight: 0 }} aria-pressed={(m === "optional") === optional}
+                className={`px-2.5 py-1 text-xs font-semibold whitespace-nowrap ${(m === "optional") === optional ? "bg-gray-900 text-white" : "bg-white text-gray-500 hover:bg-gray-50"}`}>
+                {m === "included" ? "รวมในราคา" : "ทางเลือก"}
+              </button>
+            ))}
+          </span>
+        )}
         {empty ? (
           <div className="flex flex-wrap items-center gap-2">{actions}</div>
         ) : (
@@ -132,19 +153,16 @@ export default function BoqCategorySection({ category, lines, calc, optional = f
         )}
       </div>
 
-      {open && (extra || !empty) && (
+      {open && (extra || (!empty && rows.length === 0)) && (
         <div className="border-t border-gray-100">
           {extra}
-          {!empty && actions && (
-            <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 bg-gray-50 px-3 py-2 md:px-4">{actions}</div>
-          )}
           {!empty && rows.length === 0 && <div className="px-4 py-3 text-sm text-gray-400">ไม่มีบรรทัดตามตัวกรอง/คำค้นในหมวดนี้</div>}
         </div>
       )}
 
       {open && !empty && rows.length > 0 && (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[820px] table-fixed text-sm">
+        <div className="overflow-x-auto border-t border-gray-100">
+          <table className="w-full min-w-[780px] table-fixed text-sm">
             <thead>
               <tr className="bg-gray-50 text-left text-xs text-gray-500">
                 <th className={`${cell} w-[32px] text-right`}>#</th>
@@ -154,7 +172,7 @@ export default function BoqCategorySection({ category, lines, calc, optional = f
                 <th className={`${cell} w-[112px] text-right`}>ต้นทุน/หน่วย</th>
                 <th className={`${cell} w-[118px] text-right`}>ต้นทุนรวม</th>
                 <th className={`${cell} w-[124px] text-right`}>ราคาขายรวม</th>
-                <th className={`${cell} w-[32px]`} />
+                <th className="w-9" />
               </tr>
             </thead>
             <tbody>
@@ -166,6 +184,11 @@ export default function BoqCategorySection({ category, lines, calc, optional = f
                 // รอราคาแต่ Purchase ใส่ราคาใน Master แล้ว (หน้านี้เปิดค้างไว้ตอน Purchase บันทึก) — กดใช้ได้เลย
                 const arrived = !manual && l.unit_cost == null && l.current_unit_price != null;
                 const om = l.om_role && omParams ? omQty(l.om_role, omParams) : null;
+                // ปุ่ม "+ หมายเหตุ" ต่อท้ายบรรทัดยี่ห้อ · รุ่น (ไม่มีบรรทัดนั้น → อยู่แถวป้ายสถานะ) — ไม่กินบรรทัดเพิ่ม
+                const brandLine = !(manual && !readOnly) && !!(l.brand || l.model || l.spec_watt);
+                const noteBtn = !readOnly && !l.note && !notesOpen.has(l.key) && (
+                  <button type="button" onClick={() => setNoteOpen(l.key, true)} style={{ minHeight: 0 }} className="whitespace-nowrap text-xxs text-gray-400 hover:text-primary">+ หมายเหตุ</button>
+                );
                 return (
                   <tr key={l.key} className={`border-t border-gray-100 align-top ${l.unit_cost == null ? "bg-red-50/40" : changed ? "bg-amber-50/50" : ""}`}>
                     <td className={`${cell} text-right tabular-nums text-gray-400`}>{i + 1}</td>
@@ -182,10 +205,11 @@ export default function BoqCategorySection({ category, lines, calc, optional = f
                       ) : (
                         <>
                           <div className="text-gray-900 break-words">{l.name}</div>
-                          {(l.brand || l.model || l.spec_watt) && (
+                          {brandLine && (
                             <div className="text-xs text-gray-500 break-words">
                               {[l.brand, l.model].filter(Boolean).join(" · ")}
                               {l.spec_watt && !wattInModel(l.model, l.spec_watt) ? <span className="text-gray-400">{l.brand || l.model ? " · " : ""}{l.spec_watt} W</span> : null}
+                              {noteBtn && <span className="ml-3 inline-block">{noteBtn}</span>}
                             </div>
                           )}
                         </>
@@ -209,9 +233,11 @@ export default function BoqCategorySection({ category, lines, calc, optional = f
                         )}
                         {l.current_active === false && <span className="rounded-full bg-gray-100 px-1.5 text-xxs text-gray-500">ปิดใช้งานใน Master</span>}
                         {manual && <span className="rounded-full bg-amber-50 px-1.5 text-xxs text-amber-700">ราคาใส่เอง{l.price_entered_by_name ? ` · ${l.price_entered_by_name}` : ""}</span>}
+                        {!brandLine && noteBtn}
                       </div>
                       {om && <div className="mt-0.5 text-xxs text-primary">จำนวน = {om.how}</div>}
-                      <NoteField value={l.note} readOnly={readOnly} onChange={(note) => onChange(l.key, { note })} />
+                      <NoteField value={l.note} readOnly={readOnly} open={notesOpen.has(l.key)} setOpen={(on) => setNoteOpen(l.key, on)}
+                        onChange={(note) => onChange(l.key, { note })} />
                     </td>
                     <td className={`${cell} text-right`}>
                       {l.price_basis === "system_wp" ? (
@@ -252,7 +278,7 @@ export default function BoqCategorySection({ category, lines, calc, optional = f
                       <div className="font-medium">{r ? money(r.sale) : "—"}</div>
                       {r && l.unit_cost != null && <div className="text-xxs text-gray-400">ต่อหน่วย {money(r.sale_unit)}</div>}
                     </td>
-                    <td className={cell}>
+                    <td className="px-1 py-1.5">
                       {!readOnly && (
                         <button type="button" title="ลบบรรทัด" onClick={() => onRemove(l.key)} style={{ minHeight: 0 }}
                           className="flex h-7 w-7 items-center justify-center rounded-full text-gray-400 hover:bg-red-50 hover:text-red-600">×</button>
@@ -264,6 +290,10 @@ export default function BoqCategorySection({ category, lines, calc, optional = f
             </tbody>
           </table>
         </div>
+      )}
+      {/* ปุ่มเพิ่มรายการอยู่ท้ายตาราง — บรรทัดใหม่ต่อท้ายตรงนี้ (เดิมอยู่เหนือหัวตาราง กดแล้วรายการไปโผล่ล่างสุด) · หมวดว่างอยู่บนหัวการ์ด */}
+      {open && !empty && actions && (
+        <div className="flex flex-wrap items-center gap-2 border-t border-gray-100 px-3 py-2.5 md:px-4">{actions}</div>
       )}
     </section>
   );

@@ -34,7 +34,7 @@ export default function BoqOptionsTable({ boqs, onAdd, canAdd, canView }: { boqs
                 {canView && <th className={`${num} font-semibold`}>ต้นทุน</th>}
                 <th className={`${num} font-semibold`}>ราคาขาย (ก่อน VAT)</th>
                 {canView && <th className={`${num} font-semibold`}>Margin</th>}
-                <th className={`${num} font-semibold`}>ขาย บาท/Wp</th>
+                <th className={`${num} font-semibold`}>ราคาขาย/Wp</th>
                 <th className="px-3 py-2 font-semibold">บันทึกล่าสุด</th>
               </tr>
             </thead>

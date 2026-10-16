@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { ChevronRightIcon } from "@/components/ui/icons";
 import { formatNumber, formatThaiDate, formatTHB } from "@/lib/utils/formatters";
 import { perWp, type AddonMode, type CalcResult } from "@/lib/b2b/boq-calc";
-import { omSummary, type OmParams } from "@/lib/b2b/boq-om";
+import { OM_CATEGORY, omSummary, type OmParams } from "@/lib/b2b/boq-om";
 import type { BoqHeader, BoqLine, BoqRevision } from "@/lib/b2b/boq";
 import type { B2bCategory } from "@/lib/b2b/materials";
 import BoqSummary from "./BoqSummary";
@@ -14,7 +14,7 @@ import type { CategoryFlags } from "./BoqCategorySection";
 /** บาทเต็มจำนวน — formatTHB ค่าเริ่มต้นไม่ปัดเศษ (แสดงทศนิยมได้ถึง 3 ตำแหน่ง) */
 const thb0 = (n: number) => formatTHB(Math.round(n));
 
-// แท็บ "ภาพรวม" ของหน้าทำ BOQ (แผน 20261016-04 แบบ A+B) — dashboard: ตัวเลขหลัก · ต้องจัดการ · สัดส่วนต้นทุน · ต้นทุนเรียงหมวด · ข้อมูลใบ
+// แท็บ "ภาพรวม" ของหน้าทำ BOQ (แผน 20261016-04 แบบ A+B) — dashboard: ตัวเลขหลัก · สัดส่วนต้นทุน · สรุปรายหมวด · รายละเอียด BOQ · ต้องจัดการ (ล่างสุด)
 // ตารางสรุปแบบไฟล์ Excel (BoqSummary เดิม) อยู่ท้าย พับไว้ · ตัวเลขทั้งหมดมาจาก calcBoq ชุดเดียวกับแท็บรายการ
 
 export type BoqAlert = { key: string; cat: number | null; tone: "red" | "amber" | "gray" | "blue"; text: string };
@@ -27,7 +27,7 @@ const SLOTS: { cat: number; color: string }[] = [
 const OTHER = "#c4c9d1";
 const TONE: Record<BoqAlert["tone"], string> = { red: "bg-red-500", amber: "bg-amber-400", gray: "bg-gray-400", blue: "bg-blue-500" };
 
-export default function BoqOverview({ h, calc, categories, lines, margin, onMargin, readOnly, alerts, flags, onGo, revisions, onRev, om,
+export default function BoqOverview({ h, calc, categories, lines, margin, onMargin, optionLabel, onOptionLabel, readOnly, alerts, flags, onGo, revisions, onRev, om,
   addonIds, addonModes, onMode, changedCount, onApplyAll }: {
   h: BoqHeader;
   calc: CalcResult;
@@ -35,6 +35,9 @@ export default function BoqOverview({ h, calc, categories, lines, margin, onMarg
   lines: BoqLine[];
   margin: string;
   onMargin: (v: string) => void;
+  /** ชื่อตัวเลือก (ขนาด / รุ่นแผง) — ฉบับร่างในหน้า */
+  optionLabel: string;
+  onOptionLabel: (v: string) => void;
   readOnly: boolean;
   alerts: BoqAlert[];
   flags: (categoryId: number) => CategoryFlags;
@@ -76,69 +79,34 @@ export default function BoqOverview({ h, calc, categories, lines, margin, onMarg
 
   const card = "rounded-xl border border-gray-200 bg-white";
   const rankGrid = "grid grid-cols-[24px_minmax(0,1fr)_96px] items-center gap-x-3 px-2 md:grid-cols-[24px_minmax(0,200px)_1fr_96px_96px_48px]";
-  const kLabel = "text-xs text-gray-500";
-  const kValue = "text-2xl font-bold leading-tight text-gray-900 tabular-nums";
+  // การ์ดตัวเลข 4 ใบ — โครงเดียวกันทุกใบ: ป้าย (1 บรรทัด) → ตัวเลขขนาดเดียวกัน → บรรทัดรอง ⇒ ตัวเลขอยู่ระนาบเดียวกันทั้งแถว (ผู้ใช้ขอ 16 ต.ค. 69)
+  //   การ์ดราคาขายต่างแค่พื้นสี (ไม่ใช้ตัวเลขใหญ่กว่า) · ราคาต่อวัตต์: ตัวเลขหลัก = ขาย · ต้นทุนย้ายไปบรรทัดรอง (เดิมป้ายขาย/ต้นทุนแทรกเหนือตัวเลข ทำให้ตัวเลขต่ำกว่าใบอื่น)
+  const kpi = (label: string, value: ReactNode, subLine: ReactNode, opts: { hero?: boolean; valueTone?: string } = {}) => (
+    <div className={opts.hero
+      ? "relative col-span-2 overflow-hidden rounded-xl bg-gradient-to-br from-teal-600 to-primary p-4 text-white lg:col-span-1"
+      : `${card} p-4`}>
+      <div className={`truncate text-xs ${opts.hero ? "text-white/85" : "text-gray-500"}`}>{label}</div>
+      <div className={`mt-1 truncate text-[28px] font-bold leading-9 tabular-nums ${opts.hero ? "text-white" : opts.valueTone ?? "text-gray-900"}`}>{value}</div>
+      <div className={`mt-1 text-xs tabular-nums ${opts.hero ? "text-white/85" : "text-gray-500"}`}>{subLine}</div>
+      {opts.hero && <span className="pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full bg-white/10" />}
+    </div>
+  );
+  const unit = (u: string, hero = false) => <span className={`ml-1 text-sm font-medium ${hero ? "text-white/85" : "text-gray-500"}`}>{u}</span>;
 
   return (
     <div className="space-y-4">
       {/* ── ตัวเลขหลัก ── */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-[1.35fr_1fr_1fr_1.15fr_1.4fr]">
-        <div className="relative col-span-2 overflow-hidden rounded-xl bg-gradient-to-br from-teal-600 to-primary p-4 text-white lg:col-span-1">
-          <div className="text-xs text-white/85">ราคาขาย (ก่อน VAT)</div>
-          <div className="mt-0.5 text-3xl font-bold leading-tight tabular-nums">{formatTHB(sub.sale, { decimals: 2 })}</div>
-          <div className="text-xs text-white/85 tabular-nums">รวม VAT {h.vat_pct}% {formatTHB(calc.grand.sale, { decimals: 2 })}</div>
-          {calc.addon_optional.sale > 0 && <div className="text-xs text-white/85 tabular-nums">ทางเลือก (ไม่รวม) +{thb0(calc.addon_optional.sale)}</div>}
-          <span className="pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full bg-white/10" />
-        </div>
-        <div className={`${card} p-4`}>
-          <div className={kLabel}>ขนาดระบบ</div>
-          <div className={kValue}>{formatNumber(Math.round((cap / 1000) * 100) / 100)} <span className="text-sm font-medium text-gray-500">kWp</span></div>
-          <div className="text-xs text-gray-500">{panelQty > 0 ? `${formatNumber(panelQty)} แผง${panelModels.length === 1 ? ` · ${panelModels[0]}` : ""}` : "ยังไม่มีแผงในหมวด 1"}</div>
-        </div>
-        <div className={`${card} p-4`}>
-          <div className={kLabel}>ราคาต่อวัตต์ (บาท/Wp)</div>
-          <div className="mt-0.5 flex gap-5">
-            <div><div className="text-xxs text-gray-400">ขาย</div><div className={kValue}>{wp(sub.sale)}</div></div>
-            <div><div className="text-xxs text-gray-400">ต้นทุน</div><div className={kValue}>{wp(sub.cost)}</div></div>
-          </div>
-        </div>
-        <div className={`${card} p-4`}>
-          <div className={kLabel}>กำไร</div>
-          <div className={`${kValue} text-emerald-600`}>{thb0(sub.sale - sub.cost)}</div>
-          <label className="mt-1 flex items-center gap-1.5 whitespace-nowrap text-xs text-gray-500" title="Margin = % ของราคาขาย">
-            Margin
-            <input type="number" step="0.01" min={0} max={99} disabled={readOnly} value={margin} onChange={(e) => onMargin(e.target.value)}
-              className="h-8 w-20 rounded-lg border border-gray-200 bg-white px-2 text-right text-sm font-bold tabular-nums outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 disabled:bg-gray-50" />
-            %
-          </label>
-        </div>
-        <div className={`col-span-2 rounded-xl border p-4 lg:col-span-1 ${alerts.length ? "border-amber-200 bg-amber-50/40" : "border-gray-200 bg-white"}`}>
-          <div className="flex items-center gap-2">
-            <span className={kLabel}>ต้องจัดการ</span>
-            {alerts.length > 0 && <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-100 px-1.5 text-xs font-bold text-amber-800">{alerts.length}</span>}
-          </div>
-          {alerts.length === 0 ? (
-            <div className="mt-2 text-sm font-medium text-emerald-600">✓ ไม่มีรายการที่ต้องจัดการ</div>
-          ) : (
-            <ul className="mt-1 space-y-0.5">
-              {alerts.map((a) => (
-                <li key={a.key}>
-                  <button type="button" onClick={() => a.cat != null && onGo(a.cat)} style={{ minHeight: 0 }} title={a.text}
-                    className="-mx-1.5 flex w-[calc(100%+0.75rem)] items-center gap-2 rounded-md px-1.5 py-1 text-left text-sm text-gray-700 hover:bg-white">
-                    <i className={`h-2 w-2 shrink-0 rounded-full ${TONE[a.tone]}`} />
-                    <span className="min-w-0 flex-1 truncate">{a.text}</span>
-                    {a.cat != null && <span className="text-xs font-semibold text-primary">ไป ›</span>}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          {!readOnly && changedCount > 0 && (
-            <button type="button" onClick={onApplyAll} style={{ minHeight: 0 }} className="mt-2 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-200">
-              ใช้ราคาใหม่ใน Master ทั้งหมด ({changedCount})
-            </button>
-          )}
-        </div>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {kpi("ราคาขาย (ก่อน VAT)", formatTHB(sub.sale, { decimals: 2 }),
+          <>รวม VAT {h.vat_pct}% {formatTHB(calc.grand.sale, { decimals: 2 })}{calc.addon_optional.sale > 0 && <> · ทางเลือก +{thb0(calc.addon_optional.sale)}</>}</>,
+          { hero: true })}
+        {kpi("ขนาดระบบ", <>{formatNumber(Math.round((cap / 1000) * 100) / 100)}{unit("kWp")}</>,
+          panelQty > 0 ? `${formatNumber(panelQty)} แผง${panelModels.length === 1 ? ` · ${panelModels[0]}` : ""}` : "ยังไม่มีแผงในหมวด 1")}
+        {kpi("ราคาขาย/Wp", <>{wp(sub.sale)}{unit("บาท/Wp")}</>,
+          <>ต้นทุน <span className="font-bold text-gray-700">{wp(sub.cost)}</span> บาท/Wp</>)}
+        {/* แสดงอย่างเดียว — แก้ Margin ที่การ์ดรายละเอียด BOQ (ผู้ใช้เลือกแบบ ข. 16 ต.ค. 69) */}
+        {kpi("กำไร", thb0(sub.sale - sub.cost),
+          <>Margin <span className="font-bold text-gray-700">{Number(margin) || 0}%</span> ของราคาขาย</>, { valueTone: "text-emerald-600" })}
       </div>
 
       {/* ── สัดส่วนต้นทุน ── */}
@@ -171,8 +139,7 @@ export default function BoqOverview({ h, calc, categories, lines, margin, onMarg
         {/* ── ต้นทุนเรียงหมวด ── */}
         <div className={card}>
           <div className="flex flex-wrap items-baseline gap-x-2 border-b border-gray-100 px-4 py-3">
-            <h3 className="text-sm font-bold text-gray-900">ยอดแยกตามหมวด</h3>
-            <span className="text-xs text-gray-400">เรียงตามต้นทุนจากมากไปน้อย · กดเพื่อไปแก้รายการ</span>
+            <h3 className="text-sm font-bold text-gray-900">สรุปรายหมวด</h3>{/* เรียงตามต้นทุนมาก→น้อย · กดแถวไปแก้รายการ (ผู้ใช้ตั้งชื่อ + ตัดคำอธิบาย 16 ต.ค. 69) */}
           </div>
           {ranked.length === 0 ? (
             <p className="px-4 py-6 text-center text-sm text-gray-400">ยังไม่มีรายการในใบนี้</p>
@@ -207,14 +174,31 @@ export default function BoqOverview({ h, calc, categories, lines, margin, onMarg
           )}
         </div>
 
-        {/* ── ข้อมูลใบ ── */}
+        {/* ── รายละเอียด BOQ (เดิม "ข้อมูลใบ" — ผู้ใช้ตั้งชื่อ 16 ต.ค. 69) ── */}
         <div className={card}>
           <div className="flex items-center border-b border-gray-100 px-4 py-3">
-            <h3 className="text-sm font-bold text-gray-900">ข้อมูลใบ</h3>
+            <h3 className="text-sm font-bold text-gray-900">รายละเอียด BOQ</h3>
             {h.project_id != null && <Link href={`/b2b/projects/${h.project_id}`} className="ml-auto text-xs font-semibold text-primary hover:underline">ชื่อ · ลูกค้า · ที่ตั้ง แก้ในหน้าโครงการ</Link>}
           </div>
           <dl className="grid grid-cols-[96px_1fr] gap-x-3 gap-y-2 px-4 py-3 text-sm">
-            <dt className="text-gray-500">ตัวเลือก</dt><dd className="font-medium text-gray-900">{h.option_label || "—"}</dd>
+            {/* ค่าของใบที่แก้ได้รวมไว้ที่นี่ (เดิมอยู่แท็บตั้งค่าใบ — ยุบ 16 ต.ค.): ชื่อตัวเลือก · Margin */}
+            <dt className="self-center text-gray-500">ตัวเลือก</dt>
+            <dd>
+              {readOnly ? <span className="font-medium text-gray-900">{optionLabel || "—"}</span> : (
+                <input value={optionLabel} onChange={(e) => onOptionLabel(e.target.value)} placeholder="เช่น 998.64 kWp · Jinko 730" maxLength={100}
+                  className="h-8 w-full rounded-lg border border-gray-200 bg-white px-2.5 text-sm font-medium text-gray-900 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" />
+              )}
+            </dd>
+            <dt className="self-center text-gray-500">Margin</dt>
+            <dd className="flex items-center gap-2 whitespace-nowrap text-gray-500">
+              {readOnly ? <span className="font-medium text-gray-900 tabular-nums">{Number(margin) || 0}%</span> : (
+                <>
+                  <input type="number" step="0.01" min={0} max={99} value={margin} onChange={(e) => onMargin(e.target.value)}
+                    className="h-8 w-24 rounded-lg border border-gray-200 bg-white px-2.5 text-right text-sm font-bold tabular-nums text-gray-900 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" />
+                  <span className="text-xs">% ของราคาขาย</span>
+                </>
+              )}
+            </dd>
             <dt className="text-gray-500">โครงการ</dt>
             <dd className="text-gray-800">{h.project_id != null ? <Link href={`/b2b/projects/${h.project_id}`} className="text-primary hover:underline">{h.project_code} · {h.project_name}</Link> : h.project_name}</dd>
             <dt className="text-gray-500">ลูกค้า</dt><dd className="text-gray-800">{h.customer_name || "—"}</dd>
@@ -235,7 +219,13 @@ export default function BoqOverview({ h, calc, categories, lines, margin, onMarg
               ))}
             </dd>
             <dt className="text-gray-500">ใบเสนอราคา</dt><dd className="text-gray-800">{h.locked_by_quote ? `${h.locked_by_quote} (ส่งอนุมัติแล้ว)` : "ยังไม่มีใบที่ส่งอนุมัติ"}</dd>
-            <dt className="text-gray-500">O&amp;M</dt><dd className="text-gray-800">{om ? omSummary(om) : "ยังไม่ใช้ช่องตั้งค่า"}</dd>
+            <dt className="text-gray-500">O&amp;M</dt>
+            <dd className="text-gray-800">
+              {om ? omSummary(om) : "ยังไม่ใช้ช่องตั้งค่า"}
+              <button type="button" onClick={() => onGo(OM_CATEGORY)} style={{ minHeight: 0 }} className="ml-2 text-xs font-semibold text-primary hover:underline">
+                {readOnly ? "ดูหมวด 13 ›" : om ? "แก้ช่องตั้งค่า ›" : "ตั้งค่า O&M ›"}
+              </button>
+            </dd>
             <dt className="text-gray-500">บันทึกล่าสุด</dt>
             <dd className="text-gray-800">{formatThaiDate(h.updated_at, { time: true })}{h.updated_by_name ? ` · ${h.updated_by_name}` : ""}<span className="text-gray-400"> · สร้าง {formatThaiDate(h.created_at)}</span></dd>
           </dl>
@@ -255,6 +245,36 @@ export default function BoqOverview({ h, calc, categories, lines, margin, onMarg
             <BoqSummary categories={categories} calc={calc} addonIds={addonIds} addonModes={addonModes} readOnly={readOnly} vatPct={h.vat_pct}
               onMode={onMode} onJump={onGo} />
           </div>
+        )}
+      </div>
+
+      {/* ── ต้องจัดการ — ล่างสุดของหน้า (ผู้ใช้สั่งย้ายจากแถวการ์ดตัวเลข 16 ต.ค. 69) · จำนวนยังโชว์บนแท็บภาพรวม ── */}
+      <div className={`rounded-xl border px-4 py-3 ${alerts.length ? "border-amber-200 bg-amber-50/40" : "border-gray-200 bg-white"}`}>
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-sm font-bold text-gray-900">ต้องจัดการ</h3>
+          {alerts.length > 0 && <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-100 px-1.5 text-xs font-bold text-amber-800">{alerts.length}</span>}
+          <span className="text-xs text-gray-400">ยังมีบรรทัดรอราคา = ใบเสนอราคาที่ใช้ BOQ นี้ส่งอนุมัติไม่ได้ · กดเพื่อไปหมวดนั้น</span>
+          {!readOnly && changedCount > 0 && (
+            <button type="button" onClick={onApplyAll} style={{ minHeight: 0 }} className="ml-auto rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-200">
+              ใช้ราคาใหม่ใน Master ทั้งหมด ({changedCount})
+            </button>
+          )}
+        </div>
+        {alerts.length === 0 ? (
+          <div className="mt-1.5 text-sm font-medium text-emerald-600">✓ ไม่มีรายการที่ต้องจัดการ</div>
+        ) : (
+          <ul className="mt-1.5 grid gap-x-6 gap-y-0.5 md:grid-cols-2">
+            {alerts.map((a) => (
+              <li key={a.key} className="min-w-0">
+                <button type="button" onClick={() => a.cat != null && onGo(a.cat)} style={{ minHeight: 0 }} title={a.text}
+                  className="-mx-1.5 flex w-[calc(100%+0.75rem)] items-center gap-2 rounded-md px-1.5 py-1 text-left text-sm text-gray-700 hover:bg-white">
+                  <i className={`h-2 w-2 shrink-0 rounded-full ${TONE[a.tone]}`} />
+                  <span className="min-w-0 flex-1 truncate">{a.text}</span>
+                  {a.cat != null && <span className="text-xs font-semibold text-primary">ไป ›</span>}
+                </button>
+              </li>
+            ))}
+          </ul>
         )}
       </div>
     </div>

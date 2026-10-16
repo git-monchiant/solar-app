@@ -73,9 +73,9 @@ export default function BoqSummary({ categories, calc, addonIds, addonModes, rea
           <tr className="bg-gray-50 text-xs text-gray-500">
             <th className="px-3 py-2 w-10" />
             <th className="px-3 py-2 text-left font-semibold">หมวด</th>
-            <th className={th}>ต้นทุน บาท/Wp</th>
+            <th className={th}>ต้นทุน/Wp</th>
             <th className={th}>ต้นทุน (บาท)</th>
-            <th className={th}>ขาย บาท/Wp</th>
+            <th className={th}>ราคาขาย/Wp</th>
             <th className={th}>ราคาขาย (บาท)</th>
           </tr>
         </thead>

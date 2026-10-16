@@ -17,9 +17,9 @@ import type { B2bCategory, B2bMaterial } from "@/lib/b2b/materials";
 import BoqCategorySection, { type CategoryFlags } from "@/components/b2b/boq/BoqCategorySection";
 import BoqCategoryNav from "@/components/b2b/boq/BoqCategoryNav";
 import BoqOverview, { type BoqAlert } from "@/components/b2b/boq/BoqOverview";
-import BoqSettings from "@/components/b2b/boq/BoqSettings";
 import MaterialPickerDialog from "@/components/b2b/boq/MaterialPickerDialog";
 import MaterialEditModal from "@/components/b2b/MaterialEditModal";
+import ImportFromBoqDialog, { type ImportResult } from "@/components/b2b/boq/ImportFromBoqDialog";
 import OmPanel from "@/components/b2b/boq/OmPanel";
 import { OM_CATEGORY, OM_DEFAULTS, OM_ROLES, omQty, type OmParams } from "@/lib/b2b/boq-om";
 
@@ -27,7 +27,8 @@ import { OM_CATEGORY, OM_DEFAULTS, OM_ROLES, omQty, type OmParams } from "@/lib/
 const thb0 = (n: number) => formatTHB(Math.round(n));
 
 // หน้าทำ BOQ — แบบ A+B (แผน docs/plan/20261016-04-b2b-boq-page-redesign.md · mockup docs/mockup/20261016-04-…)
-//   แท็บ ภาพรวม (dashboard) · รายการ (เมนูหมวดซ้าย + การ์ดหมวด) · ตั้งค่าใบ — แถบแท็บค้างใต้ Header พร้อมยอดย่อ + ปุ่มบันทึก (desktop)
+//   แท็บ ภาพรวม (dashboard) · รายการ (เมนูหมวดซ้าย + การ์ดหมวด) — แถบแท็บค้างใต้ Header พร้อมยอดย่อ + ปุ่มบันทึก (desktop)
+//   ไม่มีแท็บตั้งค่าใบ (ยุบ 16 ต.ค.): ชื่อตัวเลือก + Margin ในการ์ดรายละเอียด BOQ · รวม/ทางเลือกบนหัวการ์ดส่วนเพิ่มเติม · O&M ในการ์ดหมวด 13
 //   ตัวเลขทั้งหมดคิดด้วย calcBoq ชุดเดียวกับ server · แก้ได้เฉพาะ Rev ล่าสุด · บันทึกทั้งใบทีเดียว (server ตรวจซ้ำ + เติมราคาจาก Master เอง)
 
 type Loaded = { header: BoqHeader; lines: BoqLine[]; revisions: BoqRevision[]; categories: B2bCategory[] };
@@ -37,7 +38,7 @@ type HeadDraft = {
   margin_pct: string; note: string; addon_modes: Record<number, AddonMode>;
   om_params: OmParams | null;
 };
-type Tab = "overview" | "items" | "settings";
+type Tab = "overview" | "items";
 type LineFilter = "all" | "pend" | "chg" | "manual";
 
 const toDraft = (h: BoqHeader): HeadDraft => ({
@@ -86,6 +87,7 @@ export default function BoqEditorPage({ params }: { params: Promise<{ id: string
   const [navActive, setNavActive] = useState<number | null>(null);
   const [goTarget, setGoTarget] = useState<number | null>(null);
   const [flash, setFlash] = useState<number | null>(null);
+  const [importOpen, setImportOpen] = useState(false);   // ดึงหมวดจากใบอื่น (แผน 20261016-05)
   // Header + แถบแท็บค้างบนจอ — วัดสด (ตัดบรรทัดตามจอ) ใช้กับเมนูหมวด/การ์ดหมวด
   const rootRef = useRef<HTMLDivElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
@@ -257,6 +259,22 @@ export default function BoqEditorPage({ params }: { params: Promise<{ id: string
     if (go) goTo(c.id);
   };
   const removeAddon = (cid: number) => { const m = { ...head.addon_modes }; delete m[cid]; setH({ addon_modes: m }); };
+  // ดึงหมวดจากใบอื่น — แทนที่ = ลบบรรทัดเดิมของหมวดนั้นก่อน · หมวดเสริมใส่โหมดเฉพาะที่ใบยังไม่มี · O&M ใช้ช่องตั้งค่าต้นทางเมื่อใบยังไม่มี
+  const applyImport = (r: ImportResult) => {
+    setLines((ls) => [...ls.filter((l) => !r.replaceCats.includes(l.category_id)), ...r.lines]);
+    const modes = { ...head.addon_modes };
+    for (const [k, v] of Object.entries(r.addonModes)) if (!(Number(k) in modes)) modes[Number(k)] = v;
+    const useOm = !head.om_params && r.omParams != null;
+    setH({ addon_modes: modes, ...(useOm ? { om_params: r.omParams } : {}) });
+    const cats = [...new Set(r.lines.map((l) => l.category_id))];
+    setOpenSet(() => { const n = new Set(currentOpen()); cats.forEach((c) => n.add(c)); return n; });
+    setImportOpen(false);
+    toast({
+      message: `ดึง ${r.lines.length} บรรทัดจาก ${r.from} — ยังไม่บันทึก${r.skippedInactive ? ` · ข้ามรายการปิดใช้งาน ${r.skippedInactive}` : ""}${r.skippedDup ? ` · ข้าม O&M ที่ใบนี้มีแล้ว ${r.skippedDup}` : ""}${useOm && r.omReset ? " · ระยะทาง O&M ตั้งเป็น 0 ให้กรอกใหม่" : ""}`,
+      variant: r.skippedInactive || (useOm && r.omReset) ? "warning" : "success",
+    });
+    if (cats.length) goTo(cats[0]);
+  };
 
   const openPicker = async (c: B2bCategory) => {
     if (!materials) await loadMaterials().catch(() => setError("โหลดรายการ Master ไม่สำเร็จ"));
@@ -394,27 +412,38 @@ export default function BoqEditorPage({ params }: { params: Promise<{ id: string
       )}
     </>
   );
-  // แท็บ — สไตล์เดียวกับแท็บหน้าโครงการ B2B
+  // สลับแท็บเอง = เริ่มดูแท็บใหม่จากบนสุด (เนื้อหาสองแท็บสูงไม่เท่ากัน — ค้างตำแหน่งเดิมแล้วตกกลางหน้า) · ไปหมวดจากภาพรวมใช้ goTo (เลื่อนไปการ์ดเอง)
+  const switchTab = (t: Tab) => {
+    if (t === curTab) return;
+    setTab(t);
+    requestAnimationFrame(() => rootRef.current?.closest("main")?.scrollTo({ top: 0 }));
+  };
+  // แท็บ — สไตล์เดียวกับแท็บหน้าโครงการ B2B · สูงเต็มแถบ (เส้นใต้แท็บชิดขอบล่างเสมอ)
   const tabBtn = (t: Tab, label: string, badge?: ReactNode) => (
-    <button key={t} type="button" role="tab" aria-selected={curTab === t} onClick={() => setTab(t)}
-      className={`flex items-center gap-1.5 py-3 px-3 md:px-4 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px transition-colors whitespace-nowrap ${curTab === t ? "text-active border-active" : "text-gray-500 border-transparent hover:text-gray-700"}`}>
+    <button key={t} type="button" role="tab" aria-selected={curTab === t} onClick={() => switchTab(t)}
+      className={`flex h-full items-center gap-1.5 px-3 md:px-4 text-xs font-semibold uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap ${curTab === t ? "text-active border-active" : "text-gray-500 border-transparent hover:text-gray-700"}`}>
       {label}{badge}
     </button>
   );
-  const chip = (k: LineFilter, label: string, n: number, tone = "") => (
-    <button key={k} type="button" onClick={() => setFilter(k)} style={{ minHeight: 0 }}
-      className={`h-8 rounded-full border px-3 text-xs font-semibold transition-colors ${filter === k ? "border-primary bg-primary text-white" : `border-gray-200 bg-white hover:border-gray-300 ${tone || "text-gray-600"}`}`}>
-      {label} <span className="ml-0.5 tabular-nums">{n}</span>
-    </button>
-  );
+  // ตัวกรองที่เป็น 0 (และไม่ได้เลือกอยู่) จางลง กดไม่ได้ — เห็นทันทีว่ามีอะไรต้องดู
+  const chip = (k: LineFilter, label: string, n: number, tone = "") => {
+    const on = filter === k;
+    const none = !on && n === 0;
+    return (
+      <button key={k} type="button" onClick={() => setFilter(k)} disabled={none} style={{ minHeight: 0 }}
+        className={`h-8 rounded-full border px-3 text-xs font-semibold transition-colors ${on ? "border-primary bg-primary text-white" : none ? "border-gray-100 bg-white text-gray-400" : `border-gray-200 bg-white hover:border-gray-300 ${tone || "text-gray-600"}`}`}>
+        {label} <span className="ml-0.5 tabular-nums">{n}</span>
+      </button>
+    );
+  };
   const nPend = effLines.filter((l) => l.unit_cost == null).length;
   const nChg = effLines.filter((l) => isChanged(l) || isArrived(l)).length;
   const nManual = effLines.filter((l) => l.line_type === "manual").length;
 
   return (
     <div ref={rootRef} className="min-h-full bg-gray-50">
-      {/* หัวเรื่อง = ชื่อโครงการ (subtitle ของ Header เป็นตัวพิมพ์ใหญ่ทั้งหมด จะเปลี่ยนหน้าตาชื่อ) · เลขที่ไว้บรรทัดรอง */}
-      <Header title={head.project_name || "ใบ BOQ"} subtitle={`${h.doc_no} · Rev ${h.revision}`} backHref={backHref}
+      {/* หัวเรื่อง = ชื่อโครงการ (subtitle ของ Header เป็นตัวพิมพ์ใหญ่ทั้งหมด จะเปลี่ยนหน้าตาชื่อ) · เลขที่ไว้บรรทัดรอง · "Rev" คงตัวพิมพ์เดิม (ไม่เป็น REV) */}
+      <Header title={head.project_name || "ใบ BOQ"} subtitle={<>{h.doc_no} · <span className="normal-case">Rev {h.revision}</span></>} backHref={backHref}
         rightContent={data.revisions.length > 1 ? (
           <Dropdown className="w-36" value={String(h.id)} onChange={(v) => { if (v && v !== String(h.id)) void guardedPush(`/b2b/boq/${v}`); }}
             options={data.revisions.map((r) => ({ value: String(r.id), label: `Rev ${r.revision}${r.is_latest ? " (ล่าสุด)" : ""}` }))} />
@@ -422,21 +451,26 @@ export default function BoqEditorPage({ params }: { params: Promise<{ id: string
 
       {/* แถบแท็บ + ยอดย่อ + ปุ่ม — ค้างใต้ Header (A+B: เห็นยอดทุกแท็บ ไม่ต้องสลับไปภาพรวม) */}
       <div ref={barRef} className="sticky z-30 border-b border-gray-200 bg-white" style={{ top: hdrH }}>
-        <div className="flex items-center gap-3 md:pr-6">
-          {/* overflow-y-hidden — แท็บมี -mb-px ทับเส้นล่าง ถ้าไม่ปิดแกนตั้ง Windows ขึ้น scrollbar ตั้งเล็กๆ ข้างแท็บ */}
-          <div className="flex min-w-0 overflow-x-auto overflow-y-hidden md:px-2" role="tablist">
+        {/* สูงคงที่ 52px ทุกแท็บ — เดิมยอดย่อโผล่เฉพาะแท็บรายการ แถบสูง 50 ↔ 61px เนื้อหาทั้งหน้ากระโดดตอนสลับแท็บ */}
+        <div className="flex h-[52px] items-center gap-3 md:pr-6">
+          {/* overflow-y-hidden — กัน Windows ขึ้น scrollbar ตั้งเล็กๆ ข้างแท็บ */}
+          <div className="flex h-full min-w-0 overflow-x-auto overflow-y-hidden md:px-2" role="tablist">
             {tabBtn("overview", "ภาพรวม", alerts.length > 0 && <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-100 px-1.5 text-xxs font-bold text-amber-800">{alerts.length}</span>)}
             {tabBtn("items", "รายการ", <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-gray-100 px-1.5 text-xxs font-bold text-gray-500">{effLines.length}</span>)}
-            {tabBtn("settings", "ตั้งค่าใบ")}
           </div>
           <div className="ml-auto flex items-center gap-3 max-md:hidden">
             {/* ยอดย่อ — แท็บภาพรวมมีการ์ดตัวเลขใหญ่อยู่แล้ว ไม่แสดงซ้ำ */}
             <dl className={`hidden overflow-hidden rounded-lg border border-gray-200 ${curTab === "overview" ? "" : "xl:flex"}`}>
-              <div className="px-3 py-1"><dt className="text-xxs text-gray-500">ราคาขาย (ก่อน VAT)</dt><dd className="text-sm font-bold tabular-nums text-gray-900">{thb0(sub.sale)}</dd></div>
-              <div className="border-l border-gray-200 px-3 py-1"><dt className="text-xxs text-gray-500">ขาย บาท/Wp</dt><dd className="text-sm font-bold tabular-nums text-gray-900">{cap > 0 ? perWp(sub.sale, cap).toFixed(2) : "—"}</dd></div>
-              <div className="border-l border-gray-200 px-3 py-1"><dt className="text-xxs text-gray-500">กำไร · Margin {Number(head.margin_pct) || 0}%</dt><dd className="text-sm font-bold tabular-nums text-emerald-600">{thb0(sub.sale - sub.cost)}</dd></div>
+              <div className="px-3 py-0.5 leading-tight"><dt className="text-xxs text-gray-500">ราคาขาย (ก่อน VAT)</dt><dd className="text-sm font-bold tabular-nums text-gray-900">{thb0(sub.sale)}</dd></div>
+              <div className="border-l border-gray-200 px-3 py-0.5 leading-tight"><dt className="text-xxs text-gray-500">ราคาขาย/Wp</dt><dd className="text-sm font-bold tabular-nums text-gray-900">{cap > 0 ? perWp(sub.sale, cap).toFixed(2) : "—"}</dd></div>
+              <div className="border-l border-gray-200 px-3 py-0.5 leading-tight"><dt className="text-xxs text-gray-500">กำไร · Margin {Number(head.margin_pct) || 0}%</dt><dd className="text-sm font-bold tabular-nums text-emerald-600">{thb0(sub.sale - sub.cost)}</dd></div>
             </dl>
             <span className={`whitespace-nowrap text-sm ${dirty && !readOnly ? "font-semibold text-amber-700" : "text-gray-500"}`}>{statusText}</span>
+            {/* ดึงจากใบอื่น = คำสั่งระดับใบ อยู่กลุ่มเดียวกับ Excel / ออก Rev (เดิมอยู่แถวตัวกรอง หน้าตาคล้ายชิปกรอง) · มือถืออยู่แถวเครื่องมือของแท็บรายการ */}
+            {!readOnly && (
+              <button type="button" onClick={() => setImportOpen(true)}
+                className="h-9 whitespace-nowrap rounded-lg border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-600 hover:bg-gray-50">ดึงจากใบอื่น</button>
+            )}
             {actionButtons}
           </div>
         </div>
@@ -463,6 +497,7 @@ export default function BoqEditorPage({ params }: { params: Promise<{ id: string
 
         {curTab === "overview" && (
           <BoqOverview h={h} calc={calc} categories={categories} lines={effLines} margin={head.margin_pct} onMargin={(v) => setH({ margin_pct: v })}
+            optionLabel={head.option_label} onOptionLabel={(v) => setH({ option_label: v })}
             readOnly={readOnly} alerts={alerts} flags={flagsOf} onGo={goTo} revisions={data.revisions} onRev={(rid) => void guardedPush(`/b2b/boq/${rid}`)} om={om}
             addonIds={addonIds} addonModes={head.addon_modes} onMode={(cid, mode) => setH({ addon_modes: { ...head.addon_modes, [cid]: mode } })}
             changedCount={changedKeys.length} onApplyAll={() => changedKeys.forEach(refresh)} />
@@ -497,6 +532,10 @@ export default function BoqEditorPage({ params }: { params: Promise<{ id: string
                     <button type="button" onClick={() => changedKeys.forEach(refresh)} style={{ minHeight: 0 }}
                       className="ml-2 whitespace-nowrap rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-200">ใช้ราคาใหม่ทั้งหมด ({changedKeys.length})</button>
                   )}
+                  {!readOnly && (
+                    <button type="button" onClick={() => setImportOpen(true)} style={{ minHeight: 0 }}
+                      className="ml-auto h-8 whitespace-nowrap rounded-lg border border-gray-200 bg-white px-3 text-xs font-semibold text-gray-600 hover:bg-gray-50 md:hidden">ดึงจากใบอื่น</button>
+                  )}
                 </div>
                 {/* มือถือ: เมนูหมวดซ้ายซ่อน → เลือกหมวดจาก dropdown */}
                 <div className="w-full md:hidden">
@@ -513,6 +552,7 @@ export default function BoqEditorPage({ params }: { params: Promise<{ id: string
               {cardCats.map((c) => (
                 <BoqCategorySection key={c.id} category={c} lines={linesOf(c.id)} calc={calc} readOnly={readOnly}
                   optional={c.is_addon && head.addon_modes[c.id] === "optional"}
+                  onAddonMode={c.is_addon ? (mode) => setH({ addon_modes: { ...head.addon_modes, [c.id]: mode } }) : undefined}
                   omParams={om}
                   extra={c.id === OM_CATEGORY ? omPanel : undefined}
                   open={isOpen(c.id)} onToggle={() => toggle(c.id)} share={shareOf(c)} flags={flagsOf(c.id)}
@@ -524,13 +564,6 @@ export default function BoqEditorPage({ params }: { params: Promise<{ id: string
           </div>
         )}
 
-        {curTab === "settings" && (
-          <BoqSettings draft={head} onDraft={(patch) => setH(patch)} readOnly={readOnly} linked={linked} vatPct={h.vat_pct} calc={calc}
-            addons={addonCats} addonModes={head.addon_modes} addonChoices={addonChoices}
-            onMode={(cid, mode) => setH({ addon_modes: { ...head.addon_modes, [cid]: mode } })}
-            onAddAddon={(c) => addAddon(c, false)} onRemoveAddon={removeAddon}
-            omPanel={om || !readOnly ? omPanel : <p className="px-4 py-3 text-sm text-gray-400">ใบนี้ไม่ได้ใช้ช่องตั้งค่า O&amp;M</p>} />
-        )}
       </div>
 
       {/* มือถือ: แถบท้าย บันทึก / ออก Revision (desktop อยู่แถบแท็บ) — bottom-0 ทุกจอ: main มี pb-20 เผื่อแถบล่างมือถือแล้ว sticky นับ padding นั้นด้วย */}
@@ -541,6 +574,10 @@ export default function BoqEditorPage({ params }: { params: Promise<{ id: string
         </div>
       </div>
 
+      {importOpen && (
+        <ImportFromBoqDialog boqId={h.id} projectId={h.project_id} categories={categories} current={effLines}
+          onImport={applyImport} onClose={() => setImportOpen(false)} />
+      )}
       {picker && materials && (
         <MaterialPickerDialog category={picker} categories={categories} materials={materials}
           onPick={(items) => addFromMaster(picker, items)}
