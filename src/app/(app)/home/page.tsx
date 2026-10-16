@@ -48,7 +48,8 @@ export default function HomePage() {
         <div key={g.key} className="mb-8">
         <div className="text-sm font-bold uppercase tracking-widest text-blue-300 mb-3">{g.label}</div>
         {/* mobile = แถวแนวนอนคอลัมน์เดียว (ไอคอนซ้าย · ชื่อ+คำอธิบายบรรทัดเดียว · badge ขวา)
-            md+ = การ์ดตารางแบบเดิม */}
+            md+ = การ์ดตารางแบบเดิม — คำอธิบายจองไว้ 2 บรรทัดเสมอ การ์ดทุกใบ/ทุกกลุ่มจึงสูงเท่ากัน
+            (เดิมใบที่คำอธิบายยาว เช่น O&M ดันทั้งแถวให้สูงกว่าแถวอื่น) */}
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-2.5 md:gap-4">
           {mods.map((mod) => {
             const count = countForModule(mod, summary);
@@ -57,7 +58,7 @@ export default function HomePage() {
                 key={mod.key}
                 type="button"
                 onClick={() => enter(mod)}
-                className={`relative text-left bg-white border border-gray-200 rounded-2xl p-3 md:p-4 flex items-center gap-3 md:block transition-all ${mod.mobileOnly ? "md:hidden " : ""}${
+                className={`relative text-left bg-white border border-gray-200 rounded-2xl p-3 md:p-4 flex items-center gap-3 md:flex-col md:items-stretch md:gap-0 transition-all ${mod.mobileOnly ? "md:hidden " : ""}${
                   mod.soon
                     ? "cursor-default"
                     : "hover:border-primary hover:shadow-lg hover:shadow-primary/10 hover:-translate-y-0.5 cursor-pointer"
@@ -70,7 +71,7 @@ export default function HomePage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className={`text-base md:text-lg font-bold ${mod.soon ? "text-gray-400" : "text-gray-900"}`}>{mod.label}</div>
-                  <div className={`text-xs md:text-sm md:mt-0.5 leading-relaxed truncate md:whitespace-normal ${mod.soon ? "text-gray-300" : "text-gray-500"}`}>{mod.desc}</div>
+                  <div className={`text-xs md:text-sm md:mt-0.5 leading-relaxed truncate md:whitespace-normal md:line-clamp-2 md:h-[2lh] ${mod.soon ? "text-gray-300" : "text-gray-500"}`}>{mod.desc}</div>
                 </div>
                 {mod.soon ? (
                   <span className="shrink-0 md:absolute md:top-3.5 md:right-3.5 text-xxs font-bold tracking-widest uppercase text-gray-400 bg-gray-100 rounded-full px-2 py-0.5">เร็วๆ นี้</span>
