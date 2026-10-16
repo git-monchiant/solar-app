@@ -7,11 +7,13 @@ import {
   type QuoteStatus, type ReviewTier,
 } from "@/lib/b2b/quotation";
 import { buildSnapshot, loadQuote, todayBangkok } from "@/lib/b2b/quotation-server";
+import { parseOmParams } from "@/lib/b2b/boq-om";
 import { notifyB2bRole, notifyB2bUser, resolveB2bQuoteNotifications } from "@/lib/b2b/notifications";
 
 // ทางเดียวที่สถานะใบเสนอราคา B2B เปลี่ยน — ยกกลไกจากใบเสนอราคา B2C (api/(lead)/quotations/[id]/action)
 //   submit   ร่าง/ส่งกลับแก้ → รอผู้ตรวจสอบ 1 · แช่ snapshot + ลายเซ็นผู้เสนอราคา · ล้างการอนุมัติรอบก่อน
 //            BOQ ที่อ้างต้องไม่มีบรรทัดรอราคา (รอราคาคิดเป็น 0 ใบจะออกราคาต่ำกว่าจริง)
+//            ปี O&M / ครั้งต่อปีในใบต้องตรงกับช่องตั้งค่าหมวด 13 ของ BOQ (ราคา O&M คิดจากค่านั้น — แผน 20261016-03)
 //   approve  { certify: true, note? } ผู้ตรวจสอบชั้นที่รอ (หรือ admin) — แช่ชื่อ/ลายเซ็น · ต้องมีลายเซ็นในโปรไฟล์
 //            คนเดียวกันอนุมัติ 2 ชั้นในใบเดียวไม่ได้ ยกเว้น admin (เคาะ 15 ต.ค.)
 //   return   { note } ผู้ตรวจสอบชั้นที่รอ (หรือ admin) → ส่งกลับแก้ · ส่งใหม่เริ่มชั้น 1
@@ -41,7 +43,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     await tx.begin();
     const q = (await new sql.Request(tx).input("id", sql.Int, id).query(`
       SELECT q.id, q.project_id, q.boq_id, q.doc_no, q.revision, q.root_id, q.is_latest, q.status, q.kind,
-             q.r1_by, q.r2_by, b.pending_lines, b.is_latest AS boq_latest, b.doc_no AS boq_doc_no, b.revision AS boq_revision
+             q.r1_by, q.r2_by, q.content_json, b.pending_lines, b.is_latest AS boq_latest, b.doc_no AS boq_doc_no, b.revision AS boq_revision, b.om_params
       FROM b2b_quotations q WITH (UPDLOCK, ROWLOCK) JOIN b2b_boqs b WITH (UPDLOCK, ROWLOCK) ON b.id = q.boq_id WHERE q.id = @id`)).recordset[0];
     if (!q) throw new UserError("ไม่พบใบเสนอราคา");
     const status = q.status as QuoteStatus;
@@ -59,6 +61,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       // ★ ใบร่างที่ทำจาก BOQ Rev เก่า — ผู้ตรวจสอบจะอนุมัติตัวเลขเก่า (ทบทวน BOQ 15 ต.ค.) · ล็อกแถว BOQ ข้างบนกันชนกับการบันทึก BOQ
       if (!q.boq_latest) throw new UserError(`BOQ ที่ใบนี้ใช้ (${q.boq_doc_no} Rev ${q.boq_revision}) มี Revision ใหม่แล้ว — เลือก BOQ Rev ล่าสุดในใบแล้วบันทึกก่อนส่งอนุมัติ`);
       if (q.pending_lines > 0) throw new UserError(`BOQ ที่ใช้ยังมีบรรทัดรอราคา ${q.pending_lines} บรรทัด — รอ Purchase ใส่ราคาก่อนส่งอนุมัติ`);
+      // ใบเขียน O&M กี่ปีต้องตรงกับที่ BOQ คิดราคาไว้ — ไม่งั้นขายขาด/เกิน (BOQ ที่ไม่ใช้สูตรไม่ตรวจ)
+      const omp = parseOmParams(q.om_params);
+      const bom = "value" in omp ? omp.value : null;
+      if (bom) {
+        const c = JSON.parse(q.content_json ?? "{}") as { om_years?: number | null; om_visits_per_year?: number | null };
+        if (c.om_years !== bom.years || c.om_visits_per_year !== bom.visits) {
+          throw new UserError(`O&M ในใบ (${c.om_years ?? "-"} ปี · ปีละ ${c.om_visits_per_year ?? "-"} ครั้ง) ไม่ตรงกับที่ BOQ คิดราคาไว้ (${bom.years} ปี · ปีละ ${bom.visits} ครั้ง) — แก้ในใบให้ตรง หรือแก้ช่องตั้งค่า O&M ใน BOQ แล้วออก Rev ใหม่`);
+        }
+      }
       // วันที่บนใบ = วันส่ง — ตั้งก่อนสร้าง snapshot ให้ snapshot มีวันที่ด้วย
       await new sql.Request(tx).input("id", sql.Int, id).input("d", sql.Date, todayBangkok()).query(`UPDATE b2b_quotations SET issue_date = @d WHERE id = @id`);
       const snap = await buildSnapshot(tx, id, userId);

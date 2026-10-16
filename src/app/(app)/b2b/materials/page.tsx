@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Header from "@/components/layout/Header";
 import Loading from "@/components/ui/Loading";
 import Dropdown from "@/components/ui/Dropdown";
@@ -110,6 +110,21 @@ export default function B2bMaterialsPage() {
   }), [dialog]);
   useUnsavedGuard(dirtyIds.length > 0, askLeave);
 
+  // desktop ค้าง 3 ชั้น: Header → toolbar → หัวหมวด + หัวคอลัมน์ — Header/toolbar ตัดบรรทัดตามจอ วัดสดไม่ใช้ค่า fix
+  const rootRef = useRef<HTMLDivElement>(null);
+  const barRef = useRef<HTMLDivElement>(null);
+  const [hdrH, setHdrH] = useState(0);
+  const [barH, setBarH] = useState(0);
+  useEffect(() => {
+    const hdr = rootRef.current?.firstElementChild as HTMLElement | null;   // Header = ลูกตัวแรกของหน้า (sticky top-0)
+    const bar = barRef.current;
+    if (!hdr || !bar) return;
+    const ro = new ResizeObserver(() => { setHdrH(hdr.offsetHeight); setBarH(bar.offsetHeight); });
+    ro.observe(hdr);
+    ro.observe(bar);
+    return () => ro.disconnect();
+  }, [loading]);
+
   const savePrices = async () => {
     setPriceError("");
     const items = dirtyIds.map((id) => ({ id, price: Number(drafts[id]) }));
@@ -170,14 +185,15 @@ export default function B2bMaterialsPage() {
     </button>
   );
 
-  // desktop: หน้าสูงเท่าจอ — หัวเรื่อง + toolbar อยู่กับที่ ตารางเลื่อนในกล่องของตัวเอง (กล่องเดียวเลื่อนทั้งแนวตั้ง/แนวนอน
-  // → หัวหมวด + หัวคอลัมน์ sticky ได้ และทุกหมวดเลื่อนซ้ายขวาพร้อมกัน) · mobile: เลื่อนทั้งหน้าแบบเดิม
+  // เลื่อนทั้งหน้าแบบหน้าอื่น (scrollbar ปกติของหน้า) — เดิม desktop ตารางเลื่อนในกล่องของตัวเอง แถวโผล่ถูกตัดใต้ toolbar ผู้ใช้ไม่เอา (16 ต.ค. 69)
+  // desktop: toolbar ค้างใต้ Header (พื้นขาวทึบ + ระยะห่างล่างอยู่ในตัว ไม่มีช่องให้แถวโผล่) · หัวหมวด + หัวคอลัมน์ค้างใต้ toolbar
+  //   กล่องตารางไม่เป็นกล่องเลื่อน (md:overflow-visible) ไม่งั้น sticky ไม่อิงหน้า · mobile: toolbar เลื่อนไปกับหน้า ตารางเลื่อนซ้ายขวาในกล่อง
   return (
-    <div className="md:h-full md:flex md:flex-col">
+    <div ref={rootRef}>
       {/* จำนวน = แถวที่เห็นตามตัวกรอง (แบบหน้ารายการ BOQ) — ยอดรอราคา/ต้องตรวจ อยู่ที่ chip แล้ว */}
       <Header title={title} subtitle={`COMMERCIAL (B2B) · ${filtered.length} รายการ`} />
 
-      <div className="shrink-0 px-3 pt-3 md:px-6 md:pt-6 space-y-4">
+      <div ref={barRef} className="px-3 pt-3 md:px-6 md:pt-6 md:pb-4 space-y-4 md:sticky md:z-20 bg-white" style={{ top: hdrH }}>
         {loadError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-2 text-sm text-red-700">{loadError}</div>}
 
         {/* Toolbar */}
@@ -199,7 +215,7 @@ export default function B2bMaterialsPage() {
         </div>
       </div>
 
-      <div className="overflow-x-auto md:flex-1 md:min-h-0 md:overflow-auto px-3 pt-4 pb-3 md:px-6 md:pb-6">
+      <div className="overflow-x-auto md:overflow-visible px-3 pt-4 pb-3 md:px-6 md:pt-0 md:pb-6">
         {materials.length === 0 ? (
           <div className="rounded-xl bg-white border border-gray-300 px-5 py-10 text-center text-sm text-gray-400">
             ยังไม่มีรายการใน Master Data — ข้อมูลตั้งต้นจะนำเข้าจากไฟล์ Excel (sheet Unit price Material){canEditItem ? " หรือกด \"+ เพิ่มรายการ\"" : ""}
@@ -207,7 +223,7 @@ export default function B2bMaterialsPage() {
         ) : sections.length === 0 ? (
           <div className="rounded-xl bg-white border border-gray-300 px-5 py-10 text-center text-sm text-gray-400">ไม่พบรายการตามเงื่อนไขที่เลือก</div>
         ) : (
-          <div className="min-w-[1120px] space-y-4">
+          <div className="max-md:min-w-[1120px] space-y-4">
             {sections.map(({ cat, items }) => (
               // overflow-clip (ไม่ใช่ hidden) — ตัดมุมโค้งได้โดยไม่กลายเป็นกล่องเลื่อน ไม่งั้น thead sticky ไม่ทำงาน
               <section key={cat.id} aria-label={`${cat.id}. ${cat.name}`} className="rounded-xl bg-white border border-gray-300 overflow-clip">
@@ -219,7 +235,7 @@ export default function B2bMaterialsPage() {
                     <col className="w-[80px]" /><col className="w-[200px]" /><col className="w-[110px]" /><col className="w-[180px]" />
                   </colgroup>
                   {/* หัวหมวด + หัวคอลัมน์ค้างด้วยกันตอนเลื่อน (desktop) — เส้นใต้หัวหมวดใช้ inset shadow เพราะ border ของแถว sticky หายใน border-collapse */}
-                  <thead className="md:sticky md:top-0 md:z-10">
+                  <thead className="md:sticky md:z-10" style={{ top: hdrH + barH }}>
                     <tr className="bg-white">
                       <th colSpan={8} className="px-4 py-3 text-left font-normal shadow-[inset_0_-1px_0_var(--color-gray-200)]">
                         <span className="inline-flex items-baseline gap-2 flex-wrap">
@@ -320,9 +336,9 @@ export default function B2bMaterialsPage() {
       </div>
 
       {/* แถบบันทึกราคาของ Purchase — โผล่เมื่อมีราคาที่แก้แต่ยังไม่บันทึก
-          desktop = แถวสุดท้ายของหน้า (ไม่ทับตาราง ไม่ต้องคำนวณความกว้าง sidebar) · mobile = ค้างเหนือแถบเมนูล่าง */}
+          ค้างล่างจอ (sticky ไม่ต้องคำนวณความกว้าง sidebar) · mobile = ค้างเหนือแถบเมนูล่าง */}
       {canEditPrice && dirtyIds.length > 0 && (
-        <div className="sticky bottom-0 z-30 shrink-0 border-t border-gray-200 bg-white/95 backdrop-blur px-3 md:px-6 py-3">
+        <div className="sticky bottom-0 z-30 border-t border-gray-200 bg-white/95 backdrop-blur px-3 md:px-6 py-3">
           <div className="flex items-center gap-2 md:gap-3 flex-wrap">
             <span className="text-sm font-semibold text-gray-800">แก้ราคา {dirtyIds.length} รายการ</span>
             <input value={priceNote} onChange={(e) => setPriceNote(e.target.value)} placeholder="หมายเหตุ (ไม่บังคับ) เช่น ราคาใบเสนอ supplier ต.ค. 69"

@@ -10,6 +10,8 @@
 //   node scripts/tools/b2b_import_materials.mjs --db=solardb_v3 --file="BOQ/BOQ Solar rooftop.xlsx"          # dry-run + ไฟล์สรุปให้ตรวจ
 //   node scripts/tools/b2b_import_materials.mjs --db=solardb_v3 --file="BOQ/BOQ Solar rooftop.xlsx" --yes    # นำเข้าจริง
 //   node scripts/tools/b2b_import_materials.mjs --db=solardb_v3 --undo --yes                                  # ถอนเฉพาะที่นำเข้าจาก Excel
+//   node scripts/tools/b2b_import_materials.mjs --db=solardb_v3 --name-with-model [--yes]                     # เติมรุ่นท้ายชื่อในฐาน (ดู nameWithModelTargets)
+//   node scripts/tools/b2b_import_materials.mjs --db=solardb_v3 --om-master [--yes]                           # หมวด 13 ในฐาน → บรรทัดสูตร O&M (ดู OM_ITEMS)
 
 import sql from 'mssql';
 import path from 'path';
@@ -24,8 +26,10 @@ const database = arg('db');
 const file = arg('file');
 const execute = args.includes('--yes');
 const undo = args.includes('--undo');
+const nameFix = args.includes('--name-with-model');
+const omMaster = args.includes('--om-master');
 if (!database || !/v3$/i.test(database)) { console.error('ต้องระบุ --db=<ฐานของ v3> (ตาราง b2b_* มีเฉพาะฐาน v3)'); process.exit(1); }
-if (!undo && !file) { console.error('ต้องระบุ --file=<path ไฟล์ Excel>'); process.exit(1); }
+if (!undo && !nameFix && !omMaster && !file) { console.error('ต้องระบุ --file=<path ไฟล์ Excel>'); process.exit(1); }
 
 const SOURCE_UPM = 'excel:Unit price Material';
 const SOURCE_BOQS = 'excel:EPCL - BOQS';
@@ -37,6 +41,43 @@ const skipped = []; // แถวที่ข้าม + เหตุผล (ล�
 const norm = (v) => String(v ?? '').replace(/\s+/g, ' ').trim();
 const flag = (r, msg) => { r.notes.push(`⚠ ตรวจ: ${msg}`); };
 const add = (r) => { rows.push({ subgroup: null, brand: null, model: null, spec_watt: null, price_basis: 'unit', unit_price: null, notes: [], ...r }); return rows[rows.length - 1]; };
+
+// รายการติด ⚠ ที่ชื่อซ้ำกับรายการอื่นในหมวดเดียวกัน → เติมรุ่นต่อท้ายชื่อให้แยกกันออก (ผู้ใช้ขอ 16 ต.ค. 69 · เคาะ "เฉพาะที่ติด ⚠")
+//   เช่น Revenue Meter ×2 → "Revenue Meter Mitsubishi SMW110" / "Revenue Meter EDMI MK6E" · ไม่มีรุ่น / ชื่อมีรุ่นอยู่แล้ว = คงเดิม
+//   คำในรุ่นที่มีในชื่ออยู่แล้วไม่เติมซ้ำ: "IMC Conduit (HDG)" + "IMC Conduit 1/2"" → "IMC Conduit (HDG) 1/2"" (คำ 1 ตัวอักษร เช่น x ใน W75 x H50 คงไว้)
+//   ใช้ทั้งตอนนำเข้า และโหมด --name-with-model (แก้รายการที่อยู่ในฐานแล้ว)
+//   ชื่อมีรุ่นแล้ว → ลบเฉพาะธง "ชื่อในไฟล์ไม่ตรงแถวกับรุ่น" (ชื่อบอกรุ่นเองแล้ว ผู้ใช้ไม่เอาข้อความนี้ 16 ต.ค.) · ธง ⚠ เรื่องอื่น (ราคา/หน่วย) คงไว้ให้ทีมตรวจ
+const NAME_FLAG = 'ชื่อในไฟล์ไม่ตรงแถวกับรุ่น';
+const dropNameFlag = (notes) => notes.filter((n) => !n.includes(NAME_FLAG));
+const withModel = (name, model) => {
+  const n = norm(name);
+  const inName = new Set(n.toLowerCase().split(' '));
+  const extra = norm(model).split(' ').filter((w) => w && !(w.length > 1 && inName.has(w.toLowerCase()))).join(' ');
+  return extra && !n.toLowerCase().includes(extra.toLowerCase()) ? `${n} ${extra}`.slice(0, 300) : name;
+};
+// หมวด 13 O&M = บรรทัดสูตร (แผน docs/plan/20261016-03-b2b-boq-om-calculator.md) — จำนวนคิดจากช่องตั้งค่าในใบ BOQ (src/lib/b2b/boq-om.ts)
+//   ไฟล์เดิม 7 บรรทัด ราคาบางตัวเป็นสูตรรวมหลายอัตรา → แยก 10 บรรทัด ให้ทุกอัตราอยู่ใน Master (Purchase ดูแล) · ยอดรวมเท่าไฟล์เดิม
+//   match = ชื่อบรรทัดในไฟล์ / รายการที่นำเข้าไว้แล้ว (โหมด --om-master ปรับของเดิมแทนการสร้างซ้ำ) · rate = ค่าในไฟล์ต้นแบบ (สำรองเมื่ออ่านสูตรไม่ได้)
+const OM_ITEMS = [
+  { role: 'travel', name: 'ค่าเดินทางรถบริษัท', unit: 'km', rate: 6, match: /^ค่าเดินทางรถบริษัท/, how: 'ระยะทาง × วัน × ครั้ง × ปี' },
+  { role: 'lodging', name: 'ค่าที่พักพนักงาน', unit: 'ห้อง-คืน', rate: 750, match: /^ค่าที่พัก/, how: 'ต่างพื้นที่: ⌈คน/2⌉ ห้อง × คืน × ครั้ง × ปี · ในพื้นที่ 0' },
+  { role: 'allowance', name: 'ค่าเบี้ยเลี้ยงพนักงาน', unit: 'คน-วัน', rate: 300, match: /^ค่าเบี้ยเลี้ยง/, how: 'ต่างพื้นที่: คน × วัน × ครั้ง × ปี · ในพื้นที่ 0' },
+  { role: 'contractor_km', name: 'ค่ารถผู้รับเหมา', unit: 'km', rate: 10, match: /^ค่าแรงผู้รับเหมา/, how: 'ระยะทาง × วัน × ครั้ง × ปี' },
+  { role: 'contractor_lead', name: 'ค่าแรงหัวหน้าช่างผู้รับเหมา', unit: 'คน-วัน', rate: 1500, how: 'หัวหน้าช่าง × วัน × ครั้ง × ปี' },
+  { role: 'contractor_worker', name: 'ค่าแรงช่างผู้รับเหมา', unit: 'คน-วัน', rate: 800, how: 'ช่าง × วัน × ครั้ง × ปี' },
+  { role: 'buffer_km', name: 'Buffer on-site service — ค่าเดินทาง', unit: 'km', rate: 6, match: /^Buf+er/i, how: 'ระยะทาง × วัน × ปี' },
+  { role: 'buffer_staff', name: 'Buffer on-site service — ต่อพนักงาน', unit: 'คน-ปี', rate: 1000, how: 'คน × ปี' },
+  { role: 'tools', name: 'ค่าเครื่องมือบำรุงรักษา และทำความสะอาด', unit: 'ปี', rate: 5000, match: /^ค่าเครื่องมือ/, how: 'ปี' },
+  { role: 'report', name: 'ค่า Report Monthly & Yearly', unit: 'ปี', rate: 3500, match: /^ค่า Report/i, how: 'ปี' },
+];
+const omNote = (it) => `สูตร O&M — จำนวน = ${it.how} (ช่องตั้งค่าในใบ BOQ)`;
+
+function nameWithModelTargets(list, isFlagged) {
+  const key = (r) => `${r.category_id}|${norm(r.name).toLowerCase()}`;
+  const count = new Map();
+  for (const r of list) count.set(key(r), (count.get(key(r)) ?? 0) + 1);
+  return list.filter((r) => isFlagged(r) && count.get(key(r)) > 1 && withModel(r.name, r.model) !== r.name);
+}
 
 function readUnitPriceMaterial(ws) {
   const c = (col, r) => ws[`${col}${r}`];
@@ -97,7 +138,7 @@ function readUnitPriceMaterial(ws) {
     else if (/^TP-\d+/i.test(t)) { name = 'CT (Split Core)'; sg = 'Zero Export'; reclass = label !== 'CT (Split Core)'; }
     else reclass = false;
     const row = add({ ref: ref('T', r), source: SOURCE_UPM, category_id: 4, subgroup: sg, name, brand, model: t, unit: /^TP-/.test(t) ? 'Ea.' : 'Set.', unit_price: p });
-    if (reclass && name !== s) flag(row, `ชื่อในไฟล์ไม่ตรงแถวกับรุ่น — ระบบจัดเป็น "${name}" ตามรุ่น`);
+    if (reclass && name !== s) flag(row, `${NAME_FLAG} — ระบบจัดเป็น "${name}" ตามรุ่น`);
     // ชื่อในแถวนี้ (เช่น AC SURGE) ถูกจับคู่กับรุ่นมิเตอร์ผิดแถว — ยังต้องมีเป็นรายการของตัวเอง
     if (reclass && s && s !== '-' && name !== s && !/CT|Meter|PQM/i.test(s)) add({ ref: ref('S', r), source: SOURCE_UPM, category_id: 4, name: s, unit: 'Set.' });
   }
@@ -192,6 +233,7 @@ function readBoqsTyped(ws) {
   const v = (a) => norm(c(a)?.w ?? c(a)?.v);
   const last = 523;   // แถว Total ของหมวด 18 — หมวดเสริม 19–25 ไม่นำเข้า (Solar B2B ใส่ราคาเองในใบ)
   let cat = null; let sub = null;
+  const omRows = [];
   for (let r = 43; r <= last; r++) {
     const A = v(`A${r}`); const B = v(`B${r}`); const H = c(`H${r}`); const F = c(`F${r}`);
     if (/^\d+$/.test(A) && B && !H) { cat = Number(A); sub = null; continue; }
@@ -206,6 +248,7 @@ function readBoqsTyped(ws) {
     const f = H.f || '';
     if (/XLOOKUP/i.test(f)) continue;   // ราคามาจาก sheet Unit price Material — นำเข้าจากฝั่งนั้นแล้ว
     const ref = `BOQS!r${r}`;
+    if (cat === 13) { omRows.push({ ref, name: B, H }); continue; }   // หมวด O&M แปลงเป็นบรรทัดสูตรทีเดียวท้ายฟังก์ชัน
     const base = { ref, source: SOURCE_BOQS, category_id: cat, subgroup: sub, name: B, brand: v(`D${r}`) || null, unit: v(`G${r}`) || 'Set.' };
     const E = v(`E${r}`);
     const howToCount = /x/.test(E) && /[ก-๙]/.test(E);   // หมวด O&M ใช้ช่องรุ่นเขียนวิธีนับจำนวน
@@ -245,6 +288,32 @@ function readBoqsTyped(ws) {
       const row = add({ ...base, unit_price: null });
       flag(row, `ราคาไฟล์เดิมเป็นสูตร =${f} (ค่าในไฟล์ ${value ?? '-'}) — ใส่เป็นอัตราคงที่`);
     }
+  }
+  if (omRows.length) addOmItems(omRows);
+}
+
+// แถวหมวด 13 ของไฟล์ → บรรทัดสูตร O&M 10 บรรทัด · อัตราอ่านจากค่า/สูตรในไฟล์ อ่านไม่ได้ใช้ค่าไฟล์ต้นแบบ + ติด ⚠
+function addOmItems(omRows) {
+  const find = (re) => omRows.find((x) => re.test(x.name));
+  const num = (x) => (x && typeof x.H.v === 'number' && !x.H.f ? x.H.v : null);
+  const travel = find(/^ค่าเดินทางรถบริษัท/); const lodging = find(/^ค่าที่พัก/); const allowance = find(/^ค่าเบี้ยเลี้ยง/);
+  const contractor = find(/^ค่าแรงผู้รับเหมา/); const buffer = find(/^Buf+er/i); const tools = find(/^ค่าเครื่องมือ/); const report = find(/^ค่า Report/i);
+  // ((ระยะทาง×10)+(A×1500)+(B×800))×วัน · (ระยะทาง×ค่าเดินทาง×วัน)+(คน×1000) · IF(…,300,0)
+  const cm = /\*\s*([\d.]+)\s*\)\s*\+\s*\(\s*[\d.]+\s*\*\s*([\d.]+)\s*\)\s*\+\s*\(\s*[\d.]+\s*\*\s*([\d.]+)\s*\)/.exec(contractor?.H.f ?? '');
+  const bm = /\(\s*[A-Z]+\d+\s*\*\s*([\d.]+)\s*\)\s*$/.exec(buffer?.H.f ?? '');
+  const am = /,\s*([\d.]+)\s*,\s*0\s*\)\s*$/.exec(allowance?.H.f ?? '');
+  const travelRate = num(travel);
+  const rates = {
+    travel: travelRate, lodging: num(lodging), allowance: am ? Number(am[1]) : num(allowance),
+    contractor_km: cm ? Number(cm[1]) : null, contractor_lead: cm ? Number(cm[2]) : null, contractor_worker: cm ? Number(cm[3]) : null,
+    buffer_km: travelRate, buffer_staff: bm ? Number(bm[1]) : null, tools: num(tools), report: num(report),
+  };
+  const refOf = { travel, lodging, allowance, contractor_km: contractor, contractor_lead: contractor, contractor_worker: contractor, buffer_km: buffer, buffer_staff: buffer, tools, report };
+  for (const it of OM_ITEMS) {
+    const row = add({ ref: refOf[it.role]?.ref ?? 'BOQS!หมวด13', source: SOURCE_BOQS, category_id: 13, name: it.name, unit: it.unit,
+      unit_price: rates[it.role] ?? it.rate, om_role: it.role });
+    row.notes.push(omNote(it));
+    if (rates[it.role] == null) flag(row, `อ่านอัตราจากไฟล์ไม่ได้ — ใช้ค่าไฟล์ต้นแบบ ${it.rate}`);
   }
 }
 
@@ -289,11 +358,92 @@ if (undo) {
   await pool.close(); process.exit(0);
 }
 
+// รายการที่อยู่ในฐานแล้ว (นำเข้าก่อนมีกติกา หรือทีมเพิ่มเอง) — นับชื่อซ้ำจากรายการที่เปิดใช้งาน · ไม่แตะใบ BOQ (บรรทัดเก็บ snapshot ชื่อไว้แล้ว)
+if (nameFix) {
+  const list = (await pool.request().query(`SELECT id, code, category_id, name, model, note FROM b2b_materials WHERE is_active = 1`)).recordset;
+  const targets = nameWithModelTargets(list, (r) => (r.note ?? '').includes('⚠'));
+  const after = new Map(list.map((r) => [r.id, r.name]));
+  for (const t of targets) after.set(t.id, withModel(t.name, t.model));
+  // ธง "ชื่อไม่ตรงแถวกับรุ่น" ของรายการที่ชื่อมีรุ่นแล้ว (เพิ่งเติม หรือเติมรอบก่อน) — note เก็บหลายข้อคั่นด้วย " · " แบบตอนนำเข้า
+  const noteAfter = new Map();
+  for (const r of list) {
+    if (!(r.note ?? '').includes(NAME_FLAG) || !norm(r.model) || withModel(after.get(r.id), r.model) !== after.get(r.id)) continue;
+    noteAfter.set(r.id, dropNameFlag(r.note.split(' · ')).join(' · ') || null);
+  }
+  const changed = list.filter((r) => after.get(r.id) !== r.name || noteAfter.has(r.id));
+  for (const r of changed) {
+    console.log(`${r.code}  หมวด ${String(r.category_id).padStart(2)}  ${after.get(r.id) !== r.name ? `${r.name}  →  ${after.get(r.id)}` : r.name}${noteAfter.has(r.id) ? '  · ลบธงชื่อไม่ตรงแถวกับรุ่น' : ''}`);
+  }
+  const still = new Set(targets.filter((t) => list.some((r) => r.id !== t.id && r.category_id === t.category_id && norm(after.get(r.id)).toLowerCase() === norm(after.get(t.id)).toLowerCase())).map((t) => t.code));
+  console.log(`ฐาน ${database}: เติมรุ่นท้ายชื่อ ${targets.length} รายการ · ลบธงชื่อไม่ตรงแถวกับรุ่น ${noteAfter.size} รายการ${still.size ? ` · ยังซ้ำอยู่ ${still.size} (${[...still].join(', ')})` : ''}`);
+  if (!execute) { console.log('DRY-RUN — ใส่ --yes เพื่อแก้จริง'); await pool.close(); process.exit(0); }
+  const tx = new sql.Transaction(pool); await tx.begin();
+  for (const r of changed) {
+    await new sql.Request(tx).input('id', sql.Int, r.id).input('name', sql.NVarChar(300), after.get(r.id))
+      .input('note', sql.NVarChar(500), noteAfter.has(r.id) ? noteAfter.get(r.id) : r.note)
+      .query(`UPDATE b2b_materials SET name = @name, note = @note, updated_at = SYSDATETIMEOFFSET() WHERE id = @id`);
+  }
+  await tx.commit();
+  console.log(`แก้แล้ว ${changed.length} รายการ`);
+  await pool.close(); process.exit(0);
+}
+
+// หมวด 13 ที่นำเข้าไว้ก่อนมีสูตร (7 บรรทัดเดิม) → บรรทัดสูตร O&M ตาม OM_ITEMS — ปรับแถวเดิมที่ชื่อตรง ที่เหลือสร้างใหม่ · role ที่มีแล้วข้าม (รันซ้ำได้)
+//   ราคาใส่เฉพาะแถวที่ยังรอราคา (ราคาเดิมที่มีแล้วไม่ทับ) + ลงประวัติราคา · ไม่แตะใบ BOQ (บรรทัดเก็บ snapshot)
+if (omMaster) {
+  const list = (await pool.request().query(`SELECT id, code, name, unit, unit_price, om_role, is_active FROM b2b_materials WHERE category_id = 13`)).recordset;
+  const used = new Set();
+  const plan = OM_ITEMS.map((it, i) => {
+    const sort = (i + 1) * 10;
+    if (list.some((m) => m.is_active && m.om_role === it.role)) return { it, kind: 'skip' };
+    const m = it.match && list.find((x) => x.is_active && !x.om_role && !used.has(x.id) && it.match.test(norm(x.name)));
+    if (m) { used.add(m.id); return { it, kind: 'update', m, sort, setPrice: m.unit_price == null }; }
+    return { it, kind: 'insert', sort };
+  });
+  for (const p of plan) {
+    const price = p.kind === 'update' ? (p.setPrice ? `ราคา ว่าง → ${p.it.rate}` : `ราคาคงเดิม ${Number(p.m.unit_price)}${Number(p.m.unit_price) !== p.it.rate ? ` (ไฟล์ต้นแบบ ${p.it.rate})` : ''}`) : `ราคา ${p.it.rate}`;
+    console.log(p.kind === 'skip' ? `มีแล้ว   ${p.it.role}` : p.kind === 'update'
+      ? `ปรับ     ${p.m.code}  ${p.m.name}  →  ${p.it.name} (${p.it.unit}) · ${price}`
+      : `สร้างใหม่ ${p.it.name} (${p.it.unit}) · ${price}`);
+  }
+  const todo = plan.filter((p) => p.kind !== 'skip');
+  console.log(`ฐาน ${database}: ปรับ ${plan.filter((p) => p.kind === 'update').length} · สร้างใหม่ ${plan.filter((p) => p.kind === 'insert').length} · มีแล้ว ${plan.length - todo.length}`);
+  if (!execute) { console.log('DRY-RUN — ใส่ --yes เพื่อแก้จริง'); await pool.close(); process.exit(0); }
+  const histNote = 'แยกสูตร O&M หมวด 13 จากไฟล์ Excel (แผน 20261016-03) — อัตราจากสูตรเดิม';
+  const tx = new sql.Transaction(pool); await tx.begin();
+  for (const p of todo) {
+    const req = new sql.Request(tx).input('name', sql.NVarChar(300), p.it.name).input('unit', sql.NVarChar(30), p.it.unit)
+      .input('role', sql.VarChar(30), p.it.role).input('note', sql.NVarChar(500), omNote(p.it)).input('sort', sql.Int, p.sort)
+      .input('rate', sql.Decimal(14, 4), p.it.rate);
+    let id;
+    if (p.kind === 'update') {
+      id = p.m.id;
+      await req.input('id', sql.Int, id).query(`
+        UPDATE b2b_materials SET name = @name, unit = @unit, brand = NULL, model = NULL, subgroup = NULL, price_basis = 'unit', om_role = @role,
+               note = @note, sort_order = @sort, updated_at = SYSDATETIMEOFFSET()
+               ${p.setPrice ? ', unit_price = @rate, price_updated_at = SYSDATETIMEOFFSET(), price_updated_by = NULL' : ''}
+        WHERE id = @id`);
+    } else {
+      id = (await req.input('source', sql.NVarChar(50), SOURCE_BOQS).query(`
+        INSERT INTO b2b_materials (category_id, name, unit, price_basis, unit_price, note, sort_order, source, price_updated_at, om_role)
+        OUTPUT INSERTED.id VALUES (13, @name, @unit, 'unit', @rate, @note, @sort, @source, SYSDATETIMEOFFSET(), @role)`)).recordset[0].id;
+    }
+    if (p.kind === 'insert' || p.setPrice) {
+      await new sql.Request(tx).input('id', sql.Int, id).input('price', sql.Decimal(14, 4), p.it.rate).input('note', sql.NVarChar(500), histNote)
+        .query(`INSERT INTO b2b_material_prices (material_id, old_price, new_price, note) VALUES (@id, NULL, @price, @note)`);
+    }
+  }
+  await tx.commit();
+  console.log(`แก้แล้ว ${todo.length} รายการ`);
+  await pool.close(); process.exit(0);
+}
+
 const wb = XLSX.readFile(file, { cellFormula: true });
 for (const s of ['Unit price  Material', 'EPCL - BOQS']) if (!wb.Sheets[s]) { console.error(`ไม่พบ sheet "${s}" ในไฟล์`); process.exit(1); }
 readUnitPriceMaterial(wb.Sheets['Unit price  Material']);
 readBoqsTyped(wb.Sheets['EPCL - BOQS']);
 const final = dedupe();
+for (const r of nameWithModelTargets(final, (x) => x.notes.some((n) => n.startsWith('⚠')))) { r.name = withModel(r.name, r.model); r.notes = dropNameFlag(r.notes); }
 
 // ลำดับในหมวด = ลำดับในไฟล์ (sheet ราคาก่อน แล้วตามด้วยรายการจาก BOQS)
 const seq = {};
@@ -339,12 +489,12 @@ try {
       .input('spec_watt', sql.Decimal(10, 2), r.spec_watt).input('unit', sql.NVarChar(30), String(r.unit).slice(0, 30))
       .input('basis', sql.VarChar(20), r.price_basis).input('price', sql.Decimal(14, 4), r.unit_price)
       .input('note', sql.NVarChar(500), r.notes.length ? r.notes.join(' · ').slice(0, 500) : null)
-      .input('sort', sql.Int, r.sort_order).input('source', sql.NVarChar(50), r.source)
+      .input('sort', sql.Int, r.sort_order).input('source', sql.NVarChar(50), r.source).input('om', sql.VarChar(30), r.om_role ?? null)
       .query(`INSERT INTO b2b_materials (category_id, subgroup, name, brand, model, spec_watt, unit, price_basis, unit_price, note, sort_order, source,
-                                         price_updated_at)
+                                         price_updated_at, om_role)
               OUTPUT INSERTED.id
               VALUES (@category_id, @subgroup, @name, @brand, @model, @spec_watt, @unit, @basis, @price, @note, @sort, @source,
-                      CASE WHEN @price IS NULL THEN NULL ELSE SYSDATETIMEOFFSET() END)`);
+                      CASE WHEN @price IS NULL THEN NULL ELSE SYSDATETIMEOFFSET() END, @om)`);
     if (r.unit_price != null) {
       await new sql.Request(tx).input('id', sql.Int, ins.recordset[0].id).input('price', sql.Decimal(14, 4), r.unit_price).input('note', sql.NVarChar(500), note)
         .query(`INSERT INTO b2b_material_prices (material_id, old_price, new_price, note) VALUES (@id, NULL, @price, @note)`);

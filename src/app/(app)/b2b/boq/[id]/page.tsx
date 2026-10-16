@@ -19,6 +19,8 @@ import BoqSummary from "@/components/b2b/boq/BoqSummary";
 import BoqCategorySection from "@/components/b2b/boq/BoqCategorySection";
 import MaterialPickerDialog from "@/components/b2b/boq/MaterialPickerDialog";
 import MaterialEditModal from "@/components/b2b/MaterialEditModal";
+import OmPanel from "@/components/b2b/boq/OmPanel";
+import { OM_CATEGORY, OM_DEFAULTS, OM_ROLES, omQty, type OmParams } from "@/lib/b2b/boq-om";
 
 // หน้าทำ BOQ — เรียงตาม sheet "EPCL - BOQS": หัวใบ → สรุป 25 หมวด → รายละเอียดทีละหมวด
 // แผน docs/plan/20261005-01-b2b-boq-module.md เฟส 3 · ตัวเลขทั้งหมดคิดด้วย calcBoq ชุดเดียวกับ server
@@ -29,6 +31,7 @@ type HeadDraft = {
   option_label: string;
   project_name: string; customer_name: string; location: string; latitude: string; longitude: string;
   margin_pct: string; note: string; addon_modes: Record<number, AddonMode>;
+  om_params: OmParams | null;
 };
 
 const toDraft = (h: BoqHeader): HeadDraft => ({
@@ -36,6 +39,7 @@ const toDraft = (h: BoqHeader): HeadDraft => ({
   project_name: h.project_name, customer_name: h.customer_name ?? "", location: h.location ?? "",
   latitude: h.latitude?.toString() ?? "", longitude: h.longitude?.toString() ?? "",
   margin_pct: String(h.margin_pct), note: h.note ?? "", addon_modes: { ...h.addon_modes },
+  om_params: h.om_params ? { ...h.om_params } : null,
 });
 let seq = 0;
 const newKey = () => `n${Date.now()}_${++seq}`;
@@ -84,10 +88,13 @@ export default function BoqEditorPage({ params }: { params: Promise<{ id: string
   }, []);
 
   const categories = useMemo(() => data?.categories ?? [], [data]);
+  // บรรทัดสูตร O&M — จำนวนคิดจากช่องตั้งค่าของใบ (แผน 20261016-03) · ใช้ทั้งคำนวณ แสดง และส่งบันทึก (server คิดซ้ำ)
+  const om = head?.om_params ?? null;
+  const effLines = useMemo(() => (om ? lines.map((l) => (l.om_role ? { ...l, qty: omQty(l.om_role, om).qty } : l)) : lines), [lines, om]);
   const calc = useMemo(() => calcBoq({
-    lines: lines.map((l) => ({ key: l.key, category_id: l.category_id, price_basis: l.price_basis, unit_cost: l.unit_cost, qty: l.qty, spec_watt: l.spec_watt })),
+    lines: effLines.map((l) => ({ key: l.key, category_id: l.category_id, price_basis: l.price_basis, unit_cost: l.unit_cost, qty: l.qty, spec_watt: l.spec_watt })),
     categories, margin_pct: Number(head?.margin_pct) || 0, vat_pct: data?.header.vat_pct ?? 7, addon_modes: head?.addon_modes ?? {},
-  }), [lines, categories, head, data]);
+  }), [effLines, categories, head, data]);
 
   if (activeRoles.length > 0 && !canUse) {
     return (
@@ -125,9 +132,21 @@ export default function BoqEditorPage({ params }: { params: Promise<{ id: string
     setLines((ls) => [...ls, ...items.map((m): BoqLine => ({
       key: newKey(), category_id: c.id, line_type: "material", material_id: m.id, subgroup: m.subgroup, name: m.name, brand: m.brand,
       model: m.model, unit: m.unit, spec_watt: m.spec_watt, price_basis: m.price_basis, unit_cost: m.unit_price, qty: 1, note: null,
-      current_unit_price: m.unit_price, current_active: m.is_active,
+      current_unit_price: m.unit_price, current_active: m.is_active, om_role: m.om_role,
     }))]);
+    // เลือกบรรทัดสูตร O&M เข้าใบที่ยังไม่มีช่องตั้งค่า → เปิดช่องตั้งค่าด้วยค่าตั้งต้นของไฟล์ต้นแบบ
+    if (!head.om_params && items.some((m) => m.om_role)) setH({ om_params: { ...OM_DEFAULTS } });
     setPicker(null); touch();
+  };
+  // ใส่บรรทัดสูตร O&M ที่ใบยังไม่มี (ทั้งชุด 10 บรรทัด) — ลำดับตาม Master
+  const omHave = new Set(lines.map((l) => l.om_role).filter(Boolean));
+  const addOmSet = async () => {
+    const cat = categories.find((c) => c.id === OM_CATEGORY);
+    const mats = materials ?? await loadMaterials().catch(() => null);
+    if (!cat || !mats) { setError("โหลดรายการ Master ไม่สำเร็จ"); return; }
+    const add = mats.filter((m) => m.is_active && m.om_role && !omHave.has(m.om_role)).sort((a, b) => a.sort_order - b.sort_order);
+    if (add.length === 0) { setError("ไม่พบรายการสูตร O&M ใน Master"); return; }
+    addFromMaster(cat, add);
   };
   const addManual = (c: B2bCategory) => {
     setLines((ls) => [...ls, { key: newKey(), category_id: c.id, line_type: "manual", material_id: null, subgroup: null, name: "", brand: null,
@@ -144,7 +163,7 @@ export default function BoqEditorPage({ params }: { params: Promise<{ id: string
   // ข้อมูลที่ส่งบันทึก — idMap = แปลง id บรรทัดของ Rev เดิมเป็นของ Rev ใหม่ (ย้ายงานที่แก้ค้างไป Rev ใหม่)
   const payload = (idMap?: Record<string, number>, expected?: string) => JSON.stringify({
     header: { ...head, latitude: head.latitude || null, longitude: head.longitude || null },
-    lines: lines.map((l) => ({
+    lines: effLines.map((l) => ({
       id: l.id != null && idMap ? idMap[String(l.id)] : l.id, line_type: l.line_type, category_id: l.category_id, material_id: l.material_id, qty: l.qty, note: l.note,
       refresh_price: l.refresh_price === true, name: l.name, brand: l.brand, model: l.model, unit: l.unit, unit_cost: l.unit_cost, price_basis: l.price_basis,
     })),
@@ -317,8 +336,13 @@ export default function BoqEditorPage({ params }: { params: Promise<{ id: string
 
         {/* รายละเอียดทีละหมวด */}
         {categories.filter((c) => !c.is_addon || addonIds.includes(c.id)).map((c) => (
-          <BoqCategorySection key={c.id} category={c} lines={lines.filter((l) => l.category_id === c.id)} calc={calc} readOnly={readOnly}
+          <BoqCategorySection key={c.id} category={c} lines={effLines.filter((l) => l.category_id === c.id)} calc={calc} readOnly={readOnly}
             optional={c.is_addon && head.addon_modes[c.id] === "optional"}
+            omParams={om}
+            extra={c.id === OM_CATEGORY && (
+              <OmPanel params={om} readOnly={readOnly} missing={OM_ROLES.filter((r) => !omHave.has(r)).length}
+                onChange={(p) => setH({ om_params: p })} onAddSet={() => void addOmSet()} />
+            )}
             onChange={change} onRemove={remove} onRefresh={refresh} onPick={() => void openPicker(c)} onAddManual={() => addManual(c)}
             onRemoveAddon={c.is_addon ? () => { const m = { ...head.addon_modes }; delete m[c.id]; setH({ addon_modes: m }); } : undefined} />
         ))}

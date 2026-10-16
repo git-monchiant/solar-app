@@ -29,10 +29,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const ins = await new sql.Request(tx).input("id", sql.Int, id).input("root", sql.Int, cur.root_id ?? cur.id).input("u", sql.Int, gate.userId)
       .query(`
         INSERT INTO b2b_boqs (doc_no, revision, root_id, is_latest, project_id, option_label, project_name, customer_name, location, latitude, longitude,
-                              margin_pct, vat_pct, addon_modes, note, capacity_wp, total_cost, total_sale, pending_lines, created_by, updated_by)
+                              margin_pct, vat_pct, addon_modes, om_params, note, capacity_wp, total_cost, total_sale, pending_lines, created_by, updated_by)
         OUTPUT INSERTED.id, INSERTED.revision, INSERTED.project_id, INSERTED.doc_no, INSERTED.option_label
         SELECT doc_no, revision + 1, @root, 1, project_id, option_label, project_name, customer_name, location, latitude, longitude,
-               margin_pct, vat_pct, addon_modes, note, capacity_wp, total_cost, total_sale, pending_lines, @u, @u
+               margin_pct, vat_pct, addon_modes, om_params, note, capacity_wp, total_cost, total_sale, pending_lines, @u, @u
         FROM b2b_boqs WHERE id = @id;
         UPDATE b2b_boqs SET is_latest = 0 WHERE id = @id;`);
     const newId = ins.recordset[0].id as number;

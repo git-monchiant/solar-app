@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
     db.request().query(`SELECT id, name, is_addon FROM b2b_categories ORDER BY sort_order, id`),
     db.request().query(`
       SELECT m.id, m.code, m.category_id, m.subgroup, m.name, m.brand, m.model, m.spec_watt, m.unit, m.price_basis,
-             m.unit_price, m.warranty, m.note, m.sort_order, m.is_active, m.price_updated_at,
+             m.unit_price, m.warranty, m.note, m.sort_order, m.is_active, m.price_updated_at, m.om_role,
              u.full_name AS price_updated_by_name
       FROM b2b_materials m
       LEFT JOIN users u ON u.id = m.price_updated_by

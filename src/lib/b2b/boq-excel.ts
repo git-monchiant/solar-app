@@ -2,6 +2,7 @@ import ExcelJS from "exceljs";
 import JSZip from "jszip";
 import { calcBoq, LABOR_CATEGORY, PCT_SALE_BASE_MAX_CATEGORY, perWp, type CalcResult } from "./boq-calc";
 import { wattInModel, type BoqHeader, type BoqLine } from "./boq";
+import { OM_CATEGORY, omQty, omSummary } from "./boq-om";
 import type { B2bCategory } from "./materials";
 
 // ไฟล์ Excel ของใบ BOQ — ผังตาม sheet "EPCL - BOQS" ของไฟล์ทีม (หัวใบ → สรุป → ยอดรวม → รายละเอียดทีละหมวด)
@@ -161,6 +162,9 @@ export async function buildBoqWorkbook(input: { header: BoqHeader; lines: BoqLin
     }
     set(`A${r}`, c.id).alignment = CENTER; set(`B${r}`, `${c.name}${optional ? "  (ทางเลือก — ไม่รวมในยอด)" : ""}`);
     styleRow(r, { fill: FILL.cat, bold: true, border: true }); r++;
+    // หมวด 13: ช่องตั้งค่า O&M ใต้หัวหมวด (แบบหัวข้อ "O&M - 2 Years & 4 Times" ของไฟล์เดิม) · วิธีคิดจำนวน = comment ช่องจำนวน (แผน 20261016-03)
+    const om = c.id === OM_CATEGORY ? h.om_params : null;
+    if (om) { set(`B${r}`, omSummary(om)).font = { name: "Tahoma", size: 10, italic: true, color: { argb: "FF6B7280" } }; styleRow(r, { fill: FILL.sub }); r++; }
     const first = r;
     let n = 0; let lastSub: string | null = null;
     for (const l of lines.filter((x) => x.category_id === c.id)) {
@@ -177,7 +181,10 @@ export async function buildBoqWorkbook(input: { header: BoqHeader; lines: BoqLin
       set(`E${r}`, `${l.model ?? ""}${l.spec_watt && !wattInModel(l.model, l.spec_watt) ? `${l.model ? " · " : ""}${l.spec_watt} W` : ""}`);
       set(`G${r}`, l.price_basis === "system_wp" ? "Wp" : l.unit);
       if (l.price_basis === "system_wp") set(`F${r}`, f("$B$4", res.eff_qty), "#,##0");
-      else set(`F${r}`, l.qty, qtyFmt(l.qty));
+      else {
+        const qtyCell = set(`F${r}`, l.qty, qtyFmt(l.qty));
+        if (om && l.om_role) qtyCell.note = `จำนวน = ${omQty(l.om_role, om).how}`;
+      }
       if (l.price_basis === "watt") { set(`H${r}`, f(`${l.spec_watt ?? 0}*${l.unit_cost ?? 0}`, res.unit_cost), MONEY); wattRows.push({ row: r, watt: l.spec_watt ?? 0 }); }
       else if (l.price_basis === "pct_category" || l.price_basis === "pct_sale") { set(`C${r}`, (l.unit_cost ?? 0) / 100, PCT); pctRows.push({ row: r, line: l }); }
       else set(`H${r}`, pending ? null : l.unit_cost, MONEY);

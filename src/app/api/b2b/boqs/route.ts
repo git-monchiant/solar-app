@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
 
 // สร้างใบใหม่ = Rev 0 ของโครงการ (ตัวเลือกขนาด 1 ตัว) แล้วไปเติมรายการในหน้าทำ BOQ
 // ★ ต้องมีโครงการ (แผน 20261015-07) — ชื่อโครงการ/ลูกค้า/ที่ตั้งดึงจากโครงการ ไม่รับจากหน้าจอ
-// copy_from = คัดลอกบรรทัด + ส่วนเสริม รวม/ทางเลือก + VAT จากใบอื่น (แผน 20261016-02) — ราคาปัจจุบันใน Master (copyBoqLines)
+// copy_from = คัดลอกบรรทัด + ส่วนเสริม รวม/ทางเลือก + VAT + ช่องตั้งค่า O&M จากใบอื่น (แผน 20261016-02/03) — ราคาปัจจุบันใน Master (copyBoqLines)
 //   Margin ไม่ส่งมา = ใช้ของใบต้นทาง
 export async function POST(req: NextRequest) {
   const gate = await requireAnyActiveRole(req, B2B_BOQ_ROLES);
@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
     let copied: { lines: number; inactive: number } | null = null;
     if (src) {
       await new sql.Request(tx).input("id", sql.Int, newId).input("src", sql.Int, src.id).query(`
-        UPDATE b SET vat_pct = s.vat_pct, addon_modes = s.addon_modes
+        UPDATE b SET vat_pct = s.vat_pct, addon_modes = s.addon_modes, om_params = s.om_params
         FROM b2b_boqs b CROSS JOIN b2b_boqs s WHERE b.id = @id AND s.id = @src`);
       copied = await copyBoqLines(tx, src.id, newId);
       await storeTotals(tx, newId);

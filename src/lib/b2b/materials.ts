@@ -1,4 +1,5 @@
 import type { AppRole } from "@/lib/role-permissions";
+import type { OmRole } from "./boq-om";
 
 // Master Data วัสดุของโมดูล BOQ — ชนิด / สิทธิ์ / ตัวตรวจ body ที่หน้าจอกับ API ใช้ร่วมกัน
 // ไม่มี mssql ⇒ client import ได้ · แผน docs/plan/20261005-01-b2b-boq-module.md (เฟส 2)
@@ -79,6 +80,8 @@ export type B2bMaterial = {
   is_active: boolean;
   price_updated_at: string | null;
   price_updated_by_name: string | null;
+  /** บรรทัดสูตร O&M หมวด 13 (แผน 20261016-03) — ระบบกำหนด ไม่แก้ผ่านฟอร์ม */
+  om_role: OmRole | null;
 };
 
 export type B2bPriceHistory = {

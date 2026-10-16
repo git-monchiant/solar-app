@@ -4,6 +4,7 @@ import { getB2bDb, sql } from "@/lib/b2b/db";
 import { B2B_BOQ_VIEW_ROLES, B2B_BOQ_ROLES, boqStageLocked, readBoqHeader, readBoqLines } from "@/lib/b2b/boq";
 import { stageLabel } from "@/lib/b2b/project";
 import { BoqLimitError, loadBoq, loadCategories, storeTotals } from "@/lib/b2b/boq-server";
+import { isOmRole, omQty } from "@/lib/b2b/boq-om";
 import { boqLockedByQuote } from "@/lib/b2b/quotation-server";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -66,15 +67,19 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     await new sql.Request(tx).input("id", sql.Int, id).query(`DELETE FROM b2b_boq_items WHERE boq_id = @id`);
+    const om = head.value.om_params;
     for (const [i, l] of lines.value.entries()) {
       const prev = l.id != null ? old.get(l.id) : undefined;
       let snap: Record<string, unknown>;
       let materialId: number | null = null;
       let enteredBy: number | null = null;
+      let qty = l.qty;
       if (l.kind === "material") {
         const mst = masters.get(l.material_id);
         if (!mst) throw new UserError(`${l.label}: ไม่พบรายการใน Master`);
         materialId = l.material_id;
+        // บรรทัดสูตร O&M — จำนวนคิดจากช่องตั้งค่าของใบเสมอ (แผน 20261016-03)
+        if (om && isOmRole(mst.om_role)) qty = omQty(mst.om_role, om).qty;
         const keep = prev && prev.line_type === "material" && prev.material_id === l.material_id && !l.refresh;
         if (keep) {
           snap = { ...prev };
@@ -96,7 +101,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         .input("brand", sql.NVarChar(150), snap.brand ?? null).input("model", sql.NVarChar(300), snap.model ?? null)
         .input("unit", sql.NVarChar(30), snap.unit).input("watt", sql.Decimal(10, 2), snap.spec_watt ?? null)
         .input("basis", sql.VarChar(20), snap.price_basis).input("cost", sql.Decimal(14, 4), snap.unit_cost ?? null)
-        .input("qty", sql.Decimal(14, 3), l.qty).input("note", sql.NVarChar(500), l.note).input("by", sql.Int, enteredBy)
+        .input("qty", sql.Decimal(14, 3), qty).input("note", sql.NVarChar(500), l.note).input("by", sql.Int, enteredBy)
         .query(`INSERT INTO b2b_boq_items (boq_id, category_id, sort_order, line_type, material_id, subgroup, name, brand, model, unit,
                                            spec_watt, price_basis, unit_cost, qty, note, price_entered_by)
                 VALUES (@boq, @cat, @sort, @type, @mat, @subgroup, @name, @brand, @model, @unit, @watt, @basis, @cost, @qty, @note, @by)`);
@@ -119,8 +124,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       .input("location", sql.NVarChar(500), h.location).input("lat", sql.Decimal(9, 6), h.latitude).input("lng", sql.Decimal(9, 6), h.longitude)
       .input("margin", sql.Decimal(6, 3), h.margin_pct).input("note", sql.NVarChar(1000), h.note)
       .input("modes", sql.NVarChar(400), JSON.stringify(h.addon_modes)).input("u", sql.Int, gate.userId)
+      .input("om", sql.NVarChar(500), h.om_params ? JSON.stringify(h.om_params) : null)
       .query(`UPDATE b2b_boqs SET project_name = @project, customer_name = @customer, location = @location, latitude = @lat, longitude = @lng,
-                margin_pct = @margin, note = @note, addon_modes = @modes, updated_by = @u, updated_at = SYSDATETIMEOFFSET() WHERE id = @id`);
+                margin_pct = @margin, note = @note, addon_modes = @modes, om_params = @om, updated_by = @u, updated_at = SYSDATETIMEOFFSET() WHERE id = @id`);
     await storeTotals(tx, id);
     await tx.commit();
   } catch (e) {

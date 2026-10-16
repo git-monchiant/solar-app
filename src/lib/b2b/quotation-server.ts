@@ -1,4 +1,5 @@
 import { sql } from "./db";
+import { parseOmParams } from "./boq-om";
 import {
   DEFAULT_INSTALL_WARRANTY, DEFAULT_INSTALLMENTS, DEFAULT_ITEM_TITLE, DEFAULT_REMARKS, DEFAULT_WARRANTY, ESTIMATE_REMARK,
   quoteTotals, roundUpHundreds,
@@ -33,7 +34,7 @@ const OM_REMARK = (years: number, visits: number) =>
 /** เนื้อหาตั้งต้นของใบใหม่ — รายการเหมา 1 บรรทัดจาก BOQ (ยอดปัดขึ้นหลักร้อยแบบแม่แบบ) + bullet แผง/อินเวอร์เตอร์จากบรรทัดจริง */
 export async function buildDefaultContent(db: Queryable, boqId: number, kind: QuoteKind): Promise<QuoteContent | null> {
   const h = (await db.request().input("id", sql.Int, boqId)
-    .query(`SELECT capacity_wp, total_sale, vat_pct FROM b2b_boqs WHERE id = @id`)).recordset[0];
+    .query(`SELECT capacity_wp, total_sale, vat_pct, om_params FROM b2b_boqs WHERE id = @id`)).recordset[0];
   if (!h) return null;
   const lines = (await db.request().input("id", sql.Int, boqId).query(`
     SELECT category_id, brand, model, unit, SUM(qty) AS qty FROM b2b_boq_items
@@ -47,7 +48,9 @@ export async function buildDefaultContent(db: Queryable, boqId: number, kind: Qu
     const model = String(l.model ?? "").trim();
     return brand && !model.toLowerCase().includes(brand.toLowerCase()) ? `${brand} ${model}`.trim() : model || brand;
   };
-  const om = { years: 2, visits: 2 };
+  // ปี O&M / ครั้งต่อปี = ช่องตั้งค่าหมวด 13 ของ BOQ (ราคา O&M คิดจากค่านี้ — แผน 20261016-03) · BOQ ที่ไม่ใช้สูตร = 2 ปี ปีละ 2 ครั้งแบบแม่แบบ
+  const omp = parseOmParams(h.om_params);
+  const om = "value" in omp && omp.value ? { years: omp.value.years, visits: omp.value.visits } : { years: 2, visits: 2 };
   const bullets = [
     ...lines.filter((l) => l.category_id === 1).map((l) => `รวมแผ่นโซลาร์เซลล์ ${name(l)} จำนวน ${qty(l.qty)} แผง หรือเทียบเท่ามาตรฐาน TIER 1`),
     ...lines.filter((l) => l.category_id === 2).map((l) => `รวมอินเวอร์เตอร์ ${name(l)} จำนวน ${qty(l.qty)} ชุด หรือเทียบเท่าการทดสอบจากการไฟฟ้าฯ`),

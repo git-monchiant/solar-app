@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { formatNumber, formatTHB } from "@/lib/utils/formatters";
+import { omQty, type OmParams } from "@/lib/b2b/boq-om";
 import type { CalcResult } from "@/lib/b2b/boq-calc";
 import { formatPrice, priceSuffix, type B2bCategory } from "@/lib/b2b/materials";
 import { BOQ_LINE_NOTE_MAX, BOQ_MAX_MANUAL_COST, BOQ_MAX_QTY, wattInModel, type BoqLine } from "@/lib/b2b/boq";
@@ -46,13 +47,17 @@ function NoteField({ value, readOnly, onChange }: { value: string | null; readOn
   );
 }
 
-export default function BoqCategorySection({ category, lines, calc, optional = false, readOnly, onChange, onRemove, onRefresh, onPick, onAddManual, onRemoveAddon }: {
+export default function BoqCategorySection({ category, lines, calc, optional = false, readOnly, omParams = null, extra, onChange, onRemove, onRefresh, onPick, onAddManual, onRemoveAddon }: {
   category: B2bCategory;
   lines: BoqLine[];
   calc: CalcResult;
   /** หมวดเสริมที่เสนอเป็นทางเลือก (ไม่รวมในยอด) */
   optional?: boolean;
   readOnly: boolean;
+  /** ช่องตั้งค่า O&M ของใบ — บรรทัดสูตร (om_role) จำนวนคิดให้ แก้มือไม่ได้ (แผน 20261016-03) */
+  omParams?: OmParams | null;
+  /** กล่องใต้หัวหมวด (หมวด 13 = ช่องตั้งค่า O&M) */
+  extra?: ReactNode;
   onChange: (key: string, patch: Partial<BoqLine>) => void;
   onRemove: (key: string) => void;
   onRefresh: (key: string) => void;
@@ -83,6 +88,7 @@ export default function BoqCategorySection({ category, lines, calc, optional = f
           </div>
         )}
       </div>
+      {extra}
 
       {!empty && (
         <div className="overflow-x-auto">
@@ -110,6 +116,7 @@ export default function BoqCategorySection({ category, lines, calc, optional = f
                 const changed = !manual && l.current_unit_price != null && l.unit_cost != null && l.current_unit_price !== l.unit_cost;
                 // รอราคาแต่ Purchase ใส่ราคาใน Master แล้ว (หน้านี้เปิดค้างไว้ตอน Purchase บันทึก) — กดใช้ได้เลย
                 const arrived = !manual && l.unit_cost == null && l.current_unit_price != null;
+                const om = l.om_role && omParams ? omQty(l.om_role, omParams) : null;
                 return (
                   <tr key={l.key} className={`border-t border-gray-100 align-top ${l.unit_cost == null ? "bg-red-50/40" : changed ? "bg-amber-50/50" : ""}`}>
                     <td className={`${cell} text-right tabular-nums text-gray-400`}>{i + 1}</td>
@@ -139,6 +146,7 @@ export default function BoqCategorySection({ category, lines, calc, optional = f
                         {l.current_active === false && <span className="rounded-full bg-gray-100 px-1.5 text-xxs text-gray-500">ปิดใช้งานใน Master</span>}
                         {manual && <span className="rounded-full bg-amber-50 px-1.5 text-xxs text-amber-700">ราคาใส่เอง{l.price_entered_by_name ? ` · ${l.price_entered_by_name}` : ""}</span>}
                       </div>
+                      {om && <div className="mt-0.5 text-xxs text-primary">จำนวน = {om.how}</div>}
                       <NoteField value={l.note} readOnly={readOnly} onChange={(note) => onChange(l.key, { note })} />
                     </td>
                     <td className={cell}>
@@ -152,8 +160,8 @@ export default function BoqCategorySection({ category, lines, calc, optional = f
                     <td className={`${cell} text-right`}>
                       {l.price_basis === "system_wp" ? (
                         <span className="tabular-nums text-gray-600" title="ค่าต่อ Wp ใช้ขนาดระบบเป็นปริมาณ">{formatNumber(r?.eff_qty ?? 0)}</span>
-                      ) : readOnly ? (
-                        <span className="tabular-nums">{formatNumber(l.qty)}</span>
+                      ) : readOnly || om ? (
+                        <span className="tabular-nums" title={om ? "คิดจากช่องตั้งค่า O&M" : undefined}>{formatNumber(l.qty)}</span>
                       ) : (
                         <QtyInput value={l.qty} onChange={(qty) => onChange(l.key, { qty })} />
                       )}

@@ -1,5 +1,6 @@
 import type { AppRole } from "@/lib/role-permissions";
 import type { AddonMode } from "./boq-calc";
+import { parseOmParams, type OmParams, type OmRole } from "./boq-om";
 import type { PriceBasis } from "./materials";
 
 // ใบ BOQ — ชนิด / สิทธิ์ / ตัวตรวจ body ที่หน้าจอกับ API ใช้ร่วมกัน (ไม่มี mssql ⇒ client import ได้)
@@ -41,6 +42,8 @@ export type BoqHeader = {
   margin_pct: number;
   vat_pct: number;
   addon_modes: Record<number, AddonMode>;
+  /** ช่องตั้งค่า O&M หมวด 13 (แผน 20261016-03) — null = ยังไม่ใช้สูตร */
+  om_params: OmParams | null;
   note: string | null;
   capacity_wp: number | null;
   total_cost: number | null;
@@ -78,6 +81,8 @@ export type BoqLine = {
   /** ราคาปัจจุบันใน Master — ต่างจาก unit_cost = ป้าย "ราคาเปลี่ยน" */
   current_unit_price?: number | null;
   current_active?: boolean;
+  /** บรรทัดสูตร O&M (Master ติด om_role) — จำนวนคิดจากช่องตั้งค่าของใบ แก้มือไม่ได้ */
+  om_role?: OmRole | null;
   /** ส่งไปตอนบันทึก = ขอดึงข้อมูล/ราคาล่าสุดจาก Master */
   refresh_price?: boolean;
 };
@@ -105,6 +110,7 @@ export type HeaderFields = {
   project_name: string; customer_name: string | null; location: string | null;
   latitude: number | null; longitude: number | null; margin_pct: number; note: string | null;
   addon_modes: Record<number, AddonMode>;
+  om_params: OmParams | null;
 };
 
 /** ตรวจหัวใบ (POST สร้าง / PUT บันทึก)
@@ -120,12 +126,14 @@ export function readBoqHeader(b: Record<string, unknown>, opts: { create?: boole
   const lat = numOrNull(b.latitude); const lng = numOrNull(b.longitude);
   if (Number.isNaN(lat) || (lat != null && Math.abs(lat) > 90)) return { error: "Latitude ไม่ถูกต้อง" };
   if (Number.isNaN(lng) || (lng != null && Math.abs(lng) > 180)) return { error: "Longitude ไม่ถูกต้อง" };
+  const om = parseOmParams(b.om_params);
+  if ("error" in om) return { error: om.error };
   return {
     value: {
       option_label: text(b.option_label, 100),
       project_name, customer_name: text(b.customer_name, 300), location: text(b.location, 500),
       latitude: lat, longitude: lng, margin_pct: margin, note: text(b.note, 1000),
-      addon_modes: parseAddonModes(b.addon_modes),
+      addon_modes: parseAddonModes(b.addon_modes), om_params: om.value,
     },
   };
 }

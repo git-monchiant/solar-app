@@ -1,6 +1,7 @@
 import { sql } from "./db";
 import { calcBoq, round2, type CalcLine } from "./boq-calc";
 import { BOQ_MAX_TOTAL, parseAddonModes, type BoqHeader, type BoqLine, type BoqRevision } from "./boq";
+import { isOmRole, parseOmParams, type OmParams } from "./boq-om";
 import type { B2bCategory } from "./materials";
 
 // ฝั่ง server ของใบ BOQ — โหลดใบ + คำนวณยอดเก็บบนหัวใบ (ใช้ตัวคำนวณชุดเดียวกับหน้าจอ)
@@ -8,6 +9,8 @@ import type { B2bCategory } from "./materials";
 type Queryable = { request(): sql.Request };
 
 const num = (v: unknown) => (v == null ? null : Number(v));
+/** ช่องตั้งค่า O&M ในฐาน — อ่านไม่ได้ = ถือว่าไม่ใช้สูตร (ไม่ทำให้เปิดใบไม่ได้) */
+const omOf = (raw: unknown): OmParams | null => { const r = parseOmParams(raw); return "error" in r ? null : r.value; };
 
 export async function loadCategories(db: Queryable): Promise<B2bCategory[]> {
   const r = await db.request().query(`SELECT id, name, is_addon FROM b2b_categories ORDER BY sort_order, id`);
@@ -32,14 +35,14 @@ export async function loadBoq(db: Queryable, id: number): Promise<{ header: BoqH
     locked_by_quote: row.locked_by_quote ?? null, project_stage: row.project_stage ?? null,
     project_name: row.project_name, customer_name: row.customer_name, location: row.location,
     latitude: num(row.latitude), longitude: num(row.longitude), margin_pct: Number(row.margin_pct), vat_pct: Number(row.vat_pct),
-    addon_modes: parseAddonModes(row.addon_modes), note: row.note,
+    addon_modes: parseAddonModes(row.addon_modes), om_params: omOf(row.om_params), note: row.note,
     capacity_wp: num(row.capacity_wp), total_cost: num(row.total_cost), total_sale: num(row.total_sale), pending_lines: row.pending_lines,
     created_at: row.created_at, created_by_name: row.created_by_name, updated_at: row.updated_at, updated_by_name: row.updated_by_name,
   };
   const root = row.root_id ?? row.id;
   const [items, revs] = await Promise.all([
     db.request().input("id", sql.Int, id).query(`
-      SELECT i.*, m.unit_price AS current_unit_price, m.is_active AS current_active, pu.full_name AS price_entered_by_name
+      SELECT i.*, m.unit_price AS current_unit_price, m.is_active AS current_active, m.om_role, pu.full_name AS price_entered_by_name
       FROM b2b_boq_items i
       LEFT JOIN b2b_materials m ON m.id = i.material_id
       LEFT JOIN users pu ON pu.id = i.price_entered_by
@@ -55,6 +58,7 @@ export async function loadBoq(db: Queryable, id: number): Promise<{ header: BoqH
     price_entered_by_name: i.price_entered_by_name,
     current_unit_price: i.material_id ? num(i.current_unit_price) : null,
     current_active: i.material_id ? !!i.current_active : undefined,
+    om_role: isOmRole(i.om_role) ? i.om_role : null,
   }));
   return { header, lines, revisions: revs.recordset.map((r) => ({ id: r.id, revision: r.revision, is_latest: !!r.is_latest, updated_at: r.updated_at })) };
 }
