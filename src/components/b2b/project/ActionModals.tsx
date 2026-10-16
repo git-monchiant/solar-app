@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Dropdown from "@/components/ui/Dropdown";
+import BoqSourceField from "@/components/b2b/boq/BoqSourceField";
 import type { B2bCustomer, B2bProjectBoq, B2bProjectQuote, B2bUserOption } from "@/lib/b2b/project";
 import { formatTHB } from "@/lib/utils/formatters";
 import ModalShell, { areaCls, fieldCls, labelCls, Req } from "./ModalShell";
@@ -215,15 +216,19 @@ export function EvidenceModal({ title, saving, error, onConfirm, onClose }: Comm
   );
 }
 
-/** BOQ ตัวเลือกใหม่ของโครงการ */
-export function NewBoqModal({ saving, error, onConfirm, onClose }: Common & {
-  onConfirm: (v: { option_label: string; margin_pct: string }) => void;
+/** BOQ ตัวเลือกใหม่ของโครงการ — เริ่มจากใบเปล่า หรือคัดลอกจากใบอื่น (แผน 20261016-02 · Margin ตั้งตามใบต้นทาง แก้ได้) */
+export function NewBoqModal({ projectId, saving, error, onConfirm, onClose }: Common & {
+  projectId: number;
+  onConfirm: (v: { option_label: string; margin_pct: string; copy_from: string }) => void;
 }) {
   const [label, setLabel] = useState("");
   const [margin, setMargin] = useState("15");
+  const [source, setSource] = useState("");
   return (
     <ModalShell title="เพิ่ม BOQ ตัวเลือกใหม่" subtitle="ได้เลขที่ BOQ ใหม่ (Rev 0) แล้วไปเติมรายการในหน้าทำ BOQ"
-      confirmText="สร้าง BOQ" saving={saving} error={error} onClose={onClose} onConfirm={() => onConfirm({ option_label: label, margin_pct: margin })}>
+      confirmText="สร้าง BOQ" saving={saving} error={error} onClose={onClose} onConfirm={() => onConfirm({ option_label: label, margin_pct: margin, copy_from: source })}>
+      <BoqSourceField projectId={projectId} value={source} labelCls={labelCls}
+        onChange={(v, row) => { setSource(v); if (row?.margin_pct != null) setMargin(String(row.margin_pct)); }} />
       <div><label className={labelCls}>ชื่อตัวเลือก</label>
         <input autoFocus className={fieldCls} value={label} onChange={(e) => setLabel(e.target.value)} placeholder="เช่น 998.64 kWp · Jinko 730" /></div>
       <div className="max-w-[12rem]"><label className={labelCls}>Margin (% ของราคาขาย)</label>

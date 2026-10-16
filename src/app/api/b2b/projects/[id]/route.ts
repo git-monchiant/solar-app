@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAnyActiveRole } from "@/lib/auth";
+import { hasAnyGrantedRole } from "@/lib/role-permissions";
 import { getB2bDb, sql } from "@/lib/b2b/db";
+import { B2B_BOQ_VIEW_ROLES } from "@/lib/b2b/boq";
 import { B2B_PROJECT_VIEW_ROLES, B2B_PROJECT_ROLES, readProjectBody } from "@/lib/b2b/project";
 import { ensureCustomer, loadProject, logActivity, syncBoqHeaders } from "@/lib/b2b/project-server";
 
@@ -11,6 +13,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!Number.isFinite(id)) return NextResponse.json({ error: "id ไม่ถูกต้อง" }, { status: 400 });
   const project = await loadProject(await getB2bDb(), id);
   if (!project) return NextResponse.json({ error: "ไม่พบโครงการ" }, { status: 404 });
+  // บัญชีเปิดหน้าโครงการได้ (ยืนยันงวดเงิน) แต่ไม่มีสิทธิ์ดู BOQ — ไม่ส่งต้นทุน/Margin ไปเลย (แผน 20261016-02)
+  // แก้ข้อมูล/เปลี่ยนขั้น (PATCH · /actions) เป็น Solar B2B + admin เท่านั้น ⇒ ตัดที่ GET ตัวเดียวพอ
+  if (!hasAnyGrantedRole(gate.roles, B2B_BOQ_VIEW_ROLES)) {
+    project.boqs = project.boqs.map((b) => ({ ...b, total_cost: null, margin_pct: null }));
+  }
   return NextResponse.json(project);
 }
 

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { formatNumber, formatTHB } from "@/lib/utils/formatters";
 import type { CalcResult } from "@/lib/b2b/boq-calc";
 import { formatPrice, priceSuffix, type B2bCategory } from "@/lib/b2b/materials";
-import { wattInModel, type BoqLine } from "@/lib/b2b/boq";
+import { BOQ_LINE_NOTE_MAX, BOQ_MAX_MANUAL_COST, BOQ_MAX_QTY, wattInModel, type BoqLine } from "@/lib/b2b/boq";
 
 // รายละเอียดหมวดหนึ่งของใบ BOQ — ตาราง "ลำดับ · รายการ · ยี่ห้อ · รุ่น · ปริมาณ · หน่วย · ต้นทุน · ราคาขาย" ตาม sheet EPCL - BOQS (คอลัมน์ % มีเฉพาะใน Excel — ผู้ใช้ไม่เอาบนจอ 6 ต.ค. 69)
 // หมวด 1–18: บรรทัดมาจาก Master อย่างเดียว (แก้ได้แค่จำนวน) · หมวดเสริม 19–25: ใส่ราคาเองได้ (เคาะ 6 ต.ค. 69)
@@ -18,7 +18,7 @@ const input = "h-8 w-full rounded-md border border-gray-200 bg-white px-2 text-s
 function QtyInput({ value, onChange }: { value: number; onChange: (n: number) => void }) {
   const [draft, setDraft] = useState<string | null>(null);
   return (
-    <input type="number" min={0} step="any" inputMode="decimal" className={`${input} text-right tabular-nums`}
+    <input type="number" min={0} max={BOQ_MAX_QTY} step="any" inputMode="decimal" className={`${input} text-right tabular-nums`}
       value={draft ?? (Number.isFinite(value) ? String(value) : "")}
       onFocus={(e) => e.target.select()}
       onChange={(e) => {
@@ -27,6 +27,22 @@ function QtyInput({ value, onChange }: { value: number; onChange: (n: number) =>
         onChange(e.target.value === "" || !Number.isFinite(n) ? 0 : n);
       }}
       onBlur={() => setDraft(null)} />
+  );
+}
+
+/** หมายเหตุรายบรรทัด (แผน 20261016-02) — ไม่มีหมายเหตุ = ปุ่ม "+ หมายเหตุ" · กดแล้วออกจากช่องโดยไม่พิมพ์ = ปิดช่องเฉยๆ (ไม่นับเป็นงานค้าง) */
+function NoteField({ value, readOnly, onChange }: { value: string | null; readOnly: boolean; onChange: (v: string | null) => void }) {
+  const [open, setOpen] = useState(false);
+  if (readOnly) return value ? <div className="mt-1 whitespace-pre-wrap break-words text-xs text-gray-500">หมายเหตุ: {value}</div> : null;
+  if (!value && !open) {
+    return <button type="button" onClick={() => setOpen(true)} style={{ minHeight: 0 }} className="mt-0.5 text-xxs text-gray-400 hover:text-primary">+ หมายเหตุ</button>;
+  }
+  return (
+    <input autoFocus={!value} maxLength={BOQ_LINE_NOTE_MAX} value={value ?? ""} placeholder="หมายเหตุ เช่น ราคารวมขนส่ง · ลูกค้าขอรุ่นนี้"
+      className="mt-1 h-7 w-full rounded-md border border-gray-200 bg-white px-2 text-xs text-gray-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+      onFocus={() => setOpen(true)}   // ลบข้อความเดิมจนว่างระหว่างพิมพ์ — ช่องต้องไม่หายกลายเป็นปุ่ม
+      onChange={(e) => onChange(e.target.value || null)}
+      onBlur={(e) => { if (!e.target.value.trim()) setOpen(false); }} />
   );
 }
 
@@ -123,6 +139,7 @@ export default function BoqCategorySection({ category, lines, calc, optional = f
                         {l.current_active === false && <span className="rounded-full bg-gray-100 px-1.5 text-xxs text-gray-500">ปิดใช้งานใน Master</span>}
                         {manual && <span className="rounded-full bg-amber-50 px-1.5 text-xxs text-amber-700">ราคาใส่เอง{l.price_entered_by_name ? ` · ${l.price_entered_by_name}` : ""}</span>}
                       </div>
+                      <NoteField value={l.note} readOnly={readOnly} onChange={(note) => onChange(l.key, { note })} />
                     </td>
                     <td className={cell}>
                       {manual && !readOnly ? <input className={input} value={l.brand ?? ""} onChange={(e) => onChange(l.key, { brand: e.target.value || null })} />
@@ -155,7 +172,7 @@ export default function BoqCategorySection({ category, lines, calc, optional = f
                     </td>
                     <td className={`${cell} text-right tabular-nums`}>
                       {manual && !readOnly ? (
-                        <input type="number" min={0} step="any" inputMode="decimal" className={`${input} text-right`}
+                        <input type="number" min={0} max={BOQ_MAX_MANUAL_COST} step="any" inputMode="decimal" className={`${input} text-right`}
                           value={l.unit_cost ?? ""} onChange={(e) => onChange(l.key, { unit_cost: e.target.value === "" ? null : Number(e.target.value) })} />
                       ) : (
                         <>

@@ -1,6 +1,6 @@
 import { sql } from "./db";
 import { calcBoq, round2, type CalcLine } from "./boq-calc";
-import { parseAddonModes, type BoqHeader, type BoqLine, type BoqRevision } from "./boq";
+import { BOQ_MAX_TOTAL, parseAddonModes, type BoqHeader, type BoqLine, type BoqRevision } from "./boq";
 import type { B2bCategory } from "./materials";
 
 // ฝั่ง server ของใบ BOQ — โหลดใบ + คำนวณยอดเก็บบนหัวใบ (ใช้ตัวคำนวณชุดเดียวกับหน้าจอ)
@@ -59,6 +59,9 @@ export async function loadBoq(db: Queryable, id: number): Promise<{ header: BoqH
   return { header, lines, revisions: revs.recordset.map((r) => ({ id: r.id, revision: r.revision, is_latest: !!r.is_latest, updated_at: r.updated_at })) };
 }
 
+/** ยอดรวมเกินเพดาน — API ที่เรียก storeTotals แปลงเป็นข้อความ 400 (เดิม DECIMAL ล้นได้ 500) */
+export class BoqLimitError extends Error {}
+
 /** ยอดที่เก็บบนหัวใบ (หน้ารายการใช้แสดง) — คำนวณจากบรรทัดที่บันทึกจริง */
 export async function storeTotals(db: Queryable, id: number): Promise<void> {
   // ทีละคำสั่ง — ถูกเรียกใน transaction ซึ่ง mssql ยิงหลาย request พร้อมกันบน connection เดียวไม่ได้
@@ -70,12 +73,39 @@ export async function storeTotals(db: Queryable, id: number): Promise<void> {
     key: String(i.id), category_id: i.category_id, price_basis: i.price_basis, unit_cost: num(i.unit_cost), qty: Number(i.qty), spec_watt: num(i.spec_watt),
   }));
   const r = calcBoq({ lines, categories: cats, margin_pct: Number(head.margin_pct), vat_pct: Number(head.vat_pct), addon_modes: parseAddonModes(head.addon_modes) });
+  if (Math.max(Math.abs(r.subtotal.cost), Math.abs(r.subtotal.sale), Math.abs(r.addon_optional.sale)) > BOQ_MAX_TOTAL) {
+    throw new BoqLimitError(`ยอดรวมทั้งใบเกิน ${BOQ_MAX_TOTAL.toLocaleString("en-US")} บาท — ตรวจจำนวน/ราคา/Margin อีกครั้ง`);
+  }
   await db.request().input("id", sql.Int, id)
     .input("cap", sql.Decimal(14, 2), round2(r.capacity_wp))
     .input("cost", sql.Decimal(16, 2), round2(r.subtotal.cost))
     .input("sale", sql.Decimal(16, 2), round2(r.subtotal.sale))
     .input("pending", sql.Int, r.pending_lines)
     .query(`UPDATE b2b_boqs SET capacity_wp = @cap, total_cost = @cost, total_sale = @sale, pending_lines = @pending WHERE id = @id`);
+}
+
+/** คัดลอกบรรทัดจากใบอื่นเข้าใบใหม่ (สร้าง BOQ แบบ "คัดลอกจาก" — แผน 20261016-02)
+ *  ต่างจากออก Revision (คง snapshot): ใบใหม่ = ราคา/ข้อมูลปัจจุบันใน Master แบบบรรทัดที่เพิ่งเลือกเข้าใบ
+ *  รายการที่ปิดใช้งานใน Master แล้วคงข้อมูลเดิม (หน้าทำ BOQ ขึ้นป้าย "ปิดใช้งานใน Master") · ราคาใส่เอง (หมวดเสริม) คัดลอกตามเดิม */
+export async function copyBoqLines(tx: sql.Transaction, fromId: number, toId: number): Promise<{ lines: number; inactive: number }> {
+  const r = await new sql.Request(tx).input("from", sql.Int, fromId).input("to", sql.Int, toId).query(`
+    SELECT COUNT(*) AS lines,
+           SUM(CASE WHEN i.line_type = 'material' AND ISNULL(m.is_active, 0) = 0 THEN 1 ELSE 0 END) AS inactive
+    FROM b2b_boq_items i LEFT JOIN b2b_materials m ON m.id = i.material_id
+    WHERE i.boq_id = @from;
+
+    INSERT INTO b2b_boq_items (boq_id, category_id, sort_order, line_type, material_id, subgroup, name, brand, model, unit,
+                               spec_watt, price_basis, unit_cost, qty, note, price_entered_by)
+    SELECT @to, i.category_id, i.sort_order, i.line_type, i.material_id,
+           IIF(m.is_active = 1, m.subgroup, i.subgroup), IIF(m.is_active = 1, m.name, i.name), IIF(m.is_active = 1, m.brand, i.brand),
+           IIF(m.is_active = 1, m.model, i.model), IIF(m.is_active = 1, m.unit, i.unit), IIF(m.is_active = 1, m.spec_watt, i.spec_watt),
+           IIF(m.is_active = 1, m.price_basis, i.price_basis), IIF(m.is_active = 1, m.unit_price, i.unit_cost),
+           i.qty, i.note, i.price_entered_by
+    FROM b2b_boq_items i
+    LEFT JOIN b2b_materials m ON m.id = i.material_id AND i.line_type = 'material'
+    WHERE i.boq_id = @from;`);
+  const c = r.recordset[0];
+  return { lines: Number(c?.lines ?? 0), inactive: Number(c?.inactive ?? 0) };
 }
 
 /** เลขที่ใบ BOQyymm-nnn (เวลาไทย) — เรียกใน transaction · UPDLOCK กันสองคนได้เลขซ้ำ */

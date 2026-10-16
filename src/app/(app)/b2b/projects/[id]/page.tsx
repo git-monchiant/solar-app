@@ -16,6 +16,7 @@ import {
   isClosedStage, listHrefOf, stageLabel,
   type B2bInstallment, type B2bProject, type B2bProjectFile, type B2bProjectQuote, type B2bUserOption,
 } from "@/lib/b2b/project";
+import { B2B_BOQ_VIEW_ROLES } from "@/lib/b2b/boq";
 import { QUOTE_STATUS_LABEL, QUOTE_STATUS_TONE, editableStatus, tierOfStatus } from "@/lib/b2b/quotation";
 import { reviewedTiers, stageEnteredAt, stepPassedAt, stepSkipped } from "@/lib/b2b/project-view";
 import StageBadge from "@/components/b2b/project/StageBadge";
@@ -25,6 +26,7 @@ import StepHistoryCard from "@/components/b2b/project/StepHistoryCard";
 import ExecutionBoard from "@/components/b2b/project/ExecutionBoard";
 import MoreMenu, { type MoreItem } from "@/components/b2b/project/MoreMenu";
 import BoqOptionsTable from "@/components/b2b/project/BoqOptionsTable";
+import { copiedMessage } from "@/components/b2b/boq/BoqSourceField";
 import ActivityList from "@/components/b2b/project/ActivityList";
 import ProjectFormModal from "@/components/b2b/project/ProjectFormModal";
 import { AttachFilesModal, ContractModal, CustomerEditModal, EvidenceModal, NewBoqModal, NewQuoteModal, ReasonModal, RecordSurveyModal, ScheduleSurveyModal, WonModal } from "@/components/b2b/project/ActionModals";
@@ -90,6 +92,8 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
   const canEdit = hasRole(activeRoles, ...B2B_PROJECT_ROLES);
   // บัญชียืนยัน/ตีกลับงวดเงินในหน้านี้ (เข้าจากหน้ารอยืนยันรับเงิน ?tab=installments) — แบบหน้าลีด/งานบริการ O&M
   const canConfirm = hasRole(activeRoles, "account", "admin");
+  // บัญชีเปิดหน้าโครงการได้แต่ไม่มีสิทธิ์ดู BOQ — ไม่เห็นต้นทุน/Margin (API ไม่ส่งมา) และไม่มีลิงก์เข้าหน้าทำ BOQ
+  const canViewBoq = hasRole(activeRoles, ...B2B_BOQ_VIEW_ROLES);
   const searchParams = useSearchParams();
   const [p, setP] = useState<B2bProject | null>(null);
   const [loadError, setLoadError] = useState("");
@@ -166,8 +170,10 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
     const ok = await confirm({ title: `ไปขั้น "${stageLabel(to)}"`, message: text, confirmText: "ยืนยัน" });
     if (ok) await act({ action: "move", to_stage: to }, `โครงการอยู่ขั้น ${stageLabel(to)} แล้ว`);
   };
-  const createBoq = (v: { option_label: string; margin_pct: string }) => run(async () => {
-    const r = await apiFetch("/api/b2b/boqs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project_id: p.id, ...v }) }) as { id: number };
+  const createBoq = (v: { option_label: string; margin_pct: string; copy_from: string }) => run(async () => {
+    const r = await apiFetch("/api/b2b/boqs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project_id: p.id, ...v }) }) as { id: number; copied: { lines: number; inactive: number } | null };
+    const msg = copiedMessage(r.copied);
+    if (msg) toast({ message: msg, variant: r.copied?.inactive ? "warning" : "success" });
     router.push(`/b2b/boq/${r.id}`);
   });
   const addNote = async (message: string) => {
@@ -408,7 +414,7 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
     ? {
       key: "boq", state: "ok", title,
       detail: `${p.boqs.length > 1 ? `${p.boqs.length} ตัวเลือก · ล่าสุด ` : ""}${latestBoq.doc_no} Rev ${latestBoq.revision}${latestBoq.capacity_wp ? ` · ${formatTHB(latestBoq.capacity_wp / 1000, { decimals: 2 })} kWp` : ""}`,
-      action: <TextLink href={`/b2b/boq/${latestBoq.id}`}>เปิด BOQ</TextLink>,
+      action: canViewBoq && <TextLink href={`/b2b/boq/${latestBoq.id}`}>เปิด BOQ</TextLink>,
     }
     : { key: "boq", state: "todo", title, detail: emptyHint };
   /** ยังไม่มี BOQ — ข้อของใบเสนอราคายังไม่ถึง */
@@ -454,7 +460,7 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
     },
     3200: {
       summary: p.boqs.length ? `BOQ ${p.boqs.length} ตัวเลือก${estimateQuotes.length ? ` · ใบประมาณการ ${estimateQuotes.length} ใบ` : ""}` : "ข้ามขั้นนี้",
-      history: <><BoqOptionsTable boqs={p.boqs} canAdd={canEditBoq} onAdd={() => openModal("new_boq")} /><QuoteList title="ใบประมาณการ" quotes={estimateQuotes} canAdd={false} /></>,
+      history: <><BoqOptionsTable boqs={p.boqs} canView={canViewBoq} canAdd={canEditBoq} onAdd={() => openModal("new_boq")} /><QuoteList title="ใบประมาณการ" quotes={estimateQuotes} canAdd={false} /></>,
     },
     3300: {
       summary: p.survey_done_at
@@ -464,7 +470,7 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
     },
     3400: {
       summary: `BOQ ${p.boqs.length} ตัวเลือก${confirmQuotes.length ? ` · ใบยืนยัน ${confirmQuotes.length} ใบ` : ""}`,
-      history: <><BoqOptionsTable boqs={p.boqs} canAdd={canEditBoq} onAdd={() => openModal("new_boq")} /><QuoteList title="ใบเสนอราคายืนยัน" quotes={confirmQuotes} canAdd={false} /></>,
+      history: <><BoqOptionsTable boqs={p.boqs} canView={canViewBoq} canAdd={canEditBoq} onAdd={() => openModal("new_boq")} /><QuoteList title="ใบเสนอราคายืนยัน" quotes={confirmQuotes} canAdd={false} /></>,
     },
     3500: {
       summary: p.contract_value != null
@@ -525,7 +531,7 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
           </>,
           primary: canEdit && (!latestBoq ? newBoqButton : scheduleIsPrimary ? schedule(true) : qf.primary),
           body: <>
-            <BoqOptionsTable boqs={p.boqs} canAdd={canEditBoq} onAdd={() => openModal("new_boq")} />
+            <BoqOptionsTable boqs={p.boqs} canView={canViewBoq} canAdd={canEditBoq} onAdd={() => openModal("new_boq")} />
             <QuoteList title="ใบประมาณการ" quotes={estimateQuotes} canAdd={canEdit} onAdd={() => openModal("new_quote")} />
           </>,
         };
@@ -566,7 +572,7 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
           actions: canEdit && !canWin && wonButton(false),
           primary: canEdit && (canWin ? wonButton(true) : !latestBoq ? newBoqButton : qf.primary),
           body: <>
-            <BoqOptionsTable boqs={p.boqs} canAdd={canEditBoq} onAdd={() => openModal("new_boq")} />
+            <BoqOptionsTable boqs={p.boqs} canView={canViewBoq} canAdd={canEditBoq} onAdd={() => openModal("new_boq")} />
             <QuoteList title="ใบเสนอราคายืนยัน" quotes={confirmQuotes} canAdd={canEdit} onAdd={() => openModal("new_quote")} />
             {estimateQuotes.length > 0 && <QuoteList title="ใบประมาณการ (ขั้น 02)" quotes={estimateQuotes} canAdd={false} />}
           </>,
@@ -686,7 +692,7 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
     }
   } else if (kpiBoq) {
     if (kpiBoq.total_sale) kpis.push({ k: p.boqs.length > 1 ? "ราคาขาย · BOQ ล่าสุด" : "ราคาขาย (ก่อน VAT)", v: formatTHB(kpiBoq.total_sale, { decimals: 2 }) });
-    kpis.push({ k: "Margin", v: `${kpiBoq.margin_pct}%` });
+    if (kpiBoq.margin_pct != null) kpis.push({ k: "Margin", v: `${kpiBoq.margin_pct}%` });
   }
   const kpiValue = "tabular-nums whitespace-nowrap [&_small]:text-xxs [&_small]:font-normal [&_small]:text-gray-500";
 
@@ -831,7 +837,7 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
             </div>
           )}
 
-          {tab === "boq" && <BoqOptionsTable boqs={p.boqs} canAdd={canEditBoq} onAdd={() => openModal("new_boq")} />}
+          {tab === "boq" && <BoqOptionsTable boqs={p.boqs} canView={canViewBoq} canAdd={canEditBoq} onAdd={() => openModal("new_boq")} />}
           {tab === "installments" && installmentTable}
 
           {tab === "timeline" && (
@@ -886,7 +892,7 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
         <NewQuoteModal boqs={p.boqs} kindLabel={p.stage === B2B_STAGE.estimate ? "ประมาณการ" : "ยืนยัน"} saving={saving} error={error}
           onClose={() => setModal(null)} onConfirm={(id) => void createQuote(id)} />
       )}
-      {modal === "new_boq" && <NewBoqModal saving={saving} error={error} onClose={() => setModal(null)} onConfirm={(v) => void createBoq(v)} />}
+      {modal === "new_boq" && <NewBoqModal projectId={p.id} saving={saving} error={error} onClose={() => setModal(null)} onConfirm={(v) => void createBoq(v)} />}
       {modal === "schedule" && (
         <ScheduleSurveyModal initialDate={p.survey_done_at ? null : p.survey_date} initialSurveyor={p.surveyor_id} users={users}
           saving={saving} error={error} onClose={() => setModal(null)}

@@ -130,39 +130,53 @@ export function readBoqHeader(b: Record<string, unknown>, opts: { create?: boole
   };
 }
 
-export type IncomingLine =
-  | { kind: "material"; id: number | null; category_id: number; material_id: number; qty: number; refresh: boolean; note: string | null }
-  | { kind: "manual"; id: number | null; category_id: number; name: string; brand: string | null; model: string | null; unit: string;
-      price_basis: PriceBasis; unit_cost: number; qty: number; note: string | null };
+/** เพดานตัวเลข — กันพิมพ์เลขเกินช่อง DECIMAL ของตาราง (เดิมได้ 500) · แผน 20261016-02 ข้อ 4 */
+export const BOQ_MAX_QTY = 1_000_000;
+export const BOQ_MAX_MANUAL_COST = 100_000_000;
+/** ยอดรวมทั้งใบ (ต้นทุน/ขาย ก่อน VAT) — ช่อง total_* เป็น DECIMAL(16,2) · Margin สูงๆ คูณยอดขายได้หลายเท่า */
+export const BOQ_MAX_TOTAL = 1_000_000_000_000;
+/** หมายเหตุรายบรรทัด (b2b_boq_items.note NVARCHAR(500)) */
+export const BOQ_LINE_NOTE_MAX = 500;
 
-/** ตรวจโครงบรรทัดที่ส่งมาบันทึก — ราคาของบรรทัด Master ไม่รับจากหน้าจอ (server เติมจาก Master เอง) */
+export type IncomingLine = { id: number | null; category_id: number; qty: number; note: string | null; label: string } & (
+  | { kind: "material"; material_id: number; refresh: boolean }
+  | { kind: "manual"; name: string; brand: string | null; model: string | null; unit: string; price_basis: PriceBasis; unit_cost: number }
+);
+
+/** ตรวจโครงบรรทัดที่ส่งมาบันทึก — ราคาของบรรทัด Master ไม่รับจากหน้าจอ (server เติมจาก Master เอง)
+ *  ข้อความผิดพลาดบอก "หมวด X ลำดับ N" = เลข # ในตารางหมวดนั้นบนจอ (หน้าจอส่งบรรทัดตามลำดับที่แสดงในแต่ละหมวด) */
 export function readBoqLines(raw: unknown): { value: IncomingLine[] } | { error: string } {
   if (!Array.isArray(raw)) return { error: "รูปแบบรายการไม่ถูกต้อง" };
   if (raw.length > 2000) return { error: "รายการเกิน 2,000 บรรทัด" };
   const out: IncomingLine[] = [];
+  const seen = new Map<number, number>();
   for (const [i, l] of (raw as Record<string, unknown>[]).entries()) {
-    const n = i + 1;
     const category_id = Number(l?.category_id);
-    if (!Number.isInteger(category_id) || category_id < 1 || category_id > 25) return { error: `บรรทัดที่ ${n}: หมวดไม่ถูกต้อง` };
+    if (!Number.isInteger(category_id) || category_id < 1 || category_id > 25) return { error: `บรรทัดที่ ${i + 1}: หมวดไม่ถูกต้อง` };
+    const pos = (seen.get(category_id) ?? 0) + 1;
+    seen.set(category_id, pos);
+    const label = `หมวด ${category_id} ลำดับ ${pos}`;
     const qty = Number(l.qty);
-    if (!Number.isFinite(qty) || qty < 0) return { error: `บรรทัดที่ ${n}: จำนวนต้องเป็นตัวเลขตั้งแต่ 0 ขึ้นไป` };
+    if (!Number.isFinite(qty) || qty < 0) return { error: `${label}: จำนวนต้องเป็นตัวเลขตั้งแต่ 0 ขึ้นไป` };
+    if (qty > BOQ_MAX_QTY) return { error: `${label}: จำนวนเกิน ${BOQ_MAX_QTY.toLocaleString("en-US")}` };
     const id = Number.isInteger(Number(l.id)) && Number(l.id) > 0 ? Number(l.id) : null;
-    const note = text(l.note, 500);
+    const note = text(l.note, BOQ_LINE_NOTE_MAX);
     if (l.line_type === "material") {
       const material_id = Number(l.material_id);
-      if (!Number.isInteger(material_id) || material_id <= 0) return { error: `บรรทัดที่ ${n}: ไม่ได้เลือกรายการจาก Master` };
-      out.push({ kind: "material", id, category_id, material_id, qty, refresh: l.refresh_price === true, note });
+      if (!Number.isInteger(material_id) || material_id <= 0) return { error: `${label}: ไม่ได้เลือกรายการจาก Master` };
+      out.push({ kind: "material", id, category_id, material_id, qty, refresh: l.refresh_price === true, note, label });
     } else if (l.line_type === "manual") {
-      if (category_id < ADDON_MIN_CATEGORY) return { error: `บรรทัดที่ ${n}: หมวด ${category_id} ต้องเลือกจาก Master — ใส่ราคาเองได้เฉพาะหมวดเสริม 19–25` };
+      if (category_id < ADDON_MIN_CATEGORY) return { error: `${label}: หมวด ${category_id} ต้องเลือกจาก Master — ใส่ราคาเองได้เฉพาะหมวดเสริม 19–25` };
       const name = text(l.name, 300); const unit = text(l.unit, 30);
-      if (!name) return { error: `บรรทัดที่ ${n}: กรุณาระบุชื่อรายการ` };
-      if (!unit) return { error: `บรรทัดที่ ${n}: กรุณาระบุหน่วย` };
+      if (!name) return { error: `${label}: กรุณาระบุชื่อรายการ` };
+      if (!unit) return { error: `${label}: กรุณาระบุหน่วย` };
       const unit_cost = Number(l.unit_cost);
-      if (l.unit_cost === "" || l.unit_cost == null || !Number.isFinite(unit_cost) || unit_cost < 0) return { error: `บรรทัดที่ ${n}: กรุณาใส่ราคาต่อหน่วย` };
+      if (l.unit_cost === "" || l.unit_cost == null || !Number.isFinite(unit_cost) || unit_cost < 0) return { error: `${label}: กรุณาใส่ราคาต่อหน่วย` };
+      if (unit_cost > BOQ_MAX_MANUAL_COST) return { error: `${label}: ราคาต่อหน่วยเกิน ${BOQ_MAX_MANUAL_COST.toLocaleString("en-US")} บาท` };
       const price_basis = MANUAL_PRICE_BASIS.includes(l.price_basis as PriceBasis) ? (l.price_basis as PriceBasis) : "unit";
-      out.push({ kind: "manual", id, category_id, name, brand: text(l.brand, 150), model: text(l.model, 300), unit, price_basis, unit_cost, qty, note });
+      out.push({ kind: "manual", id, category_id, name, brand: text(l.brand, 150), model: text(l.model, 300), unit, price_basis, unit_cost, qty, note, label });
     } else {
-      return { error: `บรรทัดที่ ${n}: ชนิดบรรทัดไม่ถูกต้อง` };
+      return { error: `${label}: ชนิดบรรทัดไม่ถูกต้อง` };
     }
   }
   return { value: out };

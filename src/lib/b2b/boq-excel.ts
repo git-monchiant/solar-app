@@ -170,7 +170,9 @@ export async function buildBoqWorkbook(input: { header: BoqHeader; lines: BoqLin
       const pending = l.unit_cost == null;
       lineRow.set(l.key, r);
       set(`A${r}`, ++n).alignment = CENTER;
-      set(`B${r}`, `${l.name}${pending ? " (รอราคา)" : ""}`);
+      // หมายเหตุรายบรรทัด = comment ของช่องชื่อรายการ — ไม่เพิ่มคอลัมน์ ผังคงตรงกับไฟล์ต้นแบบ (แผน 20261016-02)
+      const nameCell = set(`B${r}`, `${l.name}${pending ? " (รอราคา)" : ""}`);
+      if (l.note) nameCell.note = l.note;
       set(`D${r}`, l.brand ?? "");
       set(`E${r}`, `${l.model ?? ""}${l.spec_watt && !wattInModel(l.model, l.spec_watt) ? `${l.model ? " · " : ""}${l.spec_watt} W` : ""}`);
       set(`G${r}`, l.price_basis === "system_wp" ? "Wp" : l.unit);

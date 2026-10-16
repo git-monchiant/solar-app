@@ -3,7 +3,7 @@ import { requireAnyActiveRole } from "@/lib/auth";
 import { getB2bDb, sql } from "@/lib/b2b/db";
 import { B2B_PRICE_EDIT_ROLES, readPriceBody } from "@/lib/b2b/materials";
 import { BOQ_EDITABLE_MAX_STAGE } from "@/lib/b2b/boq";
-import { storeTotals } from "@/lib/b2b/boq-server";
+import { BoqLimitError, storeTotals } from "@/lib/b2b/boq-server";
 import { logActivity } from "@/lib/b2b/project-server";
 
 // Purchase ใส่ / ปรับราคา — หลายแถวพร้อมกัน (กรอกต่อเนื่องในตาราง) + หมายเหตุชุดเดียว
@@ -65,7 +65,12 @@ export async function PUT(req: NextRequest) {
         const n = r.rowsAffected[0] ?? 0;
         if (!n) continue;
         filled += n;
-        await storeTotals(tx, b.id);
+        try {
+          await storeTotals(tx, b.id);
+        } catch (e) {
+          if (e instanceof BoqLimitError) throw new BoqLimitError(`ราคาที่ใส่ทำให้ยอดรวมใบ ${b.doc_no} เกินเพดาน — ตรวจราคาอีกครั้ง`);
+          throw e;
+        }
         if (b.project_id) await logActivity(tx, b.project_id, "boq_priced", { message: `Purchase ใส่ราคาแล้ว — ${b.doc_no} Rev ${b.revision} รับราคา ${n} บรรทัดที่รออยู่`, userId: gate.userId });
       }
     }
@@ -73,6 +78,7 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ ok: true, changed, filled });
   } catch (e) {
     try { await tx.rollback(); } catch {}
+    if (e instanceof BoqLimitError) return NextResponse.json({ error: e.message }, { status: 400 });
     console.error("PUT /api/b2b/materials/prices error:", e);
     return NextResponse.json({ error: e instanceof Error && e.message ? e.message : "บันทึกราคาไม่สำเร็จ" }, { status: 500 });
   }

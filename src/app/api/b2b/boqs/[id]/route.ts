@@ -3,7 +3,7 @@ import { requireAnyActiveRole } from "@/lib/auth";
 import { getB2bDb, sql } from "@/lib/b2b/db";
 import { B2B_BOQ_VIEW_ROLES, B2B_BOQ_ROLES, boqStageLocked, readBoqHeader, readBoqLines } from "@/lib/b2b/boq";
 import { stageLabel } from "@/lib/b2b/project";
-import { loadBoq, loadCategories, storeTotals } from "@/lib/b2b/boq-server";
+import { BoqLimitError, loadBoq, loadCategories, storeTotals } from "@/lib/b2b/boq-server";
 import { boqLockedByQuote } from "@/lib/b2b/quotation-server";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -73,14 +73,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       let enteredBy: number | null = null;
       if (l.kind === "material") {
         const mst = masters.get(l.material_id);
-        if (!mst) throw new UserError(`บรรทัดที่ ${i + 1}: ไม่พบรายการใน Master`);
+        if (!mst) throw new UserError(`${l.label}: ไม่พบรายการใน Master`);
         materialId = l.material_id;
         const keep = prev && prev.line_type === "material" && prev.material_id === l.material_id && !l.refresh;
         if (keep) {
           snap = { ...prev };
           if (prev.unit_cost == null && mst.unit_price != null) snap.unit_cost = mst.unit_price;   // รอราคา → Purchase ใส่แล้ว
         } else {
-          if (!mst.is_active && !prev) throw new UserError(`บรรทัดที่ ${i + 1}: "${mst.name}" ปิดใช้งานแล้ว เลือกใส่ใบใหม่ไม่ได้`);
+          if (!mst.is_active && !prev) throw new UserError(`${l.label}: "${mst.name}" ปิดใช้งานแล้ว เลือกใส่ใบใหม่ไม่ได้`);
           snap = { subgroup: mst.subgroup, name: mst.name, brand: mst.brand, model: mst.model, unit: mst.unit,
                    spec_watt: mst.spec_watt, price_basis: mst.price_basis, unit_cost: mst.unit_price };
         }
@@ -125,7 +125,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     await tx.commit();
   } catch (e) {
     try { await tx.rollback(); } catch {}
-    if (e instanceof UserError) return NextResponse.json({ error: e.message }, { status: 400 });
+    if (e instanceof UserError || e instanceof BoqLimitError) return NextResponse.json({ error: e.message }, { status: 400 });
     console.error("PUT /api/b2b/boqs/[id] error:", e);
     return NextResponse.json({ error: "บันทึกใบ BOQ ไม่สำเร็จ" }, { status: 500 });
   }

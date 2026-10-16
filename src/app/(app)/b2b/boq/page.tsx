@@ -6,7 +6,9 @@ import { useRouter } from "next/navigation";
 import Dropdown from "@/components/ui/Dropdown";
 import Header from "@/components/layout/Header";
 import Loading from "@/components/ui/Loading";
+import { useDialog } from "@/components/ui/Dialog";
 import { XIcon } from "@/components/ui/icons";
+import BoqSourceField, { copiedMessage } from "@/components/b2b/boq/BoqSourceField";
 import { apiFetch } from "@/lib/api";
 import { useActiveMenuItem } from "@/lib/hooks/useActiveModule";
 import { hasRole, useActiveRoles } from "@/lib/roles";
@@ -28,6 +30,7 @@ type Row = {
 
 export default function B2bBoqListPage() {
   const router = useRouter();
+  const { toast } = useDialog();
   const { item } = useActiveMenuItem();   // หัวเรื่อง = ชื่อเมนู (กติกา ui-rules)
   const { activeRoles } = useActiveRoles();
   const canUse = hasRole(activeRoles, ...B2B_BOQ_VIEW_ROLES);
@@ -37,7 +40,8 @@ export default function B2bBoqListPage() {
   const [search, setSearch] = useState("");
   const [creating, setCreating] = useState(false);
   // สร้าง BOQ ต้องเลือกโครงการ (แผน 20261015-07) — ชื่อโครงการ/ลูกค้า/ที่ตั้งดึงจากโครงการ
-  const [form, setForm] = useState({ project_id: "", option_label: "", margin_pct: "15" });
+  // copy_from = เริ่มจากใบอื่น (แผน 20261016-02) — ว่าง = ใบเปล่า
+  const [form, setForm] = useState({ project_id: "", option_label: "", margin_pct: "15", copy_from: "" });
   const [projects, setProjects] = useState<B2bProjectRow[] | null>(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -83,7 +87,9 @@ export default function B2bBoqListPage() {
   const create = async () => {
     setError(""); setSaving(true);
     try {
-      const r = await apiFetch("/api/b2b/boqs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) }) as { id: number };
+      const r = await apiFetch("/api/b2b/boqs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) }) as { id: number; copied: { lines: number; inactive: number } | null };
+      const msg = copiedMessage(r.copied);
+      if (msg) toast({ message: msg, variant: r.copied?.inactive ? "warning" : "success" });
       router.push(`/b2b/boq/${r.id}`);
     } catch (e) {
       setError(e instanceof Error && e.message ? e.message : "สร้างใบ BOQ ไม่สำเร็จ");
@@ -200,6 +206,8 @@ export default function B2bBoqListPage() {
                   placeholder={projects ? (projects.length ? "เลือกโครงการ" : "ยังไม่มีโครงการที่เปิดอยู่") : "กำลังโหลด…"}
                   options={(projects ?? []).filter((x) => x.stage <= B2B_STAGE.confirm).map((x) => ({ value: String(x.id), label: `${x.code} · ${x.name} · ${x.customer_name}` }))} />
                 <p className="mt-1 text-xs text-gray-400">ยังไม่มีโครงการ? <Link href="/b2b/projects?stage=sales" className="text-primary hover:underline">สร้างโครงการก่อน</Link></p></div>
+              <BoqSourceField projectId={form.project_id ? Number(form.project_id) : null} value={form.copy_from} labelCls="block text-xs font-semibold text-gray-500 mb-1"
+                onChange={(v, row) => setForm((f) => ({ ...f, copy_from: v, ...(row?.margin_pct != null ? { margin_pct: String(row.margin_pct) } : {}) }))} />
               <div><label className="block text-xs font-semibold text-gray-500 mb-1">ชื่อตัวเลือก</label>
                 <input className={fieldCls} value={form.option_label} onChange={(e) => setForm({ ...form, option_label: e.target.value })} placeholder="เช่น 998.64 kWp · Jinko 730" /></div>
               <div className="max-w-[12rem]"><label className="block text-xs font-semibold text-gray-500 mb-1">Margin (% ของราคาขาย)</label>

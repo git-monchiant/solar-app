@@ -112,10 +112,11 @@ export type B2bCustomer = { id: number; name: string; tax_id: string | null; bra
 
 export type B2bUserOption = { id: number; full_name: string };
 
-/** BOQ ของโครงการ 1 ตัวเลือก = Rev ล่าสุดของเลขที่นั้น */
+/** BOQ ของโครงการ 1 ตัวเลือก = Rev ล่าสุดของเลขที่นั้น
+ *  total_cost / margin_pct = null สำหรับ role ที่ไม่มีสิทธิ์ดู BOQ (บัญชี) — API หน้าโครงการตัดออก (แผน 20261016-02) */
 export type B2bProjectBoq = {
   id: number; doc_no: string; revision: number; option_label: string | null;
-  capacity_wp: number | null; total_cost: number | null; total_sale: number | null; margin_pct: number;
+  capacity_wp: number | null; total_cost: number | null; total_sale: number | null; margin_pct: number | null;
   pending_lines: number; updated_at: string; updated_by_name: string | null;
 };
 
