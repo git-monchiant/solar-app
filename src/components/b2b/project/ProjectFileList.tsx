@@ -1,6 +1,7 @@
 "use client";
 
 import { formatThaiDate } from "@/lib/utils/formatters";
+import { atLocal } from "@/lib/b2b/project-view";
 import type { B2bProjectFile } from "@/lib/b2b/project";
 
 // รูป/ไฟล์ของโครงการในการ์ดขั้น (แผน 20261015-10 — เริ่มจากผลสำรวจ) · กดชื่อเปิดแท็บใหม่ (ผ่าน API ที่ตรวจสิทธิ์) · × ลบทีละไฟล์
@@ -27,7 +28,7 @@ export default function ProjectFileList({ title, files, canEdit, onAdd, onView, 
         <ul className="flex flex-wrap gap-2 p-3">
           {files.map((f) => (
             <li key={f.id} className="flex max-w-full items-center rounded-lg border border-gray-200 bg-gray-50"
-              title={`${f.label} · ${formatThaiDate(f.created_at)}${f.created_by_name ? ` · ${f.created_by_name}` : ""}${f.note ? ` · ${f.note}` : ""}`}>
+              title={`${f.label} · ${formatThaiDate(atLocal(f.created_at))}${f.created_by_name ? ` · ${f.created_by_name}` : ""}${f.note ? ` · ${f.note}` : ""}`}>
               <button type="button" onClick={() => onView(f)} style={{ minHeight: 0 }}
                 className="max-w-[16rem] truncate px-2 py-1 text-xs text-primary hover:underline">
                 {f.mime === "application/pdf" ? "📄" : "🖼"} {f.label}

@@ -2,6 +2,7 @@
 
 import { Fragment, type ReactNode } from "react";
 import { formatThaiDate, formatTHB } from "@/lib/utils/formatters";
+import { atLocal } from "@/lib/b2b/project-view";
 import {
   B2B_FLOW, INSTALLMENT_STATUS_LABEL, INSTALLMENT_TRIGGER_LABEL, type B2bInstallment, type B2bProject, type InstallmentStatus,
 } from "@/lib/b2b/project";
@@ -144,7 +145,7 @@ export default function ExecutionBoard({ p, stateOf, dateOf, nextKind, canExec, 
   const instItem = (it: B2bInstallment) => {
     const tone: Tone = it.status === "paid" ? "ok" : it.status === "submitted" ? "pending" : it.status === "due" ? "now" : "wait";
     const trig = it.trigger_key ? INSTALLMENT_TRIGGER_LABEL[it.trigger_key] : null;
-    const state = it.status === "paid" ? `รับแล้ว${it.confirmed_at ? ` ${formatThaiDate(it.confirmed_at)}` : ""}`
+    const state = it.status === "paid" ? `รับแล้ว${it.confirmed_at ? ` ${formatThaiDate(atLocal(it.confirmed_at))}` : ""}`
       : it.status === "pending" ? (trig ? `ถึงกำหนดเมื่อ${trig}` : "ยังไม่ถึง") : INSTALLMENT_STATUS_LABEL[it.status];
     return (
       <Item key={it.id} tone={tone} title={`งวด ${it.no} · ${it.pct}%`}
@@ -175,7 +176,7 @@ export default function ExecutionBoard({ p, stateOf, dateOf, nextKind, canExec, 
     const st = stateOf(step);
     if (st === "active") return { tone: "bg-active-light text-active-dark shadow-[inset_0_3px_0_var(--active)]", sub: "ตอนนี้" };
     if (st === "stopped") return { tone: "bg-gray-100 text-gray-600", sub: "หยุดที่นี่" };
-    if (st === "done") { const d = dateOf(step); return { tone: "bg-gray-50 text-emerald-700", sub: d ? `เสร็จ ${formatThaiDate(d, { year: false })}` : "เสร็จแล้ว" }; }
+    if (st === "done") { const d = dateOf(step); return { tone: "bg-gray-50 text-emerald-700", sub: d ? `เสร็จ ${formatThaiDate(atLocal(d), { year: false })}` : "เสร็จแล้ว" }; }
     return { tone: "bg-gray-50 text-gray-500", sub: "" };
   };
 

@@ -20,6 +20,10 @@ export function stepPassedAt(p: B2bProject, step: number): string | null {
 /** ขั้นที่ไม่เคยเข้าเลย — ข้ามไปนัดสำรวจ (ข้าม 02) · ข้ามสำรวจ (ข้าม 03) */
 export const stepSkipped = (p: B2bProject, step: number) => !p.activities.some((a) => isMove(a) && a.to_stage === step);
 
+/** เวลาจากฐาน (datetimeoffset) → Date — ส่งให้ formatThaiDate เป็น Date จะไม่ถูกตัดเหลือวันที่ UTC
+ *  (ส่งเป็นข้อความ = ตัดเหลือ YYYY-MM-DD ก่อน · เหตุการณ์ 00:00–06:59 น. เวลาไทยเคยขึ้นเป็นเมื่อวาน — แก้ 16 ต.ค. 69) · คอลัมน์ DATE ล้วนไม่ต้องใช้ */
+export const atLocal = (iso: string | null | undefined): Date | null => (iso ? new Date(iso) : null);
+
 /** จำนวนวันตามปฏิทินไทยนับจาก iso ถึง now (0 = วันนี้) */
 export function daysSince(iso: string, now: number): number {
   const day = (t: number) => Math.floor((t + 7 * 3_600_000) / 86_400_000);

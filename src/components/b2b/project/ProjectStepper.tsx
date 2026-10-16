@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { formatThaiDate } from "@/lib/utils/formatters";
+import { atLocal } from "@/lib/b2b/project-view";
 
 // แถบขั้นของหน้าโครงการ (แผน 20261016-01 แบบ A) — แทนรางขั้นซ้าย + การ์ดขั้นเรียงแนวตั้งเดิม
 //   จอใหญ่: แถบแนวนอนแบ่ง 2 ช่วง (ขาย 01–05 / ดำเนินโครงการ 06–09) · กดขั้นที่เสร็จ = ดูรายละเอียดขั้นนั้น · ชี้ขั้นที่ล็อก = บอกว่าปลดเมื่อไร
@@ -29,7 +30,7 @@ const SALES_MAX = 3500;
 function subText(s: StepView) {
   if (s.state === "active") return "ตอนนี้";
   if (s.state === "stopped") return "หยุดที่นี่";
-  if (s.state === "done") return s.skipped ? "ข้าม" : s.date ? formatThaiDate(s.date, { year: false }) : "";
+  if (s.state === "done") return s.skipped ? "ข้าม" : s.date ? formatThaiDate(atLocal(s.date), { year: false }) : "";
   return "";
 }
 

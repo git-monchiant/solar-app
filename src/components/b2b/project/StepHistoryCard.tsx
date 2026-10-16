@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { formatThaiDate } from "@/lib/utils/formatters";
+import { atLocal } from "@/lib/b2b/project-view";
 
 // ดูขั้นที่ผ่านมา (กดจากแถบขั้น · แผน 20261016-01) — แทนการพับ/กางการ์ดขั้นแบบเดิม
 //   stopped = ขั้นที่แพ้งาน/ยกเลิกไป (แสดงแทนการ์ดขั้นต่อไป ไม่มีปุ่มกลับ)
@@ -15,7 +16,7 @@ export default function StepHistoryCard({ no, label, stopped, date, skipped, sum
   onBack?: () => void;
   children?: ReactNode;
 }) {
-  const eyebrow = stopped ? "หยุดที่ขั้นนี้" : skipped ? "ข้ามขั้นนี้" : date ? `เสร็จ ${formatThaiDate(date)}` : "เสร็จแล้ว";
+  const eyebrow = stopped ? "หยุดที่ขั้นนี้" : skipped ? "ข้ามขั้นนี้" : date ? `เสร็จ ${formatThaiDate(atLocal(date))}` : "เสร็จแล้ว";
   return (
     <section className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
       <div className={`flex items-center gap-3 px-4 md:px-5 py-3 border-b border-gray-100 bg-gradient-to-b ${stopped ? "from-gray-50" : "from-emerald-50"} to-white`}>

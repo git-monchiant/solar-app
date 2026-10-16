@@ -1,6 +1,7 @@
 "use client";
 
 import { formatThaiDate, formatTHB } from "@/lib/utils/formatters";
+import { atLocal } from "@/lib/b2b/project-view";
 import {
   INSTALLMENT_STATUS_LABEL, INSTALLMENT_STATUS_TONE, INSTALLMENT_TRIGGER_LABEL, type B2bInstallment,
 } from "@/lib/b2b/project";
@@ -54,7 +55,7 @@ export default function InstallmentTable({ items, contractValue, vatPct, canEdit
                   <td className="px-3 py-2">
                     <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap ${INSTALLMENT_STATUS_TONE[it.status]}`}>{INSTALLMENT_STATUS_LABEL[it.status]}</span>
                     {it.status === "submitted" && <div className="text-xs text-gray-500 mt-0.5">ลูกค้าชำระ {formatThaiDate(it.received_date)} · แนบโดย {it.submitted_by_name ?? "—"}</div>}
-                    {it.status === "paid" && <div className="text-xs text-gray-500 mt-0.5">ยืนยัน {formatThaiDate(it.confirmed_at)}{it.confirmed_by_name ? ` · ${it.confirmed_by_name}` : ""}</div>}
+                    {it.status === "paid" && <div className="text-xs text-gray-500 mt-0.5">ยืนยัน {formatThaiDate(atLocal(it.confirmed_at))}{it.confirmed_by_name ? ` · ${it.confirmed_by_name}` : ""}</div>}
                     {it.status === "due" && it.reject_note && <div className="text-xs text-red-600 mt-0.5">บัญชีตีกลับ: {it.reject_note}</div>}
                     {it.submit_note && it.status !== "due" && <div className="text-xs text-gray-400 mt-0.5 max-w-[16rem] break-words">{it.submit_note}</div>}
                   </td>

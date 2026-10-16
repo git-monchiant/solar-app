@@ -19,7 +19,7 @@ import {
 } from "@/lib/b2b/project";
 import { B2B_BOQ_VIEW_ROLES } from "@/lib/b2b/boq";
 import { QUOTE_STATUS_LABEL, QUOTE_STATUS_TONE, editableStatus, tierOfStatus } from "@/lib/b2b/quotation";
-import { reviewedTiers, stageEnteredAt, stepPassedAt, stepSkipped } from "@/lib/b2b/project-view";
+import { atLocal, reviewedTiers, stageEnteredAt, stepPassedAt, stepSkipped } from "@/lib/b2b/project-view";
 import StageBadge from "@/components/b2b/project/StageBadge";
 import ProjectStepper, { StepProgressMobile, type StepState, type StepView } from "@/components/b2b/project/ProjectStepper";
 import NextStepCard, { TierBar, type NextItem } from "@/components/b2b/project/NextStepCard";
@@ -615,7 +615,7 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
               action: canEdit && <button type="button" className={`${btnSm} bg-active text-white hover:bg-active-dark`} onClick={() => attachEvidence(it)}>แนบหลักฐาน</button> });
           } else if (it.status === "submitted") {
             items.push({ key: `i${it.id}`, state: "pending", title: `รอบัญชียืนยันเงินงวด ${it.no}`,
-              detail: `${formatTHB(it.total, { decimals: 2 })} บาท · แนบหลักฐาน ${formatThaiDate(it.submitted_at)}`,
+              detail: `${formatTHB(it.total, { decimals: 2 })} บาท · แนบหลักฐาน ${formatThaiDate(atLocal(it.submitted_at))}`,
               action: canConfirm && <button type="button" className={`${btnSm} bg-emerald-500 text-white hover:bg-emerald-600`} disabled={instBusy === it.id} onClick={() => void confirmPaid(it)}>ยืนยันรับเงิน</button> });
           }
         }
@@ -798,13 +798,13 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
         <main ref={contentRef} className="flex-1 min-w-0 p-3 md:p-4 space-y-3 pb-6 scroll-mt-[calc(var(--hdr,124px)+12px)]">
           {tab === "workflow" && p.stage === B2B_STAGE.closed && (
             <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-              <b>ปิดโครงการแล้ว</b> — ส่งมอบงานและรับเงินครบทุกงวด{p.closed_at ? ` · ${formatThaiDate(p.closed_at)}` : ""}
+              <b>ปิดโครงการแล้ว</b> — ส่งมอบงานและรับเงินครบทุกงวด{p.closed_at ? ` · ${formatThaiDate(atLocal(p.closed_at))}` : ""}
               {p.om_contract_id != null && <> · <Link href={`/b2b/om/contracts/${p.om_contract_id}`} className="font-semibold underline">สัญญา O&amp;M →</Link></>}
             </div>
           )}
           {tab === "workflow" && stopped && (
             <div className={`rounded-xl border px-4 py-3 text-sm ${p.stage === B2B_STAGE.lost ? "border-red-200 bg-red-50 text-red-700" : "border-gray-200 bg-white text-gray-600"}`}>
-              <b>{stageLabel(p.stage)}</b> ตอนอยู่ขั้น {stageLabel(at)}{p.closed_at ? ` · ${formatThaiDate(p.closed_at)}` : ""}
+              <b>{stageLabel(p.stage)}</b> ตอนอยู่ขั้น {stageLabel(at)}{p.closed_at ? ` · ${formatThaiDate(atLocal(p.closed_at))}` : ""}
               {p.close_reason && <div className="mt-0.5">{p.close_reason}</div>}
             </div>
           )}

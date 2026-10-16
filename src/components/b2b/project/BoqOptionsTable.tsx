@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { formatThaiDate, formatTHB } from "@/lib/utils/formatters";
+import { atLocal } from "@/lib/b2b/project-view";
 import { perWp } from "@/lib/b2b/boq-calc";
 import type { B2bProjectBoq } from "@/lib/b2b/project";
 
@@ -57,7 +58,7 @@ export default function BoqOptionsTable({ boqs, onAdd, canAdd, canView, addAbove
                   <td className={`${num} font-medium`}>{b.total_sale ? formatTHB(b.total_sale, { decimals: 0 }) : "—"}</td>
                   {canView && <td className={num}>{b.margin_pct != null ? `${b.margin_pct}%` : "—"}</td>}
                   <td className={num}>{b.capacity_wp && b.total_sale ? perWp(b.total_sale, b.capacity_wp).toFixed(2) : "—"}</td>
-                  <td className="px-3 py-2 whitespace-nowrap text-gray-500">{formatThaiDate(b.updated_at)}{b.updated_by_name ? <div className="text-xs text-gray-400">{b.updated_by_name}</div> : null}</td>
+                  <td className="px-3 py-2 whitespace-nowrap text-gray-500">{formatThaiDate(atLocal(b.updated_at))}{b.updated_by_name ? <div className="text-xs text-gray-400">{b.updated_by_name}</div> : null}</td>
                 </tr>
               ))}
             </tbody>

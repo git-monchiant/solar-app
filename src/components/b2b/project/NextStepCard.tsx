@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { formatThaiDate } from "@/lib/utils/formatters";
-import { daysSince, STAGE_AGING_WARN_DAYS } from "@/lib/b2b/project-view";
+import { atLocal, daysSince, STAGE_AGING_WARN_DAYS } from "@/lib/b2b/project-view";
 
 // การ์ด "ขั้นต่อไป" บนสุดของหน้าโครงการ (แผน 20261016-01 แบบ A) — บอกงานถัดไป + เช็กลิสต์ว่ายังขาดอะไร + อยู่ขั้นนี้กี่วัน
 //   ปุ่มหลัก (primary) ซ่อนบนมือถือ — หน้าแม่วางไว้แถบท้ายจอแทน · ปุ่มรอง (actions) อยู่ท้ายการ์ดทุกจอ
@@ -52,7 +52,7 @@ export default function NextStepCard({ no, label, title, sub, enteredAt, items, 
         {days != null && (
           <div className="shrink-0 text-right leading-tight" title={late ? `อยู่ขั้นนี้เกิน ${STAGE_AGING_WARN_DAYS} วัน` : undefined}>
             <div className={`text-base font-medium ${late ? "text-amber-600" : "text-gray-800"}`}>{days === 0 ? "วันนี้" : `${days} วัน`}</div>
-            <div className="text-xxs text-gray-400 whitespace-nowrap">เข้าขั้นนี้ {formatThaiDate(enteredAt, { year: false })}</div>
+            <div className="text-xxs text-gray-400 whitespace-nowrap">เข้าขั้นนี้ {formatThaiDate(atLocal(enteredAt), { year: false })}</div>
           </div>
         )}
       </div>
