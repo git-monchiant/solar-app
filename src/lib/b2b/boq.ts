@@ -55,7 +55,7 @@ export type BoqHeader = {
   updated_by_name: string | null;
 };
 
-/** BOQ ของโครงการแก้/ออก Revision ได้เฉพาะตอนโครงการยังอยู่ขั้นขาย (โอกาสขาย → ราคายืนยัน) — กติกาเดียวกับ canEditBoq ของหน้าโครงการ
+/** BOQ ของโครงการแก้/ออก Revision ได้เฉพาะตอนโครงการยังอยู่ขั้นขาย (โครงการใหม่ → ราคายืนยัน) — กติกาเดียวกับ canEditBoq ของหน้าโครงการ
  *  ได้งานแล้ว BOQ ที่ได้งาน = งบโครงการ (Purchase/บัญชีอ้าง) · แพ้/ยกเลิก ให้เปิดโครงการกลับก่อน (ทบทวน BOQ 15 ต.ค.) */
 export const BOQ_EDITABLE_MAX_STAGE = 3400;
 export const boqStageLocked = (projectStage: number | null | undefined) => projectStage != null && projectStage > BOQ_EDITABLE_MAX_STAGE;

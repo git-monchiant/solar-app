@@ -14,7 +14,7 @@ export const B2B_PROJECT_VIEW_ROLES = ["b2b", "b2b_review1", "b2b_review2", "b2b
 export const B2B_INSTALLMENT_VIEW_ROLES = B2B_PROJECT_VIEW_ROLES;
 
 export const B2B_STAGE = {
-  lead: 3100,       // โอกาสขาย
+  lead: 3100,       // โครงการใหม่ (เดิมชื่อ "โอกาสขาย" — เปลี่ยน 16 ต.ค. 69)
   estimate: 3200,   // ราคาประมาณการ (BOQ จาก Google Maps)
   survey: 3300,     // สำรวจหน้างาน
   confirm: 3400,    // ราคายืนยัน / ต่อรอง
@@ -30,7 +30,7 @@ export const B2B_STAGE = {
 
 /** ขั้นบนรางซ้าย / การ์ดขั้น — ลำดับเดียวกับเลข */
 export const B2B_FLOW = [
-  { step: 3100, label: "โอกาสขาย", short: "โอกาส" },
+  { step: 3100, label: "โครงการใหม่", short: "โครงการใหม่" },
   { step: 3200, label: "ราคาประมาณการ", short: "ประมาณการ" },
   { step: 3300, label: "สำรวจหน้างาน", short: "สำรวจ" },
   { step: 3400, label: "ราคายืนยัน / ต่อรอง", short: "ราคายืนยัน" },

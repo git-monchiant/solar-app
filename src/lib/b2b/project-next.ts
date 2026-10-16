@@ -53,11 +53,11 @@ export function projectNext(r: Pick<B2bProjectRow, "stage" | "sub" | "survey_dat
       const passed = tier ? tier - 1 : off === 60 || off === 70 ? 3 : 0;
       const subs = ["BOQ", "จัดทำใบ", `อนุมัติ ${passed}/3`, "ส่งลูกค้า"];
       if (off == null) return r.boq_count > 0 ? n(`จัดทำ${doc}`, "us", subs, 1) : n(est ? "จัดทำ BOQ ราคาประมาณการ" : "จัดทำ BOQ ตามผลสำรวจ", "us", subs, 0);
-      if (off === 10) return n(`ส่ง${doc}เพื่อขออนุมัติ`, "us", subs, 1);
+      if (off === 10) return n(`ส่ง${doc}เพื่อขออนุมัติ`, "us", subs, 2);   // ร่างเสร็จแล้ว — ขั้นย่อยตอนนี้คือส่งเข้าอนุมัติ
       if (tier) return n(`รอผู้ตรวจสอบลำดับที่ ${tier} พิจารณาอนุมัติ`, "review", subs, 2, { who: `ผู้ตรวจสอบลำดับที่ ${tier}` });
       if (off === 50) return n(`แก้ไข${doc}ตามที่ผู้ตรวจสอบส่งกลับ และส่งขออนุมัติใหม่`, "us", subs, 1, { back: 1 });
       if (off === 60) return n(`ส่ง${doc}ให้ลูกค้า`, "us", subs, 3);
-      return est ? n("รอลูกค้ายืนยันความสนใจ เพื่อนัดสำรวจหน้างาน", "customer", subs, 4) : n("รอลูกค้าตอบรับใบเสนอราคา", "customer", subs, 4);
+      return est ? n("รอลูกค้ายืนยันความสนใจ → นัดสำรวจหน้างาน", "customer", subs, 4) : n("รอลูกค้าตอบรับใบเสนอราคา", "customer", subs, 4);
     }
     case B2B_STAGE.survey: {
       const subs = ["นัดหมาย", "สำรวจหน้างาน", "บันทึกผล"];

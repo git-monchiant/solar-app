@@ -7,7 +7,8 @@ import Header from "@/components/layout/Header";
 import Loading from "@/components/ui/Loading";
 import { useDialog } from "@/components/ui/Dialog";
 import { useActiveModuleKey } from "@/lib/hooks/useActiveModule";
-import { ChevronLeftIcon } from "@/components/ui/icons";
+import { ChevronLeftIcon, ClockIcon } from "@/components/ui/icons";
+import Timeline from "@/components/ui/Timeline";
 import { apiFetch, getUserContextHeaders } from "@/lib/api";
 import { hasRole, useActiveRoles } from "@/lib/roles";
 import { formatThaiDate, formatTHB } from "@/lib/utils/formatters";
@@ -27,7 +28,7 @@ import ExecutionBoard from "@/components/b2b/project/ExecutionBoard";
 import MoreMenu, { type MoreItem } from "@/components/b2b/project/MoreMenu";
 import BoqOptionsTable from "@/components/b2b/project/BoqOptionsTable";
 import { copiedMessage } from "@/components/b2b/boq/BoqSourceField";
-import ActivityList from "@/components/b2b/project/ActivityList";
+import B2bActivityItem from "@/components/b2b/project/B2bActivityItem";
 import ProjectFormModal from "@/components/b2b/project/ProjectFormModal";
 import { AttachFilesModal, ContractModal, CustomerEditModal, EvidenceModal, NewBoqModal, NewQuoteModal, ReasonModal, RecordSurveyModal, ScheduleSurveyModal, WonModal } from "@/components/b2b/project/ActionModals";
 import ProjectFileList from "@/components/b2b/project/ProjectFileList";
@@ -49,7 +50,7 @@ import {
 
 type Tab = "workflow" | "info" | "boq" | "installments" | "timeline";
 type Modal = null | "edit" | "customer" | "lost" | "cancel" | "reopen" | "back_survey" | "schedule" | "record" | "new_boq" | "new_quote"
-  | "won" | "contract" | "evidence" | "reject_inst" | "milestone" | "milestone_edit" | "permit" | "om_contract" | "survey_files";
+  | "won" | "contract" | "evidence" | "reject_inst" | "milestone" | "milestone_edit" | "permit" | "om_contract" | "survey_files" | "note";
 
 /** ชี้ขั้นที่ยังล็อกบนแถบขั้น → บอกว่าปลดเมื่อไร */
 const LOCKED_HINT: Record<number, string> = {
@@ -176,14 +177,6 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
     if (msg) toast({ message: msg, variant: r.copied?.inactive || r.copied?.om_reset ? "warning" : "success" });
     router.push(`/b2b/boq/${r.id}`);
   });
-  const addNote = async (message: string) => {
-    try {
-      const r = await apiFetch(`/api/b2b/projects/${p.id}/actions`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "note", message }) });
-      setP(r); return true;
-    } catch (e) {
-      toast({ message: e instanceof Error && e.message ? e.message : "บันทึกไม่สำเร็จ", variant: "danger" }); return false;
-    }
-  };
 
   // กดขั้นบนแถบ: ขั้นที่เสร็จ = ดูย้อนหลัง · ขั้นปัจจุบัน = กลับ · ขั้น 06–09 = เลื่อนไปตารางงานคู่ขนาน
   const selectStep = (step: number) => {
@@ -385,24 +378,24 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
     const open = (text: string) => q && <Link href={`/b2b/quotations/${q.id}`} className={btnPrimary}>{text}</Link>;
     const items: NextItem[] = [
       {
-        key: "quote", state: !q || editableStatus(q.status) ? "todo" : "ok", title: `ออกใบ${kindLabel}`,
+        key: "quote", state: !q || editableStatus(q.status) ? "todo" : "ok", title: `จัดทำใบ${kindLabel}`,
         detail: q
           ? <>{q.doc_no} Rev {q.revision} <span className={`ml-1 inline-flex rounded-full px-2 text-xxs font-bold ${QUOTE_STATUS_TONE[q.status]}`}>{QUOTE_STATUS_LABEL[q.status]}</span>{quotes.length > 1 ? ` · ทั้งหมด ${quotes.length} ใบ` : ""}</>
           : "เลือก BOQ ตัวเลือกที่จะเสนอ",
         action: q ? <TextLink href={`/b2b/quotations/${q.id}`}>เปิดใบ</TextLink> : undefined,
       },
       {
-        key: "review", state: passed === 3 ? "ok" : tier ? "pending" : "wait", title: "ผู้ตรวจสอบ 3 ชั้นอนุมัติ",
-        detail: tier ? `รอผู้ตรวจสอบชั้น ${tier}` : q?.status === "changes_required" ? "ส่งกลับแก้ — แก้ใบแล้วส่งอนุมัติใหม่" : undefined,
+        key: "review", state: passed === 3 ? "ok" : tier ? "pending" : "wait", title: "ผู้ตรวจสอบ 3 ลำดับพิจารณาอนุมัติ",
+        detail: tier ? `รอผู้ตรวจสอบลำดับที่ ${tier}` : q?.status === "changes_required" ? "ถูกส่งกลับแก้ไข — แก้ไขแล้วส่งขออนุมัติใหม่" : undefined,
         action: <TierBar done={passed} />,
       },
       { key: "sent", state: sent ? "ok" : "wait", title: "ส่งลูกค้า", detail: sent ? "ส่งแล้ว — รอลูกค้าตอบรับ" : "อนุมัติครบแล้วส่งจากหน้าใบเสนอราคา" },
     ];
     const title = sent ? null
-      : !q ? `ต่อไป: ออกใบ${kindLabel}`
-      : q.status === "changes_required" ? `ต่อไป: แก้ใบ${kindLabel}ที่ถูกส่งกลับ แล้วส่งอนุมัติใหม่`
-      : q.status === "draft" ? `ต่อไป: ส่งใบ${kindLabel}ให้ผู้ตรวจสอบอนุมัติ`
-      : tier ? `รอผู้ตรวจสอบชั้น ${tier} อนุมัติใบ${kindLabel}`
+      : !q ? `ต่อไป: จัดทำใบ${kindLabel}`
+      : q.status === "changes_required" ? `ต่อไป: แก้ไขใบ${kindLabel}ตามที่ผู้ตรวจสอบส่งกลับ และส่งขออนุมัติใหม่`
+      : q.status === "draft" ? `ต่อไป: ส่งใบ${kindLabel}เพื่อขออนุมัติ`
+      : tier ? `รอผู้ตรวจสอบลำดับที่ ${tier} พิจารณาอนุมัติใบ${kindLabel}`
       : q.status === "approved" ? `ต่อไป: ส่งใบ${kindLabel}ให้ลูกค้า` : null;
     const primary = !canEdit || sent ? null
       : !q ? (p.boqs.length > 0 && <button type="button" className={btnPrimary} onClick={() => openModal("new_quote")}>+ สร้างใบเสนอราคา</button>)
@@ -511,7 +504,7 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
     switch (p.stage) {
       case B2B_STAGE.lead:
         return {
-          title: "ต่อไป: ทำราคาประมาณการ หรือนัดสำรวจ",
+          title: "ต่อไป: จัดทำราคาประมาณการ หรือนัดสำรวจหน้างาน",
           sub: "ลูกค้าให้เข้าดูหน้างานได้เลย → ข้ามไปนัดสำรวจ",
           inner: infoGrid,
           actions: canEdit && <button type="button" className={btn} onClick={() => openModal("schedule")}>ข้ามไปนัดสำรวจ</button>,
@@ -522,7 +515,7 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
         const scheduleIsPrimary = !!latestBoq && !qf.primary;
         const schedule = (primary: boolean) => <button type="button" className={primary ? btnPrimary : btn} onClick={() => openModal("schedule")}>ลูกค้าสนใจ · นัดสำรวจ</button>;
         return {
-          title: !latestBoq ? "ต่อไป: ทำ BOQ ราคาประมาณการ" : qf.title ?? "ต่อไป: ลูกค้าสนใจ → นัดสำรวจเพื่อยืนยันราคา",
+          title: !latestBoq ? "ต่อไป: จัดทำ BOQ ราคาประมาณการ" : qf.title ?? "รอลูกค้ายืนยันความสนใจ → นัดสำรวจหน้างาน",
           sub: "ลูกค้าสนใจแล้วนัดสำรวจได้เลย ไม่ต้องรอครบทุกข้อ",
           items: [boqItem("BOQ ราคาประมาณการ", "ทำจาก Google Maps · เพิ่มได้หลายขนาด"), ...afterBoq(qf.items)],
           actions: canEdit && (sentQuotes.length > 0 || !scheduleIsPrimary) && <>
@@ -540,7 +533,7 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
         const hasDate = !!p.survey_date;
         const future = p.sub === B2B_SURVEY_SUB.scheduled;
         return {
-          title: !hasDate ? "ต่อไป: นัดวันสำรวจ" : future ? `นัดสำรวจ ${formatThaiDate(p.survey_date, { weekday: true })}` : "ต่อไป: บันทึกผลสำรวจ",
+          title: !hasDate ? "ต่อไป: นัดหมายสำรวจหน้างาน" : future ? `สำรวจหน้างาน ${formatThaiDate(p.survey_date, { weekday: true })}` : "ต่อไป: บันทึกผลการสำรวจหน้างาน",
           sub: hasDate ? "สำรวจแล้วบันทึกผล แนบรูป/ไฟล์ไปพร้อมกันได้ → ไปขั้นราคายืนยัน" : undefined,
           items: [
             { key: "date", state: hasDate ? "ok" : "todo", title: "นัดวันสำรวจ",
@@ -559,7 +552,7 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
         const qf = quoteFlow(confirmQuotes, "เสนอราคายืนยัน");
         const canWin = sentQuotes.length > 0;
         return {
-          title: canWin ? "ต่อไป: ลูกค้าตอบรับ → กด \"ได้งาน\"" : !latestBoq ? "ต่อไป: ทำ BOQ ตามผลสำรวจ" : qf.title ?? "ต่อไป: ออกใบเสนอราคายืนยัน",
+          title: canWin ? "รอลูกค้าตอบรับใบเสนอราคา → กด \"ได้งาน\"" : !latestBoq ? "ต่อไป: จัดทำ BOQ ตามผลสำรวจ" : qf.title ?? "ต่อไป: จัดทำใบเสนอราคายืนยัน",
           sub: "ลูกค้าต่อรอง = ออก Rev ใหม่ของใบ",
           items: [
             p.survey_done_at
@@ -581,8 +574,8 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
       case B2B_STAGE.won: {
         const i1 = p.installments.find((x) => x.no === 1) ?? null;
         return {
-          title: !p.contract_date ? "ต่อไป: บันทึกสัญญา / PO" : i1?.status === "due" ? "ต่อไป: แนบหลักฐานรับเงินงวด 1"
-            : i1?.status === "submitted" ? "รอบัญชียืนยันเงินงวด 1" : "รอรับเงินงวด 1",
+          title: !p.contract_date ? "ต่อไป: บันทึกสัญญา / ใบสั่งซื้อ (PO)" : i1?.status === "due" ? "ต่อไป: แนบหลักฐานการรับชำระงวดที่ 1"
+            : i1?.status === "submitted" ? "รอฝ่ายบัญชียืนยันการรับชำระงวดที่ 1" : "รอรับชำระงวดที่ 1",
           sub: "บัญชียืนยันเงินงวด 1 แล้ว โครงการเข้าขั้นขออนุญาต + จัดซื้อเอง",
           items: [
             { key: "won", state: "ok", title: "ได้งาน",
@@ -709,9 +702,22 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
     ],
   ];
 
+  // Activity Log แบบหน้าลีด B2C (ผู้ใช้สั่ง 16 ต.ค. 69): เปลือก ui/Timeline (กลุ่มวัน Today / Yesterday / OCT 14) + แถว B2bActivityItem
+  //   บันทึกข้อความผ่านปุ่ม Note → ป๊อปอัป (เดิมเป็นช่องพิมพ์ + ชิปกรองบนแผง — B2C ไม่มี เอาออก)
+  const activityTimeline = (
+    <Timeline items={p.activities} renderItem={(a, isLast) => <B2bActivityItem a={a} isLast={isLast} />}
+      labels={{ empty: "ยังไม่มีความเคลื่อนไหว", emptyHint: "เปลี่ยนขั้น / BOQ / ใบเสนอราคา / บันทึก จะขึ้นที่นี่" }} />
+  );
+  const noteButton = (
+    <button type="button" onClick={() => openModal("note")} style={{ minHeight: 0 }}
+      className="flex items-center gap-1.5 px-3 h-8 rounded-lg bg-gray-100 text-gray-700 text-sm font-semibold border border-gray-200 hover:bg-gray-200 whitespace-nowrap">
+      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" /></svg>
+      Note
+    </button>
+  );
   const tabBtn = (t: Tab, label: string, extra = "") => (
     <button key={t} type="button" onClick={() => setTab(t)}
-      className={`py-3 px-3 md:px-4 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px transition-colors whitespace-nowrap ${tab === t ? "text-active border-active" : "text-gray-500 border-transparent hover:text-gray-700"} ${extra}`}>
+      className={`py-3 px-3 md:px-4 text-xs font-semibold uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap ${tab === t ? "text-active border-active" : "text-gray-500 border-transparent hover:text-gray-700"} ${extra}`}>
       {label}
     </button>
   );
@@ -770,12 +776,21 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
           </div>
         )}
         <ProjectStepper steps={stepViews} selected={view} onSelect={selectStep} />
-        <div className="flex overflow-x-auto border-t border-gray-100 md:px-2">
-          {tabBtn("workflow", "Workflow")}
-          {tabBtn("info", "ข้อมูลโครงการ")}
-          {tabBtn("boq", `BOQ (${p.boqs.length})`)}
-          {p.installments.length > 0 && tabBtn("installments", "งวดเงิน")}
-          {tabBtn("timeline", "Timeline", "lg:hidden")}
+        {/* แถวแท็บ + ปุ่ม Note + หัว Activity Log (จอใหญ่) — หัวคอลัมน์ขวาตรงกับแผง Activity Log ด้านล่าง แบบหน้าลีด B2C (16 ต.ค. 69) */}
+        <div className="flex border-t border-gray-100">
+          {/* overflow-y-hidden + ไม่มี -mb-px — แท็บล้นลงล่าง 1px ทำ Windows ขึ้น scrollbar ตั้งเล็กๆ ท้ายแถว (แบบเดียวกับหน้า BOQ) */}
+          <div className="flex min-w-0 flex-1 overflow-x-auto overflow-y-hidden md:px-2">
+            {tabBtn("workflow", "Workflow")}
+            {tabBtn("info", "ข้อมูลโครงการ")}
+            {tabBtn("boq", `BOQ (${p.boqs.length})`)}
+            {p.installments.length > 0 && tabBtn("installments", "งวดเงิน")}
+            {tabBtn("timeline", "Timeline", "lg:hidden")}
+          </div>
+          {canEdit && <div className="hidden lg:flex items-center pl-2 pr-4">{noteButton}</div>}
+          <div className="hidden lg:flex w-80 shrink-0 items-center gap-1.5 border-l border-gray-200 px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">
+            <ClockIcon className="w-4 h-4" strokeWidth={2} />
+            Activity Log <span className="ml-1 text-gray-400 normal-case">{p.activities.length}</span>
+          </div>
         </div>
       </div>
 
@@ -841,18 +856,16 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
           {tab === "installments" && installmentTable}
 
           {tab === "timeline" && (
-            <div className="rounded-xl border border-gray-200 bg-white overflow-hidden lg:hidden">
-              <ActivityList activities={p.activities} onNote={canEdit ? addNote : undefined} />
+            <div className="space-y-3 lg:hidden">
+              {canEdit && <div className="flex justify-end">{noteButton}</div>}
+              <div className="rounded-xl border border-gray-200 bg-white">{activityTimeline}</div>
             </div>
           )}
         </main>
 
-        {/* Activity Log ขวา (จอใหญ่) — จอเล็กดูที่แท็บ Timeline */}
-        <aside className="hidden lg:block w-80 shrink-0 border-l border-gray-200 bg-white">
-          <div className="sticky overflow-y-auto" style={{ top: hdrH, maxHeight: `calc(100vh - ${hdrH}px)` }}>
-            <div className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500 border-b border-gray-100">Activity Log</div>
-            <ActivityList activities={p.activities} onNote={canEdit ? addNote : undefined} />
-          </div>
+        {/* Activity Log ขวา (จอใหญ่) แบบหน้าลีด B2C — หัวอยู่แถวแท็บด้านบน · จอเล็กดูที่แท็บ Timeline */}
+        <aside className="hidden lg:block w-80 shrink-0 border-l border-gray-200 bg-gray-50/30">
+          <div className="sticky overflow-y-auto p-4" style={{ top: hdrH, maxHeight: `calc(100vh - ${hdrH}px)` }}>{activityTimeline}</div>
         </aside>
       </div>
 
@@ -901,6 +914,11 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
       {modal === "record" && (
         <RecordSurveyModal initialDate={p.survey_date} saving={saving} error={error} onClose={() => setModal(null)}
           onConfirm={(v) => void recordSurvey(v)} />
+      )}
+      {modal === "note" && (
+        <ReasonModal title="บันทึกการคุย / ความคืบหน้า" label="ข้อความ" placeholder="เช่น ลูกค้าขอเลื่อนสำรวจเป็นสัปดาห์หน้า" confirmText="บันทึก"
+          saving={saving} error={error} onClose={() => setModal(null)}
+          onConfirm={(m) => { if (!m.trim()) { setError("กรุณาพิมพ์ข้อความ"); return; } void act({ action: "note", message: m.trim() }, "บันทึกแล้ว"); }} />
       )}
       {modal === "back_survey" && (
         <ReasonModal title="ถอยไปสำรวจซ้ำ" subtitle="โครงการกลับไปขั้นสำรวจ แล้วนัดวันใหม่" label="เหตุผล" placeholder="เช่น ลูกค้าเพิ่มอาคาร B · ต้องวัดหลังคาใหม่"

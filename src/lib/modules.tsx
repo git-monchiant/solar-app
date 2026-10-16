@@ -339,12 +339,12 @@ export const MODULES: AppModule[] = [
     // key "boq" คงไว้ = การ์ดขาย (ค่าโมดูลที่เลือกค้างใน localStorage ตั้งแต่ยังเป็นการ์ด BOQ แผน 20261005-01)
     key: "boq", label: "ขาย B2B", emoji: "💼", tint: "bg-teal-50",
     group: "b2b",
-    desc: "โอกาสขาย · BOQ · ใบเสนอราคา · ได้งาน",
+    desc: "โครงการใหม่ · BOQ · ใบเสนอราคา · ได้งาน",
     roles: B2B_TEAM,
     menu: [
       // badge การ์ดนับเฉพาะงานฝ่ายขาย — สำรวจเป็นงานของการ์ดสำรวจ & ติดตั้ง (เมนูยังอยู่ให้ตามลูกค้าได้แบบ Sales ของ B2C) ⇒ ทั้งหมด/สำรวจ ไม่บวกเข้าการ์ด
       { label: "ทั้งหมด", href: "/b2b/projects?stage=sales", icon: <I d={D.lines} />, steps: [3100, 3200, 3300, 3400, 3500], noModuleCount: true },
-      { label: "โอกาสขาย", href: "/b2b/projects?stage=3100", icon: <PhoneIcon className="w-6 h-6" strokeWidth={2} />, steps: [3100] },
+      { label: "โครงการใหม่", href: "/b2b/projects?stage=3100", icon: <PhoneIcon className="w-6 h-6" strokeWidth={2} />, steps: [3100] },
       {
         label: "เสนอราคา", icon: <DocumentIcon className="w-6 h-6" strokeWidth={2} />,
         children: [

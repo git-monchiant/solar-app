@@ -82,7 +82,7 @@ export default function ProjectFormModal({ initial, onClose, onSaved }: {
 
   return (
     <ModalShell title={initial ? "แก้ข้อมูลโครงการ" : "สร้างโครงการใหม่"} width="max-w-2xl"
-      subtitle={initial ? `${initial.code} · ${initial.name}` : "เริ่มที่ขั้นโอกาสขาย — ได้เลขที่โครงการอัตโนมัติ"}
+      subtitle={initial ? `${initial.code} · ${initial.name}` : "เริ่มที่ขั้น 01 โครงการใหม่ — ได้เลขที่โครงการอัตโนมัติ"}
       confirmText={initial ? "บันทึก" : "สร้างโครงการ"} saving={saving} error={error} onConfirm={() => void save()} onClose={onClose}>
       <div><label className={labelCls}>ชื่อโครงการ <Req /></label>
         <input autoFocus className={fieldCls} value={d.name} onChange={(e) => set({ name: e.target.value })} placeholder="เช่น โรงงาน ABC เฟส 2 (Solar Rooftop)" /></div>

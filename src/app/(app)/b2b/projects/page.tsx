@@ -17,7 +17,7 @@ import ProjectFormModal from "@/components/b2b/project/ProjectFormModal";
 
 // รายการโครงการ B2B — แผน docs/plan/20261015-07-b2b-project-flow.md เฟส 1 · หน้าตาแบบ flow แผน 20261016-06 (แบบ A)
 // ?stage= ตามเมนู (ไม่มี = ทุกโครงการที่ยังเปิด · sales/site = "ทั้งหมด" ของการ์ดขาย / สำรวจ & ติดตั้ง)
-// แถบขั้นด้านบน (จำนวน · ราคา · งานของผู้ดูแล · กดกรอง) + แถวมีรางขั้น · งานถัดไป · ผู้ดำเนินการ · วันในขั้น
+// แถบขั้นด้านบน (จำนวน · ราคา · กดกรอง — ไม่ติดป้ายรอใคร ดูจากตาราง/ชิปกรองแทน) + แถวมีรางขั้น · งานถัดไป · ผู้ดำเนินการ · วันในขั้น
 // เอามุมมองกระดานออกแล้ว (ผู้ใช้สั่ง 16 ต.ค. 69) — แถบขั้นด้านบนแทนภาพรวมรายขั้น
 // มูลค่า = ราคาขายของ BOQ ที่บันทึกล่าสุด (ก่อน VAT)
 
@@ -29,6 +29,9 @@ const kw = (w: number) => (w / 1000).toLocaleString("en-US", { maximumFractionDi
 const million = (n: number) => `${(n / 1e6).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ล้าน`;
 
 type Row = { r: B2bProjectRow; nx: ProjectNext; days: number | null };
+
+/** รอคนอื่นที่ไม่ใช่ผู้ดูแลโครงการ — ติดป้ายสีท้ายงานถัดไป (งานของผู้ดูแลเองไม่ติดป้าย · คอลัมน์สถานะเดิมยุบ 16 ต.ค. 69) */
+const waitingOther = (nx: ProjectNext): ProjectWaiter | null => (nx.wait && nx.wait !== "us" ? nx.wait : null);
 
 function WaitChip({ w }: { w: ProjectWaiter }) {
   return <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xxs font-bold whitespace-nowrap ${WAITER_TONE[w]}`}>{WAITER_LABEL[w]}</span>;
@@ -157,7 +160,7 @@ export default function B2bProjectListPage() {
   const listRows = byStep.filter((x) => !waitFilter || x.nx.wait === waitFilter);
 
   const open = (r: B2bProjectRow) => router.push(`/b2b/projects/${r.id}`);
-  // สร้างโครงการ = ขั้นโอกาสขาย → ปุ่มอยู่เฉพาะรายการฝั่งขาย (การ์ดโครงการ/ปิด/แพ้ ไม่มี)
+  // สร้างโครงการ = ขั้น 01 โครงการใหม่ → ปุ่มอยู่เฉพาะรายการฝั่งขาย (การ์ดโครงการ/ปิด/แพ้ ไม่มี)
   const canCreateHere = stage === "open" || stage === "sales" || stage === "3100";
   const num = "px-3 py-2 text-right tabular-nums whitespace-nowrap";
   const waitCounts = WAITERS.map((w) => [w, byStep.filter((x) => x.nx.wait === w).length] as const);
@@ -182,7 +185,6 @@ export default function B2bProjectListPage() {
           <div className="flex overflow-x-auto rounded-xl border border-gray-200 bg-white">
             {columns.map((s, i) => {
               const xs = byWait.filter((x) => x.r.stage === s);
-              const us = xs.filter((x) => x.nx.wait === "us").length;
               const sum = sumOf(xs);
               const on = stepFilter === s;
               return (
@@ -199,7 +201,6 @@ export default function B2bProjectListPage() {
                   </div>
                   <div className="mt-1 text-2xl font-bold leading-none tabular-nums text-gray-900">{xs.length}<span className="ml-1 text-xs font-medium text-gray-400">โครงการ</span></div>
                   <div className="mt-1 text-xs tabular-nums text-gray-500">{sum > 0 ? million(sum) : "—"}</div>
-                  <div className="mt-1 h-5">{us > 0 && <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xxs font-bold ${WAITER_TONE.us}`}>{WAITER_LABEL.us} {us}</span>}</div>
                 </button>
               );
             })}
@@ -238,9 +239,9 @@ export default function B2bProjectListPage() {
                       <th className="px-3 py-2 font-semibold min-w-[180px]">โครงการ</th>
                       <th className="px-3 py-2 font-semibold w-px whitespace-nowrap">ขั้นตอน</th>
                       <th className="px-3 py-2 font-semibold">งานถัดไป</th>
-                      <th className="px-3 py-2 font-semibold w-px whitespace-nowrap">สถานะ</th>
                       <th className={`${num} font-semibold w-px`}>BOQ</th>
                       <th className={`${num} font-semibold w-px`}>ราคา BOQ ล่าสุด</th>
+                      <th className="px-3 py-2 font-semibold w-px whitespace-nowrap">ผู้ดูแล</th>
                       <th className={`${num} font-semibold w-px`}>ระยะเวลาในขั้น</th>
                     </tr>
                   </thead>
@@ -253,15 +254,15 @@ export default function B2bProjectListPage() {
                         </td>
                         <td className="px-3 py-2.5"><StepRail steps={railSteps} r={r} /></td>
                         <td className="px-3 py-2.5">
-                          <div className="font-medium text-gray-900 leading-snug">{nx.text}</div>
+                          <div className="font-medium text-gray-900 leading-snug">
+                            {nx.text}
+                            {waitingOther(nx) && <span className="ml-2 inline-block align-middle"><WaitChip w={waitingOther(nx)!} /></span>}
+                          </div>
                           {nx.subs.length > 0 && <SubLine nx={nx} />}
-                        </td>
-                        <td className="px-3 py-2.5 whitespace-nowrap">
-                          {/* ใต้ป้าย = คนที่ต้องทำ — ผู้ดูแลโครงการ (ชื่อจริง · แทนคอลัมน์ผู้ดูแลเดิม) / ผู้ตรวจสอบลำดับที่ */}
-                          {nx.wait ? <><WaitChip w={nx.wait} /><div className="mt-0.5 text-xs text-gray-400">{nx.who ?? (nx.wait === "us" ? r.owner_name : null)}</div></> : <span className="text-gray-300">—</span>}
                         </td>
                         <td className={num}><BoqCell r={r} /></td>
                         <td className={`${num} font-medium`}>{r.boq_total_sale ? formatTHB(r.boq_total_sale, { decimals: 0 }) : "—"}</td>
+                        <td className="px-3 py-2.5 whitespace-nowrap text-gray-600">{r.owner_name ?? "—"}</td>
                         <td className={num}><Days days={days} /></td>
                       </tr>
                     ))}
@@ -283,7 +284,7 @@ export default function B2bProjectListPage() {
                     <StepRail steps={railSteps} r={r} />
                     <div className="text-sm text-gray-800">→ {nx.text}</div>
                     <div className="flex items-center justify-between gap-2">
-                      {nx.wait ? <WaitChip w={nx.wait} /> : <span />}
+                      {waitingOther(nx) ? <WaitChip w={waitingOther(nx)!} /> : <span className="text-xs text-gray-400">{r.owner_name ?? ""}</span>}
                       <span className="text-sm font-medium tabular-nums">{r.boq_total_sale ? formatTHB(r.boq_total_sale, { decimals: 0 }) : "—"}</span>
                     </div>
                   </button>

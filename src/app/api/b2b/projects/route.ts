@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(r.recordset.map(toProjectRow));
 }
 
-// สร้างโครงการ = ขั้นโอกาสขาย (3100) · ลูกค้าเลือกบริษัทเดิมหรือพิมพ์ใหม่ · ผู้ดูแลค่าเริ่มต้น = คนสร้าง
+// สร้างโครงการ = ขั้นโครงการใหม่ (3100) · ลูกค้าเลือกบริษัทเดิมหรือพิมพ์ใหม่ · ผู้ดูแลค่าเริ่มต้น = คนสร้าง
 export async function POST(req: NextRequest) {
   const gate = await requireAnyActiveRole(req, B2B_PROJECT_ROLES);
   if (gate.error) return gate.error;
