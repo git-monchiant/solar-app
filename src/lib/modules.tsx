@@ -244,7 +244,7 @@ export const MODULES: AppModule[] = [
       // ── รายงาน ──
       // ★ เฟส 6 (24 ก.ย. 69): ภาพรวมของ O&M อยู่ในโมดูลตัวเอง ไม่ใช่แท็บใน /dashboard ฝั่งขาย
       //   ตามที่ผู้ใช้เคาะไว้ว่างาน O&M ให้สมบูรณ์ในการ์ดตัวเองก่อนค่อยไปโผล่การ์ดอื่น
-      { label: "ภาพรวม", href: "/om/dashboard", icon: <I d={D.chart} /> },
+      { label: "Dashboard", href: "/om/dashboard", icon: <I d={D.chart} /> },
       // ★ เฟส 4 แผน 20260924-02: รายรับ O&M หน้าเดียวกับในโมดูลบัญชี — ให้หัวหน้าดูผลงาน O&M ได้โดยไม่ต้องสลับโมดูล
       { label: "รายรับ O&M", href: "/report/om", icon: <I d={D.wallet} />, roles: ["admin", "sales_sup", "solar_sup"] },
       // ── ตั้งค่า ──

@@ -155,7 +155,7 @@ export default function OmDashboardPage() {
   return (
     <div>
       <div className="dashboard-pdf-skip">
-        <Header title={activeItem?.label ?? "ภาพรวม"} subtitle="O&M · บ้านในความดูแล · สิทธิ์ · งานค้าง"
+        <Header title={activeItem?.label ?? "Dashboard"} subtitle="O&M · บ้านในความดูแล · สิทธิ์ · งานค้าง"
           rightContent={
             <div className="flex items-center gap-2">
               {/* ช่วงวันที่ — ช่องเดียวกับ Dashboard I (ไม่มีโหมด สร้างลีด/กิจกรรม: ตัวเลข O&M ใช้วันที่ของมันเอง) */}
