@@ -436,11 +436,23 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
     const schedule = mode !== "follow";
     const oc = schedule ? "agreed" : outcome;
     const needSlot = schedule && (!apDate || !apSlot);
+    // ★ 21 ต.ค. 69 ผู้ใช้สั่งเพิ่มช่องหมายเหตุที่ขั้น 01 (ทุกผล · เดิมโผล่เฉพาะปฏิเสธ) และให้ขึ้นที่ขั้น 04 ด้วย
+    //   state เดียวกัน — งานฟรีพิมพ์ที่ 01 แล้วกดตกลง ข้อความตามไปอยู่ในช่องขั้น 04 แก้ต่อได้
+    //   บันทึกพร้อมการโทรเป็น reason ในประวัติ (ขึ้นใน Activity Log) · ยาวสุด 300 ตามคอลัมน์
+    const noteField = (
+      <div>
+        <label className="block text-xs font-semibold tracking-wider uppercase text-gray-400 mb-1.5">หมายเหตุ</label>
+        <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={300}
+          placeholder="เช่น ลูกค้าไม่อยู่บ้านช่วงเช้า"
+          className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-active resize-none" />
+      </div>
+    );
     return (
     <>
       {mode !== "free" && callSummary(schedule)}
       {/* ★ 1 ต.ค. 69 ผู้ใช้สั่งเอากล่องคำอธิบาย + โน้ตออกจากขั้น 04 — การ์ดเลือกวันนัดเหลือแถบหัว → ปฏิทิน → ปุ่ม
-          งานชำระแล้วคงบรรทัดชี้ปุ่ม Follow-up ไว้ (โทรตกลงวันนัด อาจโทรไม่ติด) */}
+          งานชำระแล้วคงบรรทัดชี้ปุ่ม Follow-up ไว้ (โทรตกลงวันนัด อาจโทรไม่ติด)
+          ★ 21 ต.ค. 69 ผู้ใช้สั่งเอาช่องหมายเหตุกลับมาที่ขั้น 04 (noteField ใต้ปฏิทิน) */}
       {mode !== "free" && <div className={SECTION}>
         {mode === "follow" && <>
           {/* หัว + แถวผล ยกจาก modal Follow-up ฝั่งขาย (จุดเขียว = ติดต่อได้) */}
@@ -465,14 +477,15 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
             })}
           </div>
         </>}
-        {/* ทางไปบันทึกติดต่อไม่ได้ — คนที่ชินกับปุ่มเดิมในการ์ดจะได้ไม่หลง */}
-        <div className={`${schedule ? "" : "mt-2 "}text-xs text-gray-500 flex items-center gap-1.5 flex-wrap`}>
+        {/* ทางไปบันทึกติดต่อไม่ได้ — คนที่ชินกับปุ่มเดิมในการ์ดจะได้ไม่หลง
+            ★ 21 ต.ค. 69 ผู้ใช้สั่งเอาออกจากขั้น 01 (ปุ่ม Follow-up บนหัวการ์ดมีอยู่แล้ว) — เหลือเฉพาะงานชำระแล้วที่ขั้น 04 */}
+        {mode === "paid" && <div className="text-xs text-gray-500 flex items-center gap-1.5 flex-wrap">
           <span>ติดต่อแล้วยังไม่ได้ข้อสรุป หรือติดต่อไม่ได้? บันทึกที่ปุ่ม</span>
           <button type="button" onClick={() => setFollowOpen(true)} style={{ minHeight: 0 }}
             className="inline-flex items-center gap-1 px-2 h-6 rounded-md bg-amber-50 text-amber-700 border border-amber-200 font-semibold hover:bg-amber-100 cursor-pointer">
             <ClockIcon className="w-3.5 h-3.5" strokeWidth={2} />Follow-up
           </button>
-        </div>
+        </div>}
 
         {/* ผลของตัวเลือก — บอกก่อนกด */}
         {mode === "follow" && oc === "agreed" && (needQuote ? (
@@ -491,12 +504,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
           </div>
         )}
 
-        {mode === "follow" && oc === "declined" && (
-          <div className="mt-3">
-            <label className={FIELD_LABEL}>โน้ต</label>
-            <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="เช่น ลูกค้าไม่อยู่บ้านช่วงเช้า" className={INPUT} />
-          </div>
-        )}
+        {mode === "follow" && <div className="mt-3">{noteField}</div>}
       </div>}
 
       {/* ส่วนเลือกวันนัด = "เลื่อนนัดสำรวจ" ฝั่งขาย: หัวข้อตัวเทา → ปฏิทิน/ช่วงเวลา → แถบ "นัดเป็น" (อยู่ใน OmSlotPicker) */}
@@ -505,6 +513,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
           <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">นัดเข้าบริการ</div>
           <OmSlotPicker date={apDate} slot={apSlot} excludeId={item.booking_id} rules={rules} pickedLabel="นัดเป็น"
             onDateChange={setApDate} onSlotChange={setApSlot} />
+          {noteField}
         </div>
       )}
 
@@ -794,6 +803,23 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                     })()} />,
                     () => events("follow", "gray", "การโทร · เปิดใบงาน"))
                 : viewOnly ? waitNote("รอทีม O&M โทรติดตามลูกค้า")
+                // ★ 21 ต.ค. 69 ผู้ใช้เลือก "ล็อกการ์ด 01 ระหว่างเลือกวันนัด" — งานฟรีกดตกลงแล้วยังไม่บันทึก (บันทึกทีเดียวที่ขั้น 04)
+                //   เดิมย้อนมากดราง 01 แล้วฟอร์มยังแก้ได้ ดูเหมือนปิดขั้นแล้วแต่แก้ได้
+                //   เปลี่ยนผลการโทร = ปุ่ม "‹ กลับขั้น 01" ที่ขั้น 04 (backToFollow ล้างที่เลือกแล้วปลดล็อกการ์ดนี้)
+                : schedFree ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg border bg-active-light border-active/20 text-sm text-gray-800">
+                      <CheckIcon className="w-4 h-4 shrink-0 text-active" strokeWidth={2.5} />
+                      <span className="min-w-0 flex-1">ลูกค้าตกลงรับบริการ</span>
+                    </div>
+                    {note.trim() && (
+                      <div>
+                        <div className="text-xs font-semibold tracking-wider uppercase text-gray-400 mb-1.5">หมายเหตุ</div>
+                        <div className="px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 whitespace-pre-wrap break-words">{note}</div>
+                      </div>
+                    )}
+                  </div>
+                )
                 : callForm("follow")}
             </StepCard>
 
