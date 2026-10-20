@@ -431,7 +431,7 @@ export default function CalendarPicker({
             {/* ③ ตัวนับช่องว่างของวันที่เลือก (โหมด shared · แผน 20261021-02) */}
             {shared && date && (
               <span className="ml-auto normal-case tracking-normal font-normal text-gray-500">
-                ว่าง <b className="font-medium text-emerald-700 tabular-nums">{freeCount(date)}</b> / {HOURLY_SLOTS.length} ช่อง
+                ว่าง <b className="font-medium text-emerald-700 tabular-nums">{freeCount(date)}</b> / {HOURLY_SLOTS.length} ช่วงเวลา
               </span>
             )}
           </div>
