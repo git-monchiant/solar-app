@@ -21,8 +21,10 @@ type Preview = {
   rules: { notify_line: boolean };
 };
 
-export default function OmRescheduler({ bookingId, currentAt, currentSlot, rules, onCancel, onSaved }: {
+export default function OmRescheduler({ bookingId, currentAt, currentSlot, rules, project, onCancel, onSaved }: {
   bookingId: number;
+  /** โครงการของบ้าน — ส่งต่อให้ OmSlotPicker (แผน 20261021-02) */
+  project?: { id: string | null; name: string | null } | null;
   currentAt: string | null;
   /** ช่องที่จองอยู่ (JSON array · แผน 20261001-01) — เริ่มฟอร์มด้วยช่องเดิม */
   currentSlot?: string | null;
@@ -70,7 +72,7 @@ export default function OmRescheduler({ bookingId, currentAt, currentSlot, rules
       <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">เลื่อนนัด</div>
 
       <div className="rounded-lg bg-white/60 border border-active/15 p-3 space-y-3">
-        <OmSlotPicker date={date} slot={slot} excludeId={bookingId} rules={rules} pickedLabel="เลื่อนเป็น"
+        <OmSlotPicker date={date} slot={slot} excludeId={bookingId} rules={rules} pickedLabel="เลื่อนเป็น" project={project}
           onDateChange={setDate} onSlotChange={setSlot} />
 
         <div>

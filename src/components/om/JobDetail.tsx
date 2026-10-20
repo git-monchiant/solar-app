@@ -160,6 +160,8 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
   const [apDate, setApDate] = useState("");
   // ช่องที่จอง (JSON array แบบนัดสำรวจ) — แผน 20261001-01 เฟส 3 · เดิมเวลาเริ่มของช่วงเดียว
   const [apSlot, setApSlot] = useState("");
+  // โครงการของบ้าน — ตัวเลือกวันนัดขั้น 04 / Reschedule ขั้น 05 ไฮไลต์วันที่ทีมเข้าโครงการนี้อยู่แล้ว (แผน 20261021-02)
+  const project = { id: item.project_id, name: item.project_name };
   // ปุ่ม Follow-up — บันทึกติดต่อไม่ได้ (OmFollowupModal)
   const [followOpen, setFollowOpen] = useState(false);
   // กด avatar หัวหน้า — modal ข้อมูลลูกค้า (OmCustomerModal ตัวเดียวกับหน้า /om/customers)
@@ -511,7 +513,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
       {schedule && (
         <div className={`${mode === "free" ? "" : "mt-4 "}space-y-3`}>
           <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">นัดเข้าบริการ</div>
-          <OmSlotPicker date={apDate} slot={apSlot} excludeId={item.booking_id} rules={rules} pickedLabel="นัดเป็น"
+          <OmSlotPicker date={apDate} slot={apSlot} excludeId={item.booking_id} rules={rules} pickedLabel="นัดเป็น" project={project}
             onDateChange={setApDate} onSlotChange={setApSlot} />
           {noteField}
         </div>
@@ -558,7 +560,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
           ★ แถบนัด + ปุ่ม Reschedule ยกจากขั้นย่อย "นัด" ของ Install ฝั่งขาย (แผน 20260928-04 ข้อ 8)
           สีม่วง = นัดแล้ว รอยืนยัน · สีเขียว = ลูกค้ายืนยันแล้ว · เลื่อนได้จนกว่าช่างจะเริ่มงาน */}
       {resched && item.booking_id ? (
-        <OmRescheduler bookingId={item.booking_id} currentAt={item.scheduled_at} currentSlot={item.time_slot} rules={rules}
+        <OmRescheduler bookingId={item.booking_id} currentAt={item.scheduled_at} currentSlot={item.time_slot} rules={rules} project={project}
           onCancel={() => setResched(false)}
           onSaved={(m) => { setResched(false); onSaved(m); onDone(); }} />
       ) : (() => {

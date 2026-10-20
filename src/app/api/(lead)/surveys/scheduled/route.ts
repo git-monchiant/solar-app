@@ -19,7 +19,8 @@ export async function GET(req: NextRequest) {
              la.last_contact_date, la.last_title, la.last_note, la.last_type,
              (SELECT COUNT(*) FROM lead_activities ac
               WHERE ac.lead_id = l.id
-                AND ac.activity_type IN ('call', 'visit', 'line', 'other', 'follow_up', 'loan_followup')) AS contact_count
+                AND ac.activity_type IN ('call', 'visit', 'line', 'other', 'follow_up', 'loan_followup')) AS contact_count,
+             l.project_id AS sales_project_id
       FROM leads l
       OUTER APPLY (
         -- log การติดตามที่ "ลงนัดนี้ไว้" (บันทึกที่ตั้งนัดครั้งถัดไป = วันนัดบนปฏิทิน)
@@ -53,7 +54,8 @@ export async function GET(req: NextRequest) {
              la.last_contact_date, la.last_title, la.last_note, la.last_type,
              (SELECT COUNT(*) FROM lead_activities ac
               WHERE ac.lead_id = l.id
-                AND ac.activity_type IN ('call', 'visit', 'line', 'other', 'follow_up', 'loan_followup')) AS contact_count
+                AND ac.activity_type IN ('call', 'visit', 'line', 'other', 'follow_up', 'loan_followup')) AS contact_count,
+             l.project_id AS sales_project_id
       FROM (
         -- "นัดล่าสุด" ของแต่ละลูกค้าจุดเดียวเท่านั้น: ถ้านัดล่าสุดเป็นอนาคต
         -- (ยังรอตาม) เป็นหน้าที่ branch บน — ที่นี่เอาเฉพาะคนที่นัดล่าสุด
@@ -100,14 +102,14 @@ export async function GET(req: NextRequest) {
       install_days AS (
         -- Same day-by-day expansion for multi-day installs. install_date_end
         -- NULL = single-day install. So a 23–24 มิ.ย. install shows on both days.
-        SELECT id, full_name, house_number, status, zone,
+        SELECT id, full_name, house_number, status, zone, project_id,
                install_date AS d, COALESCE(install_date_end, install_date) AS last_d
         FROM leads
         WHERE install_date IS NOT NULL
           AND install_completed_at IS NULL
           AND status NOT IN ('warranty', 'gridtie', 'closed', 'lost', 'returned')
         UNION ALL
-        SELECT id, full_name, house_number, status, zone, DATEADD(day, 1, d), last_d
+        SELECT id, full_name, house_number, status, zone, project_id, DATEADD(day, 1, d), last_d
         FROM install_days
         WHERE d < last_d
       )
@@ -115,21 +117,25 @@ export async function GET(req: NextRequest) {
       --   survey events → survey (Survey team calendar)
       --   install events → install (Solar team calendar)
       --   block events → calendar_blocks.team (NULL = applies to both teams)
+      -- sales_project_id = leads.project_id (ทะเบียนฝั่งขาย) — แปลงเป็นรหัส REM ข้างล่าง (แผน 20261021-02)
       SELECT id, full_name, house_number, survey_date as event_date, survey_time_slot as time_slot, 'survey' as event_type, status, zone, 'survey' as team,
-             NULL as last_contact_date, NULL as last_title, NULL as last_note, NULL as last_type, NULL as contact_count
+             NULL as last_contact_date, NULL as last_title, NULL as last_note, NULL as last_type, NULL as contact_count,
+             project_id as sales_project_id
       FROM leads
       WHERE survey_date IS NOT NULL
         AND survey_actual_date IS NULL
         AND status NOT IN ('quote', 'order', 'install', 'warranty', 'gridtie', 'closed', 'lost', 'returned')
       UNION ALL
       SELECT id, full_name, house_number, d as event_date, NULL as time_slot, 'install' as event_type, status, zone, 'install' as team,
-             NULL as last_contact_date, NULL as last_title, NULL as last_note, NULL as last_type, NULL as contact_count
+             NULL as last_contact_date, NULL as last_title, NULL as last_note, NULL as last_type, NULL as contact_count,
+             project_id as sales_project_id
       FROM install_days
       UNION ALL
       SELECT (-id) as id, title as full_name, NULL as house_number,
              d as event_date, time_slot, 'block' as event_type,
              'block' as status, NULL as zone, team,
-             NULL as last_contact_date, NULL as last_title, NULL as last_note, NULL as last_type, NULL as contact_count
+             NULL as last_contact_date, NULL as last_title, NULL as last_note, NULL as last_type, NULL as contact_count,
+             NULL as sales_project_id
       FROM block_days
       ${followupUnion}
       OPTION (MAXRECURSION 366)
@@ -139,20 +145,38 @@ export async function GET(req: NextRequest) {
     //   id = เลขใบงาน O&M คนละชุดกับเลข lead ⇒ คนใช้ต้องดู event_type ก่อนเอา id ไปเปิด lead
     //   แยก query ไม่ต่อ UNION ข้างบน — คอลัมน์ไม่ตรงกัน (house_id/om_service) และ route นี้ใช้ร่วมกับ v2:
     //   DB ที่ไม่มีตาราง O&M (ไม่ใช่ v3) ข้ามเงียบ ๆ
-    const om = await db.request().query(`
-      IF OBJECT_ID('dbo.om_bookings', 'U') IS NOT NULL
-        SELECT b.id, b.house_id,
-               ISNULL((SELECT TOP 1 c.full_name FROM om_house_customers hc JOIN om_customers c ON c.id = hc.customer_id
-                        WHERE hc.house_id = b.house_id AND hc.is_current = 1
-                        ORDER BY CASE hc.role WHEN 'owner' THEN 0 ELSE 1 END, hc.id), N'ไม่มีชื่อในฐาน') full_name,
-               h.house_number, CAST(b.scheduled_at AS date) event_date, b.time_slot,
-               'om' event_type, b.status, NULL zone, 'om' team, st.label_th om_service
-          FROM om_bookings b
-          JOIN om_houses h ON h.id = b.house_id
-          LEFT JOIN om_service_type st ON st.id = b.service_type_id
-         WHERE b.scheduled_at IS NOT NULL
-           AND b.status IN ('pending', 'confirmed', 'progress', 'checked')`);
-    return NextResponse.json(fixDates([...result.recordset, ...(om.recordset ?? [])]));
+    // ★ โครงการของนัด (แผน 20261021-02) — ตัวเลือกวันนัด O&M ไฮไลต์วันที่ทีมเข้าโครงการเดียวกันอยู่แล้ว
+    //   rem_project_id = รหัส REM ชุดเดียวกับ om_houses.project_id · project_name = ชื่อไว้แสดง
+    //   งาน O&M ได้จากบ้านตรง ๆ · นัดสำรวจ/ติดตั้งแปลง leads.project_id ผ่าน om_project_map (ยังไม่ map = ไม่มีรหัส)
+    const [om, pjMap] = await Promise.all([
+      db.request().query(`
+        IF OBJECT_ID('dbo.om_bookings', 'U') IS NOT NULL
+          SELECT b.id, b.house_id,
+                 ISNULL((SELECT TOP 1 c.full_name FROM om_house_customers hc JOIN om_customers c ON c.id = hc.customer_id
+                          WHERE hc.house_id = b.house_id AND hc.is_current = 1
+                          ORDER BY CASE hc.role WHEN 'owner' THEN 0 ELSE 1 END, hc.id), N'ไม่มีชื่อในฐาน') full_name,
+                 h.house_number, CAST(b.scheduled_at AS date) event_date, b.time_slot,
+                 'om' event_type, b.status, NULL zone, 'om' team, st.label_th om_service,
+                 h.project_id rem_project_id, ISNULL(pj.name_th, h.project_name) project_name
+            FROM om_bookings b
+            JOIN om_houses h ON h.id = b.house_id
+            LEFT JOIN om_projects pj ON pj.project_id = h.project_id
+            LEFT JOIN om_service_type st ON st.id = b.service_type_id
+           WHERE b.scheduled_at IS NOT NULL
+             AND b.status IN ('pending', 'confirmed', 'progress', 'checked')`),
+      db.request().query(`
+        IF OBJECT_ID('dbo.om_project_map', 'U') IS NOT NULL
+          SELECT m.sales_project_id, m.rem_project_id, p.name_th
+            FROM om_project_map m
+            JOIN om_projects p ON p.project_id = m.rem_project_id`),
+    ]);
+    const remBySales = new Map<number, { rem_project_id: string; name_th: string }>(
+      (pjMap.recordset ?? []).map((r: { sales_project_id: number; rem_project_id: string; name_th: string }) => [r.sales_project_id, r]));
+    const sales = result.recordset.map((r: { sales_project_id: number | null }) => {
+      const m = r.sales_project_id != null ? remBySales.get(r.sales_project_id) : undefined;
+      return m ? { ...r, rem_project_id: m.rem_project_id, project_name: m.name_th } : r;
+    });
+    return NextResponse.json(fixDates([...sales, ...(om.recordset ?? [])]));
   } catch (error) {
     console.error("GET /api/surveys/scheduled error:", error);
     return NextResponse.json({ error: "Failed" }, { status: 500 });

@@ -14,7 +14,7 @@ import CalendarPicker from "@/components/calendar/CalendarPicker";
 import { formatThaiDate } from "@/lib/utils/formatters";
 import { formatSlotsRange } from "@/lib/time-slots";
 
-export default function OmSlotPicker({ date, slot, onDateChange, onSlotChange, excludeId, rules, pickedLabel }: {
+export default function OmSlotPicker({ date, slot, onDateChange, onSlotChange, excludeId, rules, pickedLabel, project }: {
   /** YYYY-MM-DD · "" = ยังไม่เลือก */
   date: string;
   /** ช่องที่เลือก (JSON array) · "" = ยังไม่เลือก */
@@ -28,6 +28,8 @@ export default function OmSlotPicker({ date, slot, onDateChange, onSlotChange, e
   rules?: Record<string, unknown>;
   /** หัวแถบสรุปเมื่อเลือกวันแล้ว เช่น "นัดเป็น" / "เลื่อนเป็น" */
   pickedLabel: string;
+  /** โครงการของบ้าน (รหัส REM) — ชิปวันที่ทีมเข้าโครงการเดียวกันอยู่แล้ว + ช่องต่อคิว (แผน 20261021-02) */
+  project?: { id: string | null; name: string | null } | null;
 }) {
   const now = new Date();
   const today = now.toLocaleDateString("sv-SE");
@@ -50,6 +52,7 @@ export default function OmSlotPicker({ date, slot, onDateChange, onSlotChange, e
         teamContext="survey"
         overlap="warn"
         excludeOmBookingId={excludeId ?? null}
+        sameProject={project ?? null}
         maxDate={lastDay}
         slotDisabled={(d, s) => d < today || (d === today && s <= nowHm)}
       />
