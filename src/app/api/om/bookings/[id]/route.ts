@@ -5,7 +5,7 @@ import { fixDates, sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
 import { actionLabel, logBooking, type BookingAction } from "@/lib/om/booking-log";
 import { canMove, statusLabel, toThaiOffset } from "@/lib/om/booking";
-import { omSlotsFor, shiftSlots, thaiLocal } from "@/lib/om/time-slot";
+import { omSlotsFor, shiftSlots, teamClash, thaiLocal } from "@/lib/om/time-slot";
 import { serializeSlots } from "@/lib/time-slots";
 import { notifyOmUser, resolveOmNotifications } from "@/lib/om/notifications";
 import { getSettings } from "@/lib/om/settings";
@@ -137,6 +137,11 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   }
   const hasWhen = has("scheduled_at") || has("time_slot");
   if (hasWhen && (when !== cur.scheduled_at || slot !== (cur.time_slot ?? null))) {
+    // ★ 21 ต.ค. 69 นัดทับเวลาไม่ได้ (แผน 20261021-02 รอบ 3) — รวมการลากในปฏิทิน · ใบตัวเองไม่นับ
+    if (when && slot) {
+      const clash = await teamClash(db, when, slot, id);
+      if (clash) return NextResponse.json({ error: clash }, { status: 409 });
+    }
     set.push("scheduled_at = @w", "time_slot = @ts");
     // นับจำนวนครั้งที่เลื่อน เฉพาะตอนที่มีวันเดิมอยู่แล้ว
     if (cur.scheduled_at && when) set.push("rescheduled_count = rescheduled_count + 1");

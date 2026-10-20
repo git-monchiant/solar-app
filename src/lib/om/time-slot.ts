@@ -4,7 +4,7 @@
 //   scheduled_at = วันนัด + เวลาเริ่มของช่องแรก (คงไว้ให้การเรียง/งานวันนี้/cron/PDF ใช้ต่อ)
 // ★ server เป็นคนคำนวณ scheduled_at จากช่องที่เลือก — ไม่เชื่อเวลาที่ client ส่งมาเมื่อมี time_slot
 import { sql } from "@/lib/db";
-import { HOURLY_SLOTS, parseSlots, serializeSlots } from "@/lib/time-slots";
+import { HOURLY_SLOTS, formatSlotsRange, parseSlots, serializeSlots } from "@/lib/time-slots";
 
 const SLOTS: readonly string[] = HOURLY_SLOTS;
 const toMin = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
@@ -56,6 +56,38 @@ export async function shiftSlots(conn: sql.ConnectionPool | sql.Transaction, pre
     if (moved.length) return moved;
   }
   return slotsFromStart(conn, hm);
+}
+
+/**
+ * นัดของทีมที่ทับช่องที่จะจอง — ★ 21 ต.ค. 69 ผู้ใช้เคาะ "นัดทับเวลาไม่ได้" (แผน 20261021-02 รอบ 3)
+ *   ทีมสำรวจกับทีมล้างเป็นชุดเดียว ⇒ นับใบงาน O&M ที่มีนัด (สถานะเดียวกับปฏิทิน /api/surveys/scheduled)
+ *   + นัดสำรวจฝั่งขายที่ยังไม่สำรวจ (เงื่อนไขเดียวกัน) · ติดตั้งคนละทีม ไม่นับ · นัดที่ไม่มีช่อง = ทั้งวัน
+ *   at = วันเวลานัด (มี offset ได้) · slot = ช่องที่จะจอง (JSON) · excludeId = ใบงานตัวเอง (เลื่อนนัด)
+ *   คืนข้อความพร้อมส่งให้ผู้ใช้ · ไม่ทับ = null · ใบที่ไม่มีช่อง (นอกเวลาทำการ) ไม่ตรวจ
+ */
+export async function teamClash(conn: sql.ConnectionPool | sql.Transaction, at: string, slot: string | null,
+  excludeId: number | null): Promise<string | null> {
+  const want = parseSlots(slot);
+  const date = thaiLocal(at).slice(0, 10);
+  if (!want.length || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  const req = conn instanceof sql.Transaction ? new sql.Request(conn) : new sql.Request(conn);
+  const r = await req.input("d", sql.Date, date).input("x", sql.Int, excludeId ?? 0).query(`
+    SELECT N'O&M' kind, h.house_number label, b.time_slot slot
+      FROM om_bookings b JOIN om_houses h ON h.id = b.house_id
+     WHERE CAST(b.scheduled_at AS date) = @d AND b.id <> @x
+       AND b.status IN ('pending', 'confirmed', 'progress', 'checked')
+    UNION ALL
+    SELECT N'สำรวจ', ISNULL(NULLIF(l.house_number, N''), l.full_name), l.survey_time_slot
+      FROM leads l
+     WHERE CAST(l.survey_date AS date) = @d AND l.survey_actual_date IS NULL
+       AND l.status NOT IN ('quote', 'order', 'install', 'warranty', 'gridtie', 'closed', 'lost', 'returned')`);
+  const hit = r.recordset.filter((x: { slot: string | null }) => {
+    const s = parseSlots(x.slot);
+    return !s.length || s.some((t) => want.includes(t));
+  });
+  if (!hit.length) return null;
+  return `ทีมมีนัดช่วงนี้แล้ว: ${hit.map((x: { kind: string; label: string | null; slot: string | null }) =>
+    `${x.kind} ${x.label ?? ""} ${x.slot ? formatSlotsRange(x.slot) : "ทั้งวัน"}`).join(", ")} — นัดทับเวลาไม่ได้ เลือกช่วงเวลาอื่น`;
 }
 
 /**

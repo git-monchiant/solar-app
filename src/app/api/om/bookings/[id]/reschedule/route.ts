@@ -7,7 +7,7 @@ import { getSettings } from "@/lib/om/settings";
 import { logBooking } from "@/lib/om/booking-log";
 import { resolveOmNotifications } from "@/lib/om/notifications";
 import { toThaiOffset } from "@/lib/om/booking";
-import { omSlotsFor } from "@/lib/om/time-slot";
+import { omSlotsFor, teamClash } from "@/lib/om/time-slot";
 import { formatSlotsRange } from "@/lib/time-slots";
 
 // เลื่อนนัดจากปุ่ม Reschedule ในหน้ารายละเอียด (แผน 20260928-04 · ผู้ใช้เคาะ "ทำตามแนะนำ" ข้อ 4 ข)
@@ -115,6 +115,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   if (cur.scheduled_at && new Date(when).getTime() === new Date(cur.scheduled_at).getTime()
       && (picked.slot ?? "") === (cur.time_slot ?? ""))
     return NextResponse.json({ error: "ยังเป็นวันเวลาเดิม" }, { status: 400 });
+  // ★ 21 ต.ค. 69 นัดทับเวลาไม่ได้ (แผน 20261021-02 รอบ 3) — ใบตัวเองไม่นับ
+  const clash = await teamClash(db, when, picked.slot, id);
+  if (clash) return NextResponse.json({ error: clash }, { status: 409 });
 
   const r = await rules();
   const warnings = warningsOf(cur, r);

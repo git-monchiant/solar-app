@@ -9,7 +9,7 @@ import { getSettings } from "@/lib/om/settings";
 import { historyLabel, logBooking } from "@/lib/om/booking-log";
 import { ACTIVE_STATUS, canMove, statusLabel, toThaiOffset } from "@/lib/om/booking";
 import { OM_BOOKING_PAID_SQL } from "@/lib/om/om-quotation";
-import { omSlotsFor } from "@/lib/om/time-slot";
+import { omSlotsFor, teamClash } from "@/lib/om/time-slot";
 import { houseOriginSql, parseOrigin } from "@/lib/om/house-origin";
 import { GROUP_LABEL, HG } from "@/lib/om/house-scope";
 
@@ -307,6 +307,14 @@ export async function POST(req: NextRequest) {
           `ใบงาน #${cur.id} อยู่ขั้น "${statusLabel(String(cur.status))}" แล้ว — ${outcome === "agreed" ? "ตกลงนัด" : "ขอเลื่อน"}จากการโทรไม่ได้`
           + (["pending", "confirmed"].includes(String(cur.status)) ? " · เลื่อนนัดใช้ปุ่ม Reschedule ที่ขั้นนัดหมาย" : "") },
           { status: 409 });
+      }
+      // ★ 21 ต.ค. 69 นัดทับเวลาไม่ได้ (แผน 20261021-02 รอบ 3) — ใบงานตัวเอง (นัดเดิม) ไม่นับ
+      if (when && slot) {
+        const clash = await teamClash(tx, when, slot, cur ? Number(cur.id) : null);
+        if (clash) {
+          await tx.rollback();
+          return NextResponse.json({ error: clash }, { status: 409 });
+        }
       }
 
       if (cur) {

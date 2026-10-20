@@ -4,7 +4,7 @@ import { fixDates, sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
 import { logBooking } from "@/lib/om/booking-log";
 import { ACTIVE_STATUS, ALL_STATUS, toThaiOffset } from "@/lib/om/booking";
-import { omSlotsFor } from "@/lib/om/time-slot";
+import { omSlotsFor, teamClash } from "@/lib/om/time-slot";
 
 // งานบริการ O&M — ลิสต์ + สร้างนัด
 // ★ กติกาที่ต้องรักษา (CLAUDE.md): เวลานัดใช้ +07:00 เสมอ · ห้ามจองซ้ำประเภทเดียวกันถ้ายังมีงานค้าง
@@ -142,6 +142,11 @@ export async function POST(req: NextRequest) {
             WHERE house_id = @h AND service_type_id = @t
               AND status IN (${ACTIVE_STATUS.map((s) => `'${s}'`).join(",")})`)).recordset[0];
   if (dup) return NextResponse.json({ error: `บ้านหลังนี้มีงานประเภทเดียวกันค้างอยู่แล้ว (งาน #${dup.id})` }, { status: 409 });
+  // ★ 21 ต.ค. 69 นัดทับเวลาไม่ได้ (แผน 20261021-02 รอบ 3)
+  if (when && slot) {
+    const clash = await teamClash(db, when, slot, null);
+    if (clash) return NextResponse.json({ error: clash }, { status: 409 });
+  }
 
   const tx = new sql.Transaction(db);
   await tx.begin();

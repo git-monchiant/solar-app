@@ -4,8 +4,9 @@
 // ★ ใช้ 3 ที่: ขั้น 01 ตกลงนัด · การ์ดนัดหมายตอนชำระเงินแล้ว · Reschedule (OmRescheduler)
 // ★ 1 ต.ค. 69 ทีมสำรวจกับทีมล้างเป็นชุดเดียวกัน (ผู้ใช้เคาะ) ⇒ ตัวเลือกเดียวกับนัดสำรวจฝั่งขายทั้งก้อน
 //   CalendarPicker เต็มตัว: ปฏิทิน 3 เดือน + 16 ช่อง 30 นาที เลือกหลายช่อง · ทำทุกวัน (เลิก om_slot_config)
-//   overlap="warn" = เห็นนัดสำรวจ/ติดตั้ง/O&M เป็นจุด แต่ไม่ล็อก (ผู้ใช้เคาะ "นัดทับกันได้") · ปิดช่อง (calendar_blocks) ยังล็อก
-//   เลือกทับนัดอื่น → CalendarPicker ขึ้นเตือนเหลืองว่าทับนัดอะไร
+//   overlap="shared" = เห็นนัดสำรวจ/ติดตั้ง/O&M · ปิดช่อง (calendar_blocks) ล็อก
+//   ★ 21 ต.ค. 69 ผู้ใช้เปลี่ยนกติกา "นัดทับเวลาไม่ได้" (เดิม 1 ต.ค. นัดทับได้) — ช่องที่ทีมมีนัด O&M / สำรวจแล้วล็อก
+//   ติดตั้งเป็นคนละทีม เห็นเป็นจุด ไม่ล็อก (แผน 20261021-02)
 // ★ ค่าที่ได้ = วัน + time_slot (JSON array แบบ leads.survey_time_slot) — API คิดเวลาเริ่มจากช่องแรกเอง
 // ★ กติกาหน้าตั้งค่า O&M (booking.advance_days_max · booking.advance_hours_min)
 //   ไกลเกิน advance_days_max = วันกดไม่ได้ · (เตือนใกล้กว่า advance_hours_min — ผู้ใช้สั่งเอาออก 1 ต.ค. 69)
@@ -50,7 +51,7 @@ export default function OmSlotPicker({ date, slot, onDateChange, onSlotChange, e
         showTimeSlot
         showSurveySlots
         teamContext="survey"
-        overlap="warn"
+        overlap="shared"
         excludeOmBookingId={excludeId ?? null}
         sameProject={project ?? null}
         maxDate={lastDay}
