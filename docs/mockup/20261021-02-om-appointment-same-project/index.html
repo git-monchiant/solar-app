@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>นัดหมายตามโครงการ O&amp;M</title>
+<style>
+  @font-face { font-family: "DB Heavent"; src: url("../../../public/fonts/db_heavent_v3.2-webfont.woff") format("woff"); font-weight: 400; }
+  @font-face { font-family: "DB Heavent"; src: url("../../../public/fonts/db_heavent_med_v3.2-webfont.woff") format("woff"); font-weight: 500 600; }
+  @font-face { font-family: "DB Heavent"; src: url("../../../public/fonts/db_heavent_bd_v3.2-webfont.woff") format("woff"); font-weight: 700 800; }
+  :root {
+    --gray-50:#f9fafb; --gray-100:#f3f4f6; --gray-200:#e5e7eb; --gray-300:#d1d5db; --gray-400:#9ca3af;
+    --gray-500:#6b7280; --gray-600:#4b5563; --gray-700:#374151; --gray-900:#111827;
+    --active:#8b5cf6; --active-dark:#7c3aed; --active-light:#f5f3ff;
+    --emerald-50:#ecfdf5; --emerald-100:#d1fae5; --emerald-300:#6ee7b7; --emerald-400:#34d399; --emerald-500:#10b981; --emerald-600:#059669; --emerald-700:#047857;
+    --red-400:#f87171; --red-500:#ef4444;
+    --om:#0d9488; --survey:#8b5cf6; --install:#f97316;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { font-family: "DB Heavent", "Noto Sans Thai", -apple-system, "Segoe UI", sans-serif; background: var(--gray-100);
+         color: var(--gray-900); padding: 28px 20px 64px; font-size: 22px; line-height: 1.35; }
+  .wrap { max-width: 1240px; margin: 0 auto; }
+  header.page .meta { font-size: 18px; color: var(--gray-500); }
+  header.page h1 { font-size: 32px; margin: 2px 0 6px; }
+  header.page p { margin: 0; color: var(--gray-600); max-width: 95ch; }
+  section { margin-top: 36px; }
+  h2 { font-size: 18px; text-transform: uppercase; letter-spacing: .08em; color: var(--gray-500); margin: 0 0 2px; }
+  .sub { margin: 0 0 12px; color: var(--gray-600); font-size: 20px; max-width: 95ch; }
+  .n { display: inline-flex; width: 24px; height: 24px; border-radius: 99px; background: var(--emerald-600); color: #fff;
+       font-size: 16px; font-weight: 700; align-items: center; justify-content: center; margin-right: 6px; vertical-align: 2px; flex-shrink: 0; }
+
+  .frame { background: #fff; border: 1px solid var(--gray-300); border-radius: 14px; overflow: hidden; }
+  .row { display: flex; }
+  .rail { width: 72px; border-right: 1px solid var(--gray-200); background: rgb(249 250 251 / .4); padding: 12px 6px;
+          display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
+  .rail div { display: flex; flex-direction: column; align-items: center; padding: 8px 0; border-radius: 8px; line-height: 1.1; color: var(--gray-300); }
+  .rail b { font-size: 18px; } .rail span { font-size: 14px; }
+  .rail .done { color: var(--active); border: 1px solid var(--active); }
+  .rail .skip { border: 1px dashed var(--gray-200); }
+  .rail .on { background: var(--active); color: #fff; }
+  .main { flex: 1; padding: 12px 16px 16px; min-width: 0; }
+  .log { width: 220px; border-left: 1px solid var(--gray-200); padding: 14px; flex-shrink: 0; font-size: 17px; color: var(--gray-400); text-align: center; }
+
+  .card { border-radius: 16px; background: var(--active-light); border: 1px solid var(--active); box-shadow: 0 0 0 1px rgb(139 92 246 / .2); }
+  .ch { display: flex; align-items: center; gap: 12px; padding: 14px 20px; }
+  .ic { width: 40px; height: 32px; border-radius: 12px; background: var(--active); color: #fff; display: flex; align-items: center; justify-content: center; }
+  .ic svg { width: 20px; height: 20px; }
+  .kick { font-size: 18px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--gray-400); line-height: 1; }
+  .ttl { font-size: 24px; font-weight: 700; margin-top: 4px; line-height: 1.1; }
+  .badge { margin-left: auto; font-size: 18px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--active); display: flex; align-items: center; gap: 6px; }
+  .badge i { width: 8px; height: 8px; border-radius: 9px; background: var(--active); display: inline-block; }
+  .cb { padding: 4px 20px 20px; }
+  .agree { border-radius: 8px; background: rgb(255 255 255 / .6); border: 1px solid rgb(139 92 246 / .15); padding: 10px 12px; font-size: 20px; color: var(--gray-700); }
+  .agree b { color: var(--gray-900); }
+  .h { font-size: 18px; font-weight: 600; letter-spacing: .06em; color: var(--gray-400); margin: 14px 0 8px; display: flex; align-items: center; }
+  .h .r { margin-left: auto; letter-spacing: 0; font-weight: 600; color: var(--gray-500); }
+  .h .r b { color: var(--emerald-700); }
+
+  /* ① แถบแนะนำวัน */
+  .proj { border-radius: 10px; border: 1px solid var(--emerald-300); background: var(--emerald-50); padding: 8px 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .proj .t { font-size: 19px; color: var(--emerald-700); display: flex; align-items: center; gap: 6px; }
+  .proj .t svg { width: 18px; height: 18px; }
+  .proj .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .pchip { height: 34px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--emerald-300); background: #fff; font-size: 18px;
+           display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; color: var(--gray-700); }
+  .pchip b { color: var(--gray-900); }
+  .pchip .s { color: var(--gray-300); }
+  .pchip .free { color: var(--emerald-700); font-weight: 600; }
+  .pchip.on { background: var(--active); border-color: var(--active); color: #fff; }
+  .pchip.on b, .pchip.on .free, .pchip.on .s { color: #fff; }
+  .ex { font-size: 15px; color: var(--gray-400); font-weight: 400; }
+  .pchip.on .ex { color: rgb(255 255 255 / .75); }
+
+  /* ② ปฏิทิน */
+  .cal3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .cal3 > div + div { border-left: 1px solid var(--gray-200); padding-left: 12px; }
+  .mname { text-align: center; font-size: 18px; font-weight: 600; color: var(--gray-700); margin-bottom: 2px; }
+  .grid7 { display: grid; grid-template-columns: repeat(7, 1fr); }
+  .wd { text-align: center; font-size: 16px; font-weight: 600; color: var(--gray-400); }
+  .wd.we { color: var(--red-400); }
+  .dc { height: 36px; display: flex; align-items: center; justify-content: center; }
+  .day { position: relative; width: 32px; height: 32px; border-radius: 99px; display: flex; align-items: center; justify-content: center;
+         font-size: 19px; font-weight: 600; color: var(--gray-700); }
+  .day.we { color: var(--red-500); }
+  .day.past { color: var(--gray-300); }
+  .day.today { background: var(--active-light); color: var(--active); box-shadow: 0 0 0 1px rgb(139 92 246 / .3); }
+  .day.same { box-shadow: 0 0 0 2px var(--emerald-500); background: var(--emerald-50); color: var(--emerald-700); }
+  .day.sel { background: var(--active); color: #fff; box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--emerald-500); }
+  .dots { position: absolute; bottom: 1px; left: 50%; transform: translateX(-50%); display: flex; gap: 1px; }
+  .dots i { width: 4px; height: 4px; border-radius: 9px; display: block; }
+  .day.sel .dots i { background: #fff !important; }
+
+  /* ③ ช่วงเวลา */
+  .slots { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .sl { height: 38px; border-radius: 6px; border: 1px solid var(--gray-300); background: #fff; display: flex; align-items: center; justify-content: center; gap: 6px;
+        font-family: ui-monospace, Consolas, monospace; font-size: 13px; font-weight: 600; color: var(--gray-900); }
+  .sl .tag { font-family: "DB Heavent", sans-serif; font-size: 16px; font-weight: 600; }
+  .sl i { width: 6px; height: 6px; border-radius: 9px; display: block; }
+  .sl.queue { border: 1.5px dashed var(--emerald-400); }
+  .sl.queue .tag { color: var(--emerald-600); }
+  .sl.same { background: var(--emerald-50); border-color: var(--emerald-300); }
+  .sl.same .tag { color: var(--emerald-700); }
+  .sl.sel { background: var(--active); border-color: var(--active); color: #fff; box-shadow: 0 1px 2px rgb(139 92 246 / .2); }
+  .sl.sel .tag { color: rgb(255 255 255 / .85); }
+  .sl.off { background: var(--gray-100); border-color: var(--gray-200); color: var(--gray-400); }
+
+  /* ④ รายการนัดของวัน */
+  .dl { margin-top: 10px; border-radius: 8px; border: 1px solid var(--gray-200); background: #fff; }
+  .dl .hd { font-size: 17px; color: var(--gray-500); padding: 6px 12px; border-bottom: 1px solid var(--gray-100); }
+  .dl .it { display: flex; align-items: center; gap: 10px; padding: 6px 12px; font-size: 19px; }
+  .dl .it + .it { border-top: 1px solid var(--gray-100); }
+  .dl .tm { font-family: ui-monospace, Consolas, monospace; font-size: 13px; font-weight: 600; width: 92px; flex-shrink: 0; }
+  .dl .k { display: inline-flex; align-items: center; gap: 5px; width: 120px; flex-shrink: 0; color: var(--gray-600); }
+  .dl .k i { width: 7px; height: 7px; border-radius: 9px; display: block; }
+  .dl .who { font-weight: 600; }
+  .dl .pj { color: var(--gray-500); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sp { font-size: 15px; font-weight: 700; color: var(--emerald-700); background: var(--emerald-100); border-radius: 99px; padding: 0 8px; line-height: 22px; white-space: nowrap; }
+
+  .pick { margin-top: 12px; border-radius: 8px; background: var(--active-light); border: 1px solid rgb(139 92 246 / .2); padding: 10px 12px; }
+  .pick .k { font-size: 17px; color: rgb(139 92 246 / .7); } .pick .v { font-size: 22px; font-weight: 700; color: var(--active); }
+  .btns { margin-top: 12px; display: flex; gap: 8px; }
+  .btns div { height: 44px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 600; }
+  .btns .b1 { flex: 1; background: #fff; border: 1px solid var(--gray-200); color: var(--gray-700); }
+  .btns .b2 { flex: 2; background: var(--active); color: #fff; font-weight: 700; }
+
+  .ann { display: flex; gap: 6px; align-items: flex-start; font-size: 18px; color: var(--emerald-700); margin: 4px 0; }
+
+  /* ตารางสถานะ */
+  .legend { display: grid; grid-template-columns: 220px 1fr 90px; gap: 0; background: #fff; border: 1px solid var(--gray-200); border-radius: 12px; overflow: hidden; font-size: 19px; }
+  .legend > div { padding: 8px 12px; border-top: 1px solid var(--gray-100); display: flex; align-items: center; }
+  .legend .th { background: var(--gray-50); font-weight: 700; color: var(--gray-500); font-size: 17px; border-top: 0; }
+
+  /* มือถือ */
+  .phones { display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-start; }
+  .phone { width: 390px; border: 1px solid var(--gray-300); border-radius: 28px; background: #fff; overflow: hidden; flex-shrink: 0; }
+  .phone .dev { background: #ef4444; color: #fff; font-size: 15px; font-weight: 700; letter-spacing: .1em; text-align: center; line-height: 22px; }
+  .phone .pb { padding: 12px; }
+  .phone .card .ch { padding: 10px 12px; }
+  .phone .cb { padding: 4px 12px 14px; }
+  .phone .proj { flex-wrap: nowrap; flex-direction: column; align-items: stretch; gap: 6px; }
+  .phone .proj .chips { flex-wrap: nowrap; overflow: hidden; }
+  .phone .sl { height: 34px; font-size: 11px; gap: 3px; }
+  .phone .dl .k { width: auto; }
+  .phone .dl .it { flex-wrap: wrap; gap: 2px 8px; }
+  .phone .dl .pj { flex-basis: 100%; padding-left: 0; font-size: 17px; }
+  .notes { flex: 1; min-width: 300px; font-size: 20px; color: var(--gray-600); }
+  .notes li { margin-bottom: 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="page">
+  <div class="meta">แผน 20261021-02 · หน้างานบริการ O&amp;M ขั้น 04 นัดหมาย (+ Reschedule ขั้น 05) · วันนี้ พ. 21 ต.ค. 2569 ·
+    ข้อมูลนัด O&amp;M จริงจาก solardb_v3 · รายการที่ติด <span class="ex">ตัวอย่าง</span> = สมมติไว้ให้เห็นทุกสถานะ</div>
+  <h1>นัดหมาย: เห็นวันที่ทีมเข้าโครงการเดียวกันอยู่แล้ว</h1>
+  <p>บ้าน 118/37 · เสนา วิลเลจ บางปะกง - บ้านโพธิ์ (10301) — ผู้ใช้เคาะ 21 ต.ค.: นับนัด <b>O&amp;M + สำรวจ</b> · นัดทับได้เหมือนเดิม ·
+     <span class="n">1</span>แถบแนะนำวัน <span class="n">2</span>วงกรอบวันในปฏิทิน <span class="n">3</span>ช่องว่าง / ต่อคิว <span class="n">4</span>รายการนัดของวัน</p>
+</header>
+
+<!-- ───────── A. Desktop ───────── -->
+<section>
+  <h2>A · Desktop — กดชิป "พฤ 22 ต.ค." แล้วเลือก 10:00–11:00 ต่อคิวจาก 118/32</h2>
+  <p class="sub">ราง STEPS / แท็บ / Activity Log / ปุ่มคงเดิม — เปลี่ยนเฉพาะส่วน "นัดเข้าบริการ"</p>
+  <div class="frame">
+    <div class="row">
+      <div class="rail">
+        <div class="done"><b>01</b><span>ติดตาม</span></div>
+        <div class="skip"><b>02</b><span>ข้าม</span></div>
+        <div class="skip"><b>03</b><span>ข้าม</span></div>
+        <div class="on"><b>04</b><span>นัดหมาย</span></div>
+        <div><b>05</b><span>เข้างาน</span></div>
+        <div><b>06</b><span>ปิดงาน</span></div>
+      </div>
+      <div class="main">
+        <div class="card">
+          <div class="ch">
+            <div class="ic"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/></svg></div>
+            <div><div class="kick">Step 04 · O&amp;M</div><div class="ttl">นัดหมาย — เลือกวันนัด</div></div>
+            <div class="badge"><i></i>Active</div>
+          </div>
+          <div class="cb">
+            <div class="agree">✓ ลูกค้าตกลงรับบริการ · งานนี้<b>ไม่ต้องชำระเงิน</b> — เลือกวันนัดกับลูกค้า</div>
+            <div class="h">นัดเข้าบริการ</div>
+
+            <div class="ann"><span class="n">1</span>แถบแนะนำวัน — มีเฉพาะเมื่อมีนัดในโครงการนี้ช่วงที่นัดได้ · กดชิป = เลือกวันนั้น</div>
+            <div class="proj" id="projD"></div>
+
+            <div class="ann" style="margin-top:10px"><span class="n">2</span>วงกรอบเขียว = มีนัดในโครงการเดียวกัน · จุดสีทีมคงเดิม</div>
+            <div class="cal3" id="calD"></div>
+
+            <div class="h" style="border-top:1px solid var(--gray-100);padding-top:10px">ช่วงเวลา
+              <span style="margin-left:8px;color:var(--gray-300);letter-spacing:0;font-weight:400">เลือกได้มากกว่า 1 ช่วง</span>
+              <span class="r"><span class="n" style="vertical-align:0">3</span>ว่าง <b id="freeD"></b> / 16 ช่อง</span></div>
+            <div class="slots" id="slotsD"></div>
+
+            <div class="ann" style="margin-top:10px"><span class="n">4</span>แทนบรรทัด "วันที่เลือกมีนัด • O&amp;M 1 — จุดคือช่องที่ติดนัด · ยังนัดทับได้"</div>
+            <div class="dl" id="dlD"></div>
+
+            <div class="pick"><div class="k">นัดเป็น</div><div class="v">พฤหัสบดี 22 ต.ค. 2569 <span style="font-family:ui-monospace,Consolas,monospace;font-size:16px">10:00–11:00</span></div></div>
+            <div class="h">หมายเหตุ</div>
+            <div style="height:56px;border:1px solid var(--gray-200);border-radius:8px;background:#fff;padding:8px 12px;font-size:19px;color:var(--gray-400)">เช่น ลูกค้าไม่อยู่บ้านช่วงเช้า</div>
+            <div class="btns"><div class="b2">✓ ยืนยันและเข้างาน</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="log">ACTIVITY LOG<br><br>ยังไม่มีประวัติ</div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────── B. สถานะช่องเวลา ───────── -->
+<section>
+  <h2>B · สถานะช่องเวลา (③)</h2>
+  <p class="sub">"ว่าง" = ไม่มีนัด O&amp;M / สำรวจ ทุกโครงการ (ทีมมีชุดเดียว) · ไม่ปิด · ไม่เลยเวลา — ติดตั้งไม่หักช่องว่าง (คนละทีม · แสดงในรายการ ④ เป็น "ทั้งวัน")</p>
+  <div class="legend" id="legend"></div>
+</section>
+
+<!-- ───────── C. มือถือ ───────── -->
+<section>
+  <h2>C · มือถือ 390 — ชิปเลื่อนแนวนอน · ช่องเวลาเป็นจุด/กรอบ ไม่มีคำ</h2>
+  <div class="phones">
+    <div class="phone">
+      <div class="dev">DEVELOPMENT / SOLARDB_V3</div>
+      <div class="pb">
+        <div class="card">
+          <div class="ch">
+            <div class="ic"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75"/></svg></div>
+            <div><div class="kick">Step 04 · O&amp;M</div><div class="ttl" style="font-size:21px">นัดหมาย — เลือกวันนัด</div></div>
+          </div>
+          <div class="cb">
+            <div class="h" style="margin-top:4px">นัดเข้าบริการ</div>
+            <div class="proj" id="projM"></div>
+            <div style="margin-top:10px" id="calM"></div>
+            <div class="h" style="border-top:1px solid var(--gray-100);padding-top:8px">ช่วงเวลา<span class="r">ว่าง <b id="freeM"></b> / 16</span></div>
+            <div class="slots" id="slotsM"></div>
+            <div class="dl" id="dlM"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <ul class="notes">
+      <li>แถบ ① ชิดซ้ายเลื่อนแนวนอนแถวเดียว — มือถือปฏิทิน 3 เดือนเรียงยาว ชิปช่วยไม่ต้องไล่หา</li>
+      <li>ช่อง ③ แคบ: ตัดคำ "ต่อคิว" / บ้านเลขที่ เหลือกรอบประเขียว / พื้นเขียว + จุด — บ้านเลขที่ดูในรายการ ④</li>
+      <li>รายการ ④ ชื่อโครงการขึ้นบรรทัดใหม่</li>
+      <li>ไม่มีนัดในโครงการ หรือบ้านนอกโครงการ (ลูกค้าทั่วไป) = <b>ไม่มีแถบ ①</b> และไม่มีวงกรอบ — หน้าตาเท่าวันนี้ (มีแค่ตัวนับว่าง + รายการ ④)</li>
+    </ul>
+  </div>
+</section>
+
+</div>
+
+<script>
+// ── ข้อมูล: วันนี้ 21 ต.ค. 2569 · นัดได้ถึง 20 ธ.ค. (booking.advance_days_max 60) ──
+const TODAY = "2026-10-21", MAX = "2026-12-20", PJ = "10301", SEL = "2026-10-22", PICK = ["10:00", "10:30"];
+const COLOR = { om: "var(--om)", survey: "var(--survey)", install: "var(--install)" };
+const KIND = { om: "O&M ล้างแผง", survey: "สำรวจ", install: "ติดตั้ง" };
+// นัด O&M = ข้อมูลจริง (house_number + รหัสโครงการ) · ex = ตัวอย่างสมมติ
+const EV = [
+  { d: "2026-10-01", k: "om", pj: "01120" }, { d: "2026-10-16", k: "om", pj: "01120" },
+  { d: "2026-10-20", k: "om", pj: "00601" }, { d: "2026-10-20", k: "om", pj: "00601" }, { d: "2026-10-20", k: "om", pj: "NM8H" },
+  { d: "2026-10-21", k: "om", pj: "K9BK3" },
+  { d: "2026-10-22", k: "om", pj: "10301", who: "118/32", pjn: "เสนา วิลเลจ บางปะกง - บ้านโพธิ์", slots: ["09:30"] },
+  { d: "2026-10-22", k: "survey", pj: "01120", who: "คุณสมศรี", pjn: "เสนา อเวนิว 2 รังสิต - คลอง 1", slots: ["13:00", "13:30"], ex: 1 },
+  { d: "2026-10-22", k: "install", pj: null, who: "บ้านคุณวิทยา", pjn: "นอกโครงการ", slots: null, ex: 1 },
+  { d: "2026-10-28", k: "om", pj: "BPU" },
+  { d: "2026-11-05", k: "survey", pj: "10301", who: "คุณวิภา", slots: ["13:00", "13:30"], ex: 1 },
+  { d: "2026-11-10", k: "om", pj: "01120" },
+];
+const SLOTS = []; for (let h = 9; h < 17; h++) for (const m of ["00", "30"]) SLOTS.push(`${String(h).padStart(2, "0")}:${m}`);
+const end = s => { const [h, m] = s.split(":").map(Number); const t = h * 60 + m + 30; return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`; };
+const team = e => e.k === "om" || e.k === "survey";                 // ทีมเดียวกัน — หักช่องว่าง / นับเข้าโครงการ
+const sameOn = d => EV.filter(e => e.d === d && team(e) && e.pj === PJ);
+const busy = d => new Set(EV.filter(e => e.d === d && team(e) && e.slots).flatMap(e => e.slots));
+const freeCount = d => SLOTS.length - busy(d).size;
+const thDay = d => new Date(d + "T00:00").toLocaleDateString("th-TH", { weekday: "short", day: "numeric", month: "short" });
+
+// ① แถบแนะนำวัน
+function proj(el) {
+  const days = [...new Set(EV.filter(e => team(e) && e.pj === PJ && e.d > TODAY && e.d <= MAX).map(e => e.d))].sort().slice(0, 5);
+  el.innerHTML = `<div class="t"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z"/></svg>
+    ทีมเข้า <b>&nbsp;เสนา วิลเลจ บางปะกง - บ้านโพธิ์&nbsp;</b> อยู่แล้ว</div><div class="chips">` +
+    days.map(d => {
+      const s = sameOn(d), first = s[0];
+      const what = s.length > 1 ? `${s.length} หลัง` : `${first.k === "survey" ? "สำรวจ" : first.who} ${first.slots[0]}`;
+      return `<span class="pchip${d === SEL ? " on" : ""}"><b>${thDay(d)}</b><span class="s">·</span>${what}${first.ex ? ' <span class="ex">ตัวอย่าง</span>' : ""}<span class="s">·</span><span class="free">ว่าง ${freeCount(d)} ช่อง</span></span>`;
+    }).join("") + `</div>`;
+}
+
+// ② ปฏิทิน
+function month(y, m) {
+  const first = new Date(y, m, 1), n = new Date(y, m + 1, 0).getDate();
+  let h = `<div><div class="mname">${first.toLocaleDateString("th-TH", { month: "long" })}</div><div class="grid7">` +
+    ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"].map((w, i) => `<div class="wd${i === 0 || i === 6 ? " we" : ""}">${w}</div>`).join("") + `</div><div class="grid7">`;
+  for (let i = 0; i < first.getDay(); i++) h += `<div class="dc"></div>`;
+  for (let d = 1; d <= n; d++) {
+    const iso = `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`, wd = new Date(y, m, d).getDay();
+    const kinds = [...new Set(EV.filter(e => e.d === iso).map(e => e.k))];
+    const cls = iso === SEL ? "sel" : (iso < TODAY || iso > MAX) ? "past" : sameOn(iso).length ? "same" : iso === TODAY ? "today" : (wd === 0 || wd === 6) ? "we" : "";
+    const tip = kinds.length ? ` title="${sameOn(iso).length ? `เสนา วิลเลจ บางปะกง ${sameOn(iso).length} นัด · ` : ""}มีนัด ${EV.filter(e => e.d === iso).length} (นัดทับได้)"` : "";
+    h += `<div class="dc"><span class="day ${cls}"${tip}>${d}${kinds.length ? `<span class="dots">${kinds.map(k => `<i style="background:${COLOR[k]}"></i>`).join("")}</span>` : ""}</span></div>`;
+  }
+  return h + `</div></div>`;
+}
+
+// ③ ช่วงเวลา
+function slotState(d, s) {
+  const same = sameOn(d).find(e => e.slots?.includes(s));
+  const other = EV.find(e => e.d === d && team(e) && e.pj !== PJ && e.slots?.includes(s));
+  const b = busy(d), near = sameOn(d).some(e => e.slots?.some(x => x === end(s) || end(x) === s));
+  return { same, other, queue: !b.has(s) && near };
+}
+function slots(el, d, mobile) {
+  el.innerHTML = SLOTS.map(s => {
+    const st = slotState(d, s), sel = PICK.includes(s);
+    const cls = sel ? "sel" : st.same ? "same" : st.queue ? "queue" : "";
+    let tag = "";
+    if (st.same) tag = mobile ? `<i style="background:var(--emerald-500)"></i>` : `<span class="tag">▪ ${st.same.who}</span>`;
+    else if (st.queue && !mobile) tag = `<span class="tag">ต่อคิว</span>`;
+    else if (st.other) tag = `<i style="background:${COLOR[st.other.k]}"></i>`;
+    const label = mobile ? s : `${s}–${end(s)}`;
+    return `<div class="sl ${cls}" style="${cls === "sel" && st.queue ? "border-style:dashed;border-color:#fff;outline:1.5px dashed var(--emerald-400);outline-offset:1px" : ""}">${label}${tag}</div>`;
+  }).join("");
+}
+
+// ④ รายการนัดของวัน
+function dayList(el, d) {
+  // โครงการเดียวกันก่อน → ตามเวลา → ทั้งวัน (ติดตั้ง) ท้ายสุด
+  const list = EV.filter(e => e.d === d).sort((a, b) => (b.pj === PJ) - (a.pj === PJ) || ((a.slots?.[0] ?? "99") > (b.slots?.[0] ?? "99") ? 1 : -1));
+  el.innerHTML = `<div class="hd">นัดของ${new Date(d + "T00:00").toLocaleDateString("th-TH", { weekday: "long", day: "numeric", month: "short" })} · ${list.length} นัด</div>` +
+    list.map(e => `<div class="it"><span class="tm">${e.slots ? `${e.slots[0]}–${end(e.slots[e.slots.length - 1])}` : "ทั้งวัน"}</span>
+      <span class="k"><i style="background:${COLOR[e.k]}"></i>${KIND[e.k]}</span>
+      <span class="who">${e.who}${e.ex ? ' <span class="ex">ตัวอย่าง</span>' : ""}</span>
+      <span class="pj">${e.pjn ?? ""}</span>${team(e) && e.pj === PJ ? '<span class="sp">โครงการเดียวกัน</span>' : ""}</div>`).join("");
+}
+
+proj(document.getElementById("projD"));
+document.getElementById("calD").innerHTML = month(2026, 9) + month(2026, 10) + month(2026, 11);
+document.getElementById("freeD").textContent = freeCount(SEL);
+slots(document.getElementById("slotsD"), SEL, false);
+dayList(document.getElementById("dlD"), SEL);
+
+proj(document.getElementById("projM"));
+document.getElementById("calM").innerHTML = month(2026, 9);
+document.getElementById("freeM").textContent = freeCount(SEL);
+slots(document.getElementById("slotsM"), SEL, true);
+dayList(document.getElementById("dlM"), SEL);
+
+// B · ตารางสถานะ
+const ex = (cls, inner, style = "") => `<div class="sl ${cls}" style="width:200px;${style}">${inner}</div>`;
+document.getElementById("legend").innerHTML =
+  `<div class="th">หน้าตา</div><div class="th">ความหมาย</div><div class="th">กดได้</div>` +
+  [[ex("", "11:00–11:30"), "ว่าง (เดิม)", "ได้"],
+   [ex("queue", `09:00–09:30<span class="tag">ต่อคิว</span>`), "<b>ต่อคิวได้</b> — ว่าง + ติดก่อน/หลังช่องที่มีนัดโครงการเดียวกัน (ช่องที่แนะนำ)", "ได้"],
+   [ex("same", `09:30–10:00<span class="tag">▪ 118/32</span>`), "มีนัด O&amp;M / สำรวจ <b>โครงการเดียวกัน</b> — บ้านเลขที่ของนัดนั้น", "ได้ (นัดทับได้)"],
+   [ex("", `13:00–13:30<i style="background:var(--survey)"></i>`), "มีนัดที่อื่น — จุดสีทีม (เดิม)", "ได้ (นัดทับได้)"],
+   [ex("sel", "10:00–10:30"), "ที่เลือก (เดิม)", "กดเอาออก"],
+   [ex("off", "09:00–09:30"), "ปิดช่อง / วันหยุด / เลยเวลาแล้ว (เดิม)", "ไม่ได้"]]
+  .map(([a, b, c]) => `<div>${a}</div><div>${b}</div><div>${c}</div>`).join("");
+</script>
+</body>
+</html>
