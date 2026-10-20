@@ -152,7 +152,8 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
   // ★ ไม่เลือกผลไว้ก่อน แบบ Follow-up ฝั่งขาย (แผน 20260929-03 ข้อ 2 · เดิมเลือก "ตกลงนัด" ไว้ให้)
   const [outcome, setOutcome] = useState<string>("");
   // ★ 1 ต.ค. 69 เลือกวันนัดที่ขั้น 04 ที่เดียว (ผู้ใช้เคาะ "ตามแนะนำ") — งานฟรีตกลงที่ขั้น 01 แล้วมาเลือกวันที่ขั้น 04
-  //   true = ตกลงแล้ว กำลังเลือกวัน · ยังไม่บันทึกอะไรจนกดบันทึกที่ขั้น 04 (ยกเลิก = กลับขั้น 01)
+  //   true = ตกลงแล้ว กำลังเลือกวัน · ยังไม่บันทึกอะไรจนกดบันทึกที่ขั้น 04
+  //   ★ 21 ต.ค. 69 ผู้ใช้สั่งเอาปุ่ม "‹ กลับขั้น 01" ออก — ไม่มีทางย้อนในหน้า · รีเฟรชหน้า = เริ่มขั้น 01 ใหม่ (ยังไม่มีอะไรถูกบันทึก)
   const [schedNow, setSchedNow] = useState(false);
   const [note, setNote] = useState("");
   // วันนัด + เวลาเริ่มของช่วง (om_slot_config) — เดิมช่อง datetime-local ช่องเดียว
@@ -260,7 +261,6 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
     if (!apDate) setApDate(plusDays(1));   // เลือกพรุ่งนี้ไว้ก่อน ช่วงเวลาขึ้นให้เลือกเลย
     go(3); scrollToCard(3);
   };
-  const backToFollow = () => { setSchedNow(false); setOutcome(""); setApDate(""); setApSlot(""); setErr(""); go(0); scrollToCard(0); };
   const pickOutcome = (k: string) => {
     setOutcome(k); setErr("");
     if (k === "agreed") goAgree();
@@ -519,14 +519,17 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
 
       {/* ปุ่มคู่ ยกเลิก / ✓ยืนยัน เต็มแถว — ยกจาก AppointmentRescheduler ฝั่งขาย
           ขั้น 01: ยกเลิก = ล้างที่เลือก · ตกลงแล้วปุ่มหลักพาไปขั้นถัดไป
-          ขั้น 04 งานฟรี: ยกเลิก = กลับขั้น 01 (ยังไม่มีอะไรถูกบันทึก) · งานชำระแล้ว: ยกเลิก = ล้างวันที่เลือก */}
+          ขั้น 04 งานชำระแล้ว: ยกเลิก = ล้างวันที่เลือก
+          ★ 21 ต.ค. 69 ขั้น 04 งานฟรีไม่มีปุ่มซ้ายแล้ว (เดิม "‹ กลับขั้น 01") — ผู้ใช้สั่งเอาออก ปุ่มยืนยันเต็มแถว */}
       <div className="mt-3 flex gap-2 pt-1">
-        <button type="button"
-          disabled={busy || (mode === "follow" && !outcome) || (mode === "paid" && !apDate && !apSlot)}
-          onClick={mode === "free" ? backToFollow : resetCall}
-          className="flex-1 h-11 rounded-lg text-sm font-semibold bg-white border border-gray-200 text-gray-700 hover:border-gray-400 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
-          {mode === "free" ? "‹ กลับขั้น 01" : "ยกเลิก"}
-        </button>
+        {mode !== "free" && (
+          <button type="button"
+            disabled={busy || (mode === "follow" && !outcome) || (mode === "paid" && !apDate && !apSlot)}
+            onClick={resetCall}
+            className="flex-1 h-11 rounded-lg text-sm font-semibold bg-white border border-gray-200 text-gray-700 hover:border-gray-400 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
+            ยกเลิก
+          </button>
+        )}
         {mode === "follow" && oc === "agreed" ? (
           <button type="button" onClick={goAgree}
             className="flex-[2] h-11 rounded-lg text-sm font-bold text-white bg-active hover:bg-active-dark shadow-sm shadow-active/30 flex items-center justify-center gap-2 cursor-pointer">
@@ -805,7 +808,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                 : viewOnly ? waitNote("รอทีม O&M โทรติดตามลูกค้า")
                 // ★ 21 ต.ค. 69 ผู้ใช้เลือก "ล็อกการ์ด 01 ระหว่างเลือกวันนัด" — งานฟรีกดตกลงแล้วยังไม่บันทึก (บันทึกทีเดียวที่ขั้น 04)
                 //   เดิมย้อนมากดราง 01 แล้วฟอร์มยังแก้ได้ ดูเหมือนปิดขั้นแล้วแต่แก้ได้
-                //   เปลี่ยนผลการโทร = ปุ่ม "‹ กลับขั้น 01" ที่ขั้น 04 (backToFollow ล้างที่เลือกแล้วปลดล็อกการ์ดนี้)
+                //   ไม่มีปุ่มย้อนแล้ว (ผู้ใช้สั่งเอา "‹ กลับขั้น 01" ออก 21 ต.ค.) — รีเฟรชหน้าแล้วการ์ดนี้กลับมาเลือกผลใหม่ได้
                 : schedFree ? (
                   <div className="space-y-3">
                     <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg border bg-active-light border-active/20 text-sm text-gray-800">
