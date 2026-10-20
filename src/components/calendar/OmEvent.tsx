@@ -10,9 +10,11 @@ import { useOpenOmService } from "@/lib/hooks/useOpenOmService";
 export const OM_EVENT_COLOR = "#0d9488";   // teal-600
 
 /** แถวงาน O&M จาก /api/surveys/scheduled — id = เลขใบงาน · house_id ไว้เปิดหน้ารายละเอียด */
-export type OmEventFields = { house_id?: number | null; om_service?: string | null };
+export type OmEventFields = { house_id?: number | null; om_service?: string | null; project_name?: string | null };
 
-export const omEventLabel = (service?: string | null) => `O&M${service ? ` · ${service}` : ""}`;
+/** "O&M · ล้างแผง · <โครงการ>" — ★ 21 ต.ค. 69 ผู้ใช้ขอชื่อโครงการในปฏิทิน (API ส่ง project_name มาแล้ว · แผน 20261021-02) */
+export const omEventLabel = (service?: string | null, project?: string | null) =>
+  `O&M${service ? ` · ${service}` : ""}${project ? ` · ${project}` : ""}`;
 
 export function OmWrenchIcon({ className = "w-3.5 h-3.5 shrink-0" }: { className?: string }) {
   return (

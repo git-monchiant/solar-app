@@ -179,7 +179,7 @@ export default function EventCalendarMonth({ toolbarRight, year: controlledYear,
                       const inlineStyle: React.CSSProperties | undefined = tc
                         ? { borderColor: isOverdueFollowup ? "#ef4444" : tc, color: tc, backgroundColor: `${tc}14` }
                         : undefined;
-                      const kindLabel = isBlock ? "งานอื่น" : isOm ? omEventLabel(ev.om_service) : isFollowup ? "นัดติดตาม" : isSurvey ? "สำรวจ" : "ติดตั้ง";
+                      const kindLabel = isBlock ? "งานอื่น" : isOm ? omEventLabel(ev.om_service, ev.project_name) : isFollowup ? "นัดติดตาม" : isSurvey ? "สำรวจ" : "ติดตั้ง";
                       // งาน O&M: id = เลขใบงาน ไม่ใช่ lead — เปิดหน้างานบริการของบ้าน
                       const handleClick = () => {
                         if (isBlock) return;

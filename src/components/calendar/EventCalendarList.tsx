@@ -39,7 +39,7 @@ const STATUS_LABEL = (j: ScheduledEvent): string => {
   if (j.event_type === "survey") return "นัดสำรวจ";
   if (j.event_type === "install") return "นัดติดตั้ง";
   if (j.event_type === "followup") return "นัดติดตาม";
-  if (j.event_type === "om") return omEventLabel(j.om_service);
+  if (j.event_type === "om") return omEventLabel(j.om_service, j.project_name);
   return getStatusLabel(j);
 };
 
