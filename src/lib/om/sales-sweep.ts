@@ -1,6 +1,7 @@
 import { sql } from "@/lib/db";
 import { matchLead, type Candidate, type MatchResult, type LeadInput, type Tier } from "@/lib/om/rem-match";
 import { syncSalesDevices } from "@/lib/om/devices";
+import { checkEmail } from "@/lib/om/contact";
 
 // ตัดคำนำหน้าชื่อไทย — ต้องตรงกับ dbo.om_strip_title() ที่ใช้ในฝั่ง SQL
 const TITLE_RE = /^(คุณ|นายแพทย์|แพทย์หญิง|นางสาว|น\.ส\.|ด\.ช\.|ด\.ญ\.|นาย|นาง|ดร\.|พญ\.|นพ\.|บริษัท|บจก\.|หจก\.)\s*/;
@@ -28,10 +29,12 @@ type LeadRow = LeadInput & {
   warranty_doc_no: string | null; warranty_inverter_kw: number | null;
   warranty_battery_brand: string | null; warranty_battery_kwh: number | null;
   installation_address: string | null;
+  /** อีเมลในลีด → om_customers.email (21 ต.ค. 69) · leads.line_id เป็นรหัสบัญชี LINE OA ไม่ใช่ LINE ID ⇒ ไม่ดึง */
+  email: string | null;
 };
 
 const PENDING_LEADS = `
-  SELECT l.id, l.full_name, l.project_id, l.house_number, l.phone, l.id_card_number,
+  SELECT l.id, l.full_name, l.project_id, l.house_number, l.phone, l.id_card_number, l.email,
          l.install_completed_at, l.install_actual_date, l.installation_address,
          l.warranty_inverter_brand, l.warranty_inverter_sn, l.warranty_system_size_kwp,
          l.warranty_start_date, l.warranty_om_per_year, l.warranty_duration_years,
@@ -152,8 +155,9 @@ export async function commitLead(db: sql.ConnectionPool, lead: LeadRow, o: Commi
         .input("f", sql.NVarChar(200), parts[0] ?? null)
         .input("ls", sql.NVarChar(200), parts.length > 1 ? parts.slice(1).join(" ") : null)
         .input("c", sql.NVarChar(30), cidOk ? cid : null)
-        .query(`INSERT INTO om_customers (full_name, first_name, last_name, id_card, note)
-                OUTPUT INSERTED.id VALUES (@n, @f, @ls, @c, N'สร้างอัตโนมัติจากงานขาย')`);
+        .input("em", sql.NVarChar(200), checkEmail(lead.email).value)
+        .query(`INSERT INTO om_customers (full_name, first_name, last_name, id_card, email, note)
+                OUTPUT INSERTED.id VALUES (@n, @f, @ls, @c, @em, N'สร้างอัตโนมัติจากงานขาย')`);
       custId = r.recordset[0].id as number;
     }
     if (phone.length >= 9) {
@@ -295,7 +299,7 @@ export async function runSweep(db: sql.ConnectionPool, opts: { dryRun?: boolean 
 // ดึง lead รายตัวสำหรับปุ่มในคิว (คอลัมน์ชุดเดียวกับตอนกวาด)
 export async function getLead(db: sql.ConnectionPool, leadId: number): Promise<LeadRow | null> {
   const r = await db.request().input("id", sql.Int, leadId).query(`
-    SELECT l.id, l.full_name, l.project_id, l.house_number, l.phone, l.id_card_number,
+    SELECT l.id, l.full_name, l.project_id, l.house_number, l.phone, l.id_card_number, l.email,
            l.install_completed_at, l.install_actual_date, l.installation_address,
            l.warranty_inverter_brand, l.warranty_inverter_sn, l.warranty_system_size_kwp,
            l.warranty_start_date, l.warranty_om_per_year, l.warranty_duration_years,

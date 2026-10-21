@@ -69,7 +69,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     LEFT JOIN om_service_type rst ON rst.id = rd.service_type_id
     WHERE i.house_id = @id AND rd.status <> 'void' ORDER BY rd.service_date;
 
-    SELECT hc.id link_id, hc.role, c.id customer_id, c.full_name,
+    SELECT hc.id link_id, hc.role, c.id customer_id, c.full_name, c.email, c.contact_line_id,
            (SELECT TOP 1 p.phone FROM om_customer_phones p WHERE p.customer_id = c.id
             ORDER BY p.is_primary DESC, p.id) phone
     FROM om_house_customers hc JOIN om_customers c ON c.id = hc.customer_id

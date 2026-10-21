@@ -1,6 +1,7 @@
 import { sql } from "@/lib/db";
 import { MANUAL_HOUSE_SOURCE } from "@/lib/om/house-origin";
 import { isPlaceholderPhone } from "@/lib/utils/formatters";
+import { checkEmail, checkLineId } from "@/lib/om/contact";
 
 // เพิ่มบ้าน/ลูกค้า O&M เองจากหน้าจอ (แผน 20261014-08) — ลูกค้าที่ไม่ได้มาจาก REM / งานขาย
 //   (ติดตั้งโดยเจ้าอื่น · นอกโครงการเสนา) เดิมเข้าระบบไม่ได้เลย ต้องรันสคริปต์ลงฐานเอง
@@ -90,6 +91,8 @@ export type ManualHouseInput = {
   customerId: number | null;
   title: string | null; firstName: string | null; lastName: string | null;
   phone: string; idCard: string;
+  /** อีเมล · LINE ID ที่ลูกค้าบอก — ไม่บังคับ (21 ต.ค. 69) */
+  email: string | null; lineId: string | null;
   /** เปิดใช้บ้านเดิมที่มีในทะเบียนแต่ยังไม่เปิดงาน O&M (house_state dormant) แทนการสร้างใหม่ */
   reuseHouseId: number | null;
   projectId: string | null; houseNumber: string; address: string | null;
@@ -118,6 +121,9 @@ export function parseManualHouseInput(b: Record<string, unknown>): ManualHouseIn
   if (phone && !/^0\d{9}$/.test(phone)) return "กรุณากรอกเบอร์โทร 10 หลัก ขึ้นต้นด้วย 0";
   if (phone && isPlaceholderPhone(phone)) return "เบอร์โทรไม่ถูกต้อง (เลขซ้ำหรือเรียงกัน) — กรุณาระบุเบอร์ที่ติดต่อลูกค้าได้จริง";
   if (idCard && !/^\d{13}$/.test(idCard)) return "เลขบัตรประชาชนต้องมี 13 หลัก";
+
+  const em = checkEmail(b.email), li = checkLineId(b.contact_line_id);
+  if (em.error || li.error) return (em.error ?? li.error) as string;
 
   const projectId = txt(b.project_id, 20);
   const houseNumber = normHouseNumber(b.house_number).slice(0, 50);
@@ -153,6 +159,7 @@ export function parseManualHouseInput(b: Record<string, unknown>): ManualHouseIn
 
   return {
     customerId, title: txt(b.title, 40), firstName, lastName: txt(b.last_name, 120), phone, idCard,
+    email: em.value, lineId: li.value,
     reuseHouseId: Number(b.house_id) > 0 ? Number(b.house_id) : null,
     projectId, houseNumber, address, latitude, longitude, note: txt(b.note, 1000), spec,
   };
@@ -256,8 +263,9 @@ export async function createManualHouse(db: sql.ConnectionPool, x: ManualHouseIn
         .input("fn", sql.NVarChar(200), customerName.slice(0, 200))
         .input("t", sql.NVarChar(40), x.title).input("f", sql.NVarChar(120), x.firstName).input("l", sql.NVarChar(120), x.lastName)
         .input("cid", sql.NVarChar(20), x.idCard || null)
-        .query(`INSERT INTO om_customers (full_name, title, first_name, last_name, id_card, note)
-                OUTPUT INSERTED.id VALUES (@fn, @t, @f, @l, @cid, N'${SOURCE_REF}')`);
+        .input("em", sql.NVarChar(200), x.email).input("li", sql.NVarChar(100), x.lineId)
+        .query(`INSERT INTO om_customers (full_name, title, first_name, last_name, id_card, email, contact_line_id, note)
+                OUTPUT INSERTED.id VALUES (@fn, @t, @f, @l, @cid, @em, @li, N'${SOURCE_REF}')`);
       customerId = Number(c.recordset[0].id);
       await rq().input("c", sql.Int, customerId).input("p", sql.NVarChar(20), x.phone)
         .query(`INSERT INTO om_customer_phones (customer_id, phone, is_primary, source) VALUES (@c, @p, 1, 'admin')`);
@@ -275,6 +283,13 @@ export async function createManualHouse(db: sql.ConnectionPool, x: ManualHouseIn
       if (x.idCard && !others.some((c) => c.kind === "id_card")) {
         await rq().input("c", sql.Int, customerId).input("cid", sql.NVarChar(20), x.idCard)
           .query(`UPDATE om_customers SET id_card = ISNULL(id_card, @cid), updated_at = SYSDATETIMEOFFSET() WHERE id = @c`);
+      }
+      // ลูกค้าเดิม: เติมอีเมล / LINE ID เฉพาะที่ยังว่าง (ไม่ทับค่าที่มีอยู่ — แก้ได้ที่หน้าต่างข้อมูลลูกค้า)
+      if (x.email || x.lineId) {
+        await rq().input("c", sql.Int, customerId)
+          .input("em", sql.NVarChar(200), x.email).input("li", sql.NVarChar(100), x.lineId)
+          .query(`UPDATE om_customers SET email = ISNULL(email, @em), contact_line_id = ISNULL(contact_line_id, @li),
+                         updated_at = SYSDATETIMEOFFSET() WHERE id = @c`);
       }
       await rq().input("c", sql.Int, customerId).input("u", sql.Int, actorUserId)
         .input("r", sql.NVarChar(300), `เชื่อมโยงบ้านเลขที่ ${x.houseNumber} (เจ้าของ) · ${SOURCE_REF}`)

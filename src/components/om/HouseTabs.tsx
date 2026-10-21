@@ -149,6 +149,9 @@ export function HouseInfoTab({ houseId }: { houseId: number }) {
               <b className="text-gray-900">{c.full_name}</b>
               <div className="text-xs text-gray-500">
                 {c.phone ? <a href={`tel:${c.phone}`} className="tabular-nums text-gray-600 no-underline hover:text-active">{c.phone}</a> : "ไม่มีเบอร์โทร"}
+                {/* อีเมล · LINE ID (21 ต.ค. 69) — แก้ที่หน้าต่างข้อมูลลูกค้า (กดรูปลูกค้ามุมซ้ายบน) */}
+                {c.email && <> · <a href={`mailto:${c.email}`} className="text-gray-600 no-underline hover:text-active break-all">{c.email}</a></>}
+                {c.contact_line_id && <> · LINE ID <span className="text-gray-600">{c.contact_line_id}</span></>}
               </div>
             </div>
             <span className={`text-xxs font-bold px-2 py-0.5 rounded-full ${c.role === "owner" ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>

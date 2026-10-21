@@ -567,7 +567,11 @@ export default function OmHousesPage() {
                       <div key={c.link_id} className="flex items-center gap-2 px-5 py-2 border-b border-gray-100 text-sm">
                         <div className="flex-1 min-w-0">
                           <b>{c.full_name}</b>
-                          <div className="text-xxs font-medium text-gray-500">{c.phone || "ไม่มีเบอร์โทร"}</div>
+                          <div className="text-xxs font-medium text-gray-500">
+                            {c.phone || "ไม่มีเบอร์โทร"}
+                            {c.email && <span className="break-all"> · {c.email}</span>}
+                            {c.contact_line_id && <> · LINE ID {c.contact_line_id}</>}
+                          </div>
                         </div>
                         <span className={`text-xxs font-bold px-2 rounded-full ${c.role === "owner" ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
                           {ROLE[c.role] ?? c.role}</span>

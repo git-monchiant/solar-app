@@ -5,6 +5,7 @@ import { fixDates, sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
 import { isCleaning } from "@/lib/om/entitlement";
 import { omErrorText } from "@/lib/om/api-error";
+import { checkEmail, checkLineId } from "@/lib/om/contact";
 
 // ลูกค้ารายคน — ดู · แก้ · ลบ (ตัดสิน hard/soft เองตามเงื่อนไขที่ผู้ใช้เคาะ 1 ก.ย.)
 
@@ -15,7 +16,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
 
   const db = await getOmDb();
   const r = await db.request().input("id", sql.Int, id).query(`
-    SELECT id, full_name, title, first_name, last_name, id_card, note, is_active,
+    SELECT id, full_name, title, first_name, last_name, id_card, email, contact_line_id, note, is_active,
            CONVERT(varchar(33), created_at, 126) created_at
     FROM om_customers WHERE id = @id;
 
@@ -58,7 +59,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   });
 }
 
-// PATCH { title?, first_name?, last_name?, id_card?, note?, restore? }
+// PATCH { title?, first_name?, last_name?, id_card?, email?, contact_line_id?, note?, restore? }
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const gate = await requireAnyRole(req, OM_WORK_ROLES);
   if (gate.error) return gate.error;
@@ -67,7 +68,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
   const db = await getOmDb();
   const cur = await db.request().input("id", sql.Int, id)
-    .query(`SELECT full_name, title, first_name, last_name, id_card, note, is_active FROM om_customers WHERE id = @id`);
+    .query(`SELECT full_name, title, first_name, last_name, id_card, email, contact_line_id, note, is_active FROM om_customers WHERE id = @id`);
   const old = cur.recordset[0];
   if (!old) return NextResponse.json({ error: "ไม่พบลูกค้า" }, { status: 404 });
 
@@ -77,6 +78,14 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   if (!first) return NextResponse.json({ error: "กรุณาระบุชื่อ" }, { status: 400 });
   const full = [title, first, last].filter(Boolean).join(" ");
   const restore = b.restore === true;
+  // อีเมล · LINE ID (21 ต.ค. 69) — ไม่ส่งมา = คงค่าเดิม · ส่งค่าว่าง = ล้าง
+  const em = b.email !== undefined ? checkEmail(b.email) : { value: old.email as string | null };
+  const li = b.contact_line_id !== undefined ? checkLineId(b.contact_line_id) : { value: old.contact_line_id as string | null };
+  if (em.error || li.error) return NextResponse.json({ error: em.error ?? li.error }, { status: 400 });
+  // ประวัติจดเฉพาะช่องที่เปลี่ยน (ชื่อจดเสมอแบบเดิม — หน้าประวัติอ่าน full_name)
+  const from: Record<string, unknown> = { full_name: old.full_name }, to: Record<string, unknown> = { full_name: full };
+  if ((old.email ?? null) !== em.value) { from.email = old.email ?? null; to.email = em.value; }
+  if ((old.contact_line_id ?? null) !== li.value) { from.contact_line_id = old.contact_line_id ?? null; to.contact_line_id = li.value; }
 
   const tx = new sql.Transaction(db);
   await tx.begin();
@@ -86,14 +95,15 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       .input("t", sql.NVarChar(40), title).input("f", sql.NVarChar(120), first).input("l", sql.NVarChar(120), last)
       .input("card", sql.NVarChar(20), b.id_card !== undefined ? (String(b.id_card).trim() || null) : old.id_card)
       .input("nt", sql.NVarChar(sql.MAX), b.note !== undefined ? (String(b.note).trim() || null) : old.note)
+      .input("em", sql.NVarChar(200), em.value).input("li", sql.NVarChar(100), li.value)
       .input("act", sql.Bit, restore ? 1 : old.is_active)
       .query(`UPDATE om_customers SET full_name = @fn, title = @t, first_name = @f, last_name = @l,
-                id_card = @card, note = @nt, is_active = @act, updated_at = SYSDATETIMEOFFSET()
+                id_card = @card, email = @em, contact_line_id = @li, note = @nt, is_active = @act, updated_at = SYSDATETIMEOFFSET()
               WHERE id = @id`);
     await new sql.Request(tx).input("c", sql.Int, id).input("u", sql.Int, gate.userId)
       .input("act", sql.VarChar(20), restore ? "restore" : "update")
-      .input("from", sql.NVarChar(sql.MAX), JSON.stringify({ full_name: old.full_name }))
-      .input("to", sql.NVarChar(sql.MAX), JSON.stringify({ full_name: full }))
+      .input("from", sql.NVarChar(sql.MAX), JSON.stringify(from))
+      .input("to", sql.NVarChar(sql.MAX), JSON.stringify(to))
       .query(`INSERT INTO om_customer_history (customer_id, [action], actor_user_id, from_json, to_json)
               VALUES (@c, @act, @u, @from, @to)`);
     await tx.commit();

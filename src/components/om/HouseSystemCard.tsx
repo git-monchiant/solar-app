@@ -34,7 +34,9 @@ export interface HouseDetail {
     total_granted: number; total_used: number; balance: number }[];
   serviceTypes?: { id: number; code: string; label_th: string; consumes_quota: number;
     cycle_months: number | null }[];
-  customers: { link_id: number; role: string; customer_id: number; full_name: string; phone: string | null }[];
+  customers: { link_id: number; role: string; customer_id: number; full_name: string; phone: string | null;
+    /** อีเมล · LINE ID ที่ลูกค้าบอก (21 ต.ค. 69) */
+    email?: string | null; contact_line_id?: string | null }[];
   bookings: { id: number; scheduled_at: string; time_slot?: string | null; status: string; service_type: string | null }[];
   // ของแถมตอนขาย — เก็บแค่ "เจอกี่รายการ" กับข้อมูลโซลาร์ · ★ ไม่มีราคา ไม่มีรายชื่อของแถม
   //   (21 ต.ค. 69 เลิกส่งชื่อรายการโซลาร์ด้วย — ข้อความใน REM มีราคาติดมา)

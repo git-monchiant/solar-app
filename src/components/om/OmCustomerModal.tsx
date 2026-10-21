@@ -10,7 +10,8 @@ import ModalBase from "@/components/ui/ModalBase";
 import { useDialog } from "@/components/ui/Dialog";
 
 interface Detail {
-  customer: { id: number; full_name: string; title: string | null; first_name: string; last_name: string | null; id_card: string | null; is_active: boolean };
+  customer: { id: number; full_name: string; title: string | null; first_name: string; last_name: string | null; id_card: string | null;
+    email: string | null; contact_line_id: string | null; is_active: boolean };
   phones: { id: number; phone: string; is_primary: boolean }[];
   houses: { link_id: number; role: string; house_id: number; house_number: string | null; project_name: string | null }[];
   washes: number; active_bookings: number;
@@ -62,6 +63,7 @@ export default function OmCustomerModal({ customerId, canDelete = true, onClose,
     const c = sel.customer;
     const d = await call("PATCH", `/api/om/customers/${c.id}`, {
       title: c.title, first_name: c.first_name, last_name: c.last_name, id_card: c.id_card,
+      email: c.email ?? "", contact_line_id: c.contact_line_id ?? "",
     }, "บันทึกแล้ว");
     if (d) reload();
   };
@@ -146,6 +148,15 @@ export default function OmCustomerModal({ customerId, canDelete = true, onClose,
                   className="h-9 rounded-lg border border-gray-200 px-3 text-sm font-semibold outline-none focus:border-primary" /></label>
               <label className="grid gap-1"><span className="text-xs font-bold text-gray-700">นามสกุล</span>
                 <input value={sel.customer.last_name ?? ""} onChange={(e) => upd({ last_name: e.target.value })}
+                  className="h-9 rounded-lg border border-gray-200 px-3 text-sm font-semibold outline-none focus:border-primary" /></label>
+              {/* ★ 21 ต.ค. 69 ผู้ใช้สั่งเพิ่มช่อง — LINE ID = ไอดีที่ลูกค้าบอก ไม่ใช่บัญชีที่เชื่อมผ่าน LINE OA */}
+              <label className="grid gap-1"><span className="text-xs font-bold text-gray-700">อีเมล</span>
+                <input value={sel.customer.email ?? ""} onChange={(e) => upd({ email: e.target.value })}
+                  type="email" inputMode="email" placeholder="name@example.com"
+                  className="h-9 rounded-lg border border-gray-200 px-3 text-sm font-semibold outline-none focus:border-primary" /></label>
+              <label className="grid gap-1"><span className="text-xs font-bold text-gray-700">LINE ID</span>
+                <input value={sel.customer.contact_line_id ?? ""} onChange={(e) => upd({ contact_line_id: e.target.value })}
+                  placeholder="เช่น somchai หรือ @somchai"
                   className="h-9 rounded-lg border border-gray-200 px-3 text-sm font-semibold outline-none focus:border-primary" /></label>
             </div>
 

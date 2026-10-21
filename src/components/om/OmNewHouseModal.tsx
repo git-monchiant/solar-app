@@ -13,7 +13,7 @@ import { isPlaceholderPhone } from "@/lib/utils/formatters";
 import type { HouseConflict } from "@/lib/om/manual-house";
 
 const EMPTY = {
-  title: "", first_name: "", last_name: "", phone: "", id_card: "",
+  title: "", first_name: "", last_name: "", phone: "", id_card: "", email: "", contact_line_id: "",
   project_id: "", house_number: "", address: "", coords: "", note: "",
   inverter_brand: "", inverter_kw: "", size_kwp: "", battery_brand: "", battery_kwh: "", install_date: "",
 };
@@ -107,6 +107,7 @@ export default function OmNewHouseModal({ onClose, onOpenHouse }: {
         body: JSON.stringify({
           customer_id: pick?.id ?? null, house_id: reuseHouseId,
           title: f.title, first_name: f.first_name, last_name: f.last_name, phone, id_card: idCard,
+          email: f.email, contact_line_id: f.contact_line_id,
           project_id: f.project_id || null, house_number: houseNumber, address: f.address, note: f.note,
           latitude: coords?.lat ?? null, longitude: coords?.lng ?? null,
           inverter_brand: f.inverter_brand, inverter_kw: f.inverter_kw, size_kwp: f.size_kwp,
@@ -185,6 +186,11 @@ export default function OmNewHouseModal({ onClose, onOpenHouse }: {
             {fakePhone && <span className="text-xs text-red-600">เบอร์โทรไม่ถูกต้อง — กรุณากรอกเบอร์ที่ติดต่อลูกค้าได้</span>}</label>
           <label className="grid gap-1"><span className="text-xs font-bold text-gray-700">เลขบัตรประชาชน</span>
             <input value={f.id_card} onChange={set("id_card")} inputMode="numeric" placeholder="ไม่บังคับ — ใช้ตรวจสอบรายชื่อซ้ำ" className={INPUT} /></label>
+          {/* ★ 21 ต.ค. 69 ผู้ใช้สั่งเพิ่มช่อง — ไม่บังคับ · ลูกค้าเดิมเติมเฉพาะช่องที่ยังว่าง */}
+          <label className="grid gap-1"><span className="text-xs font-bold text-gray-700">อีเมล</span>
+            <input value={f.email} onChange={set("email")} type="email" inputMode="email" placeholder="ไม่บังคับ" className={INPUT} /></label>
+          <label className="grid gap-1"><span className="text-xs font-bold text-gray-700">LINE ID</span>
+            <input value={f.contact_line_id} onChange={set("contact_line_id")} placeholder="ไม่บังคับ — เช่น somchai หรือ @somchai" className={INPUT} /></label>
         </div>
         {/* คนที่ชน — ต้องเลือกใช้คนเดิม ระบบไม่สร้างคนซ้ำ (เปลี่ยนเบอร์/เลขบัตรได้ถ้าไม่ใช่คนเดียวกัน) */}
         {needPick && (
