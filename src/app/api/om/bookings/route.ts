@@ -131,7 +131,8 @@ export async function POST(req: NextRequest) {
     when = toThaiOffset(r.at);
     slot = r.slot;
   }
-  const status = when ? (typeof b.status === "string" && ALL_STATUS.includes(b.status) ? b.status : "pending") : "follow";
+  // ★ 21 ต.ค. 69: ค่าเริ่มเป็นนัดแล้ว — เลิกใช้สถานะรอยืนยันนัด (แท็บเอาออกแล้ว · ผู้ใช้สั่ง)
+  const status = when ? (typeof b.status === "string" && ALL_STATUS.includes(b.status) ? b.status : "confirmed") : "follow";
 
   const house = (await db.request().input("h", sql.Int, houseId)
     .query(`SELECT id, house_number FROM om_houses WHERE id = @h AND is_om = 1`)).recordset[0];

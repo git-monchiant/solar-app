@@ -347,9 +347,10 @@ export default function OmDashboardPage() {
 
             {/* แถว 2 — งานแยกตามแท็บ ชุดเดียวกับหน้ารายการ กดแล้วเปิดรายชื่อของแท็บนั้น */}
             <div className="rounded-2xl bg-white border border-gray-200 p-4">
-              {/* ★ 14 ต.ค. 69 ชื่อเดิม "งานค้างแยกตามขั้น" แต่มีแท็บปิดงานด้วย · 10 แท็บใน 9 คอลัมน์ ช่องสุดท้ายตกไปแถวสองตัวเดียว */}
+              {/* ★ 14 ต.ค. 69 ชื่อเดิม "งานค้างแยกตามขั้น" แต่มีแท็บปิดงานด้วย · 10 แท็บใน 9 คอลัมน์ ช่องสุดท้ายตกไปแถวสองตัวเดียว
+                  ★ 21 ต.ค. 69 เอาแท็บรอยืนยันนัดออก เหลือ 9 แท็บ — จอกว้าง 9 ช่องแถวเดียว · จอแคบ 3×3 */}
               <div className="text-sm font-bold text-gray-500 mb-3">งานแยกตามแท็บ</div>
-              <div className="grid grid-cols-2 sm:grid-cols-5 lg:grid-cols-10 gap-1.5">
+              <div className="grid grid-cols-3 lg:grid-cols-9 gap-1.5">
                 {TABS.map((t) => (
                   <Chip key={t.k} n={n(d.buckets[t.k] ?? 0)} l={t.t}
                     tone={TONE_SOFT[t.k] ?? "bg-gray-50 text-gray-600"}
