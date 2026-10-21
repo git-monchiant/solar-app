@@ -51,14 +51,7 @@ export default function OmTodayPage() {
       />
 
       <div className="p-3 md:p-4">
-        {/* แถวเครื่องมือ — คำอธิบายแท็บ (งานของฉัน เอาออก 15 ต.ค. 69) */}
-        <div className="mb-3 flex flex-wrap items-center gap-2 px-1">
-          <p className="flex items-start gap-1.5 text-xxs text-gray-500 leading-relaxed min-w-0">
-            <span className="shrink-0 w-3.5 h-3.5 mt-px rounded-full border border-gray-400 text-[9px] font-bold flex items-center justify-center">i</span>
-            <span>{cur.hint}</span>
-          </p>
-        </div>
-
+        {/* แถวคำอธิบายแท็บ — เอาออก 21 ต.ค. 69 (ผู้ใช้สั่ง) · งานของฉัน เอาออก 15 ต.ค. 69 */}
         {err && <div className="mb-3 rounded-lg bg-red-50 border border-red-200 px-4 py-2 text-sm text-red-700">{err}</div>}
         {items === null ? <Loading /> : items.length === 0 ? (
           <div className="text-center text-gray-400 py-16 text-sm">{cur.empty}</div>
