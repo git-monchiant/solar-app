@@ -90,6 +90,17 @@ export async function POST(req: NextRequest) {
         else if (kind === "decimal") rq.input("v", sql.Decimal(10, 4), Number(row.new_value));
         else rq.input("v", sql.NVarChar(80), String(row.new_value));
         await rq.query(`UPDATE om_installations SET [${row.column_name}] = @v, updated_at = SYSDATETIMEOFFSET() WHERE id = @i`);
+        // ★ แผน 20261021-03: ยี่ห้อ/kW อินเวอร์เตอร์ตามไปที่แถวแรกของแท็บ Equipment - Serial ด้วย
+        //   (แท็บนั้นเขียนแถวแรกกลับลงช่องนี้ — ไม่ตามไป 2 ที่จะไม่ตรงกัน)
+        if (row.column_name === "inverter_brand" || row.column_name === "inverter_kw") {
+          const brand = row.column_name === "inverter_brand";
+          await new sql.Request(tx).input("i", sql.Int, row.installation_id)
+            .input("v", brand ? sql.NVarChar(80) : sql.Decimal(10, 4), brand ? String(row.new_value) : Number(row.new_value))
+            .query(`UPDATE d SET ${brand ? "brand" : "spec"} = @v, updated_at = SYSDATETIMEOFFSET()
+                            FROM om_installation_devices d
+                           WHERE d.id = (SELECT TOP 1 id FROM om_installation_devices
+                                          WHERE installation_id = @i AND device_type = 'inverter' ORDER BY position, id)`);
+        }
         // ที่มาของค่าใหม่ต้องมีร่องรอยด้วย ไม่ใช่เปลี่ยนเงียบ ๆ
         await new sql.Request(tx)
           .input("h", sql.Int, row.house_id).input("i", sql.Int, row.installation_id)

@@ -5,6 +5,7 @@
 //   (กล่องขาวมีแถบหัวเทา + ไอคอนสี + ชื่อไทย/คำอธิบาย) · เนื้อในเป็นข้อมูล O&M
 // ★ แสดงอย่างเดียว — แก้ข้อมูลบ้าน/สิทธิ์ที่ modal ของหน้าบ้าน/ระบบติดตั้งที่เดียว (ปุ่ม "แก้ไขข้อมูลบ้าน")
 //   กันกติกาการแก้ (ตัดสิทธิ์ · ซ่อนบ้าน · ลบ) มีสองที่แล้วเพี้ยนกัน
+//   ยกเว้น Serial อุปกรณ์ในแท็บ Equipment - Serial (แผน 20261021-03) — แก้ที่แท็บนี้ที่เดียว modal บ้านไม่มีช่องนี้
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import Loading from "@/components/ui/Loading";
@@ -15,6 +16,7 @@ import { thD, thDT } from "@/lib/om/service-view";
 import { SystemCard, type HouseDetail } from "@/components/om/HouseSystemCard";
 import { useOmPhotoUrls } from "@/lib/hooks/useOmPhotoUrls";
 import { UploadTile } from "@/components/lead/detail/PhotosTab";
+import SerialsUploader from "@/components/lead/detail/SerialsUploader";
 
 const ROLE: Record<string, string> = { owner: "เจ้าของ", resident: "ผู้อยู่อาศัย", contact: "ผู้ติดต่อ" };
 const SRC: Record<string, string> = { contract_base: "สิทธิ์ตั้งต้น", renewal: "ต่อสัญญา", purchase: "ซื้อเพิ่ม", import: "import", manual_adjust: "ปรับมือ", expire: "หมดอายุ" };
@@ -48,15 +50,17 @@ const ICON = {
   ticket: "M16.5 6v.75m0 3v.75m0 3v.75m0 3V18m-9-5.25h5.25M7.5 15h3M3.375 5.25c-.621 0-1.125.504-1.125 1.125v3.026a2.999 2.999 0 010 5.198v3.026c0 .621.504 1.125 1.125 1.125h17.25c.621 0 1.125-.504 1.125-1.125v-3.026a2.999 2.999 0 010-5.198V6.375c0-.621-.504-1.125-1.125-1.125H3.375z",
   sun: "M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z",
   photo: "M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z",
+  // ไอคอนแท็บ Equipment - Serial (ชุดเดียวกับหน้า lead)
+  chip: "M3.75 7.5l16.5-4.125M12 6.75c-2.708 0-5.363.224-7.948.655C2.999 7.58 2.25 8.507 2.25 9.574v9.176A2.25 2.25 0 004.5 21h15a2.25 2.25 0 002.25-2.25V9.574c0-1.067-.75-1.994-1.802-2.169A48.329 48.329 0 0012 6.75zM7.5 12.75a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm6.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm3 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z",
 };
 
-/** ข้อมูลบ้าน 1 หลัง — GET /api/om/houses/[id] ตัวเดียวกับ modal หน้าบ้าน */
-function useHouse(houseId: number) {
+/** ข้อมูลบ้าน 1 หลัง — GET /api/om/houses/[id] ตัวเดียวกับ modal หน้าบ้าน · ver เปลี่ยน = โหลดใหม่ (ค่าเดิมค้างไว้จนได้ของใหม่) */
+function useHouse(houseId: number, ver = 0) {
   const [d, setD] = useState<HouseDetail | null>(null);
   const [err, setErr] = useState("");
   useEffect(() => {
     apiFetch(`/api/om/houses/${houseId}`).then(setD).catch((e) => setErr(e instanceof Error ? e.message : String(e)));
-  }, [houseId]);
+  }, [houseId, ver]);
   return { d, err };
 }
 
@@ -201,11 +205,64 @@ export function HouseInfoTab({ houseId }: { houseId: number }) {
   );
 }
 
-// ─────────────── Equipment = ระบบติดตั้ง (การ์ดเดียวกับ modal บ้าน) ───────────────
-export function HouseEquipmentTab({ houseId }: { houseId: number }) {
-  const { d, err } = useHouse(houseId);
+// ─────────────── Equipment - Serial = Serial อุปกรณ์ (ยกแท็บฝั่งขาย) + ระบบติดตั้ง ───────────────
+// ★ 21 ต.ค. 69 แผน 20261021-03 — ผู้ใช้สั่ง "ให้เหมือนงานขาย ครบทุก function"
+//   ส่วนบน = SerialsUploader ตัวเดียวกับแท็บ Equipment - Serial ของหน้า lead ทั้งก้อน (wizard · AI อ่านป้าย · รูปย่อกรอบแดง)
+//   ต่อ API ของ O&M · ไม่ล็อก แก้ได้ตลอด ทุกการเพิ่ม/ลบลง Activity Log (ผู้ใช้เคาะ D1) · Account ดูอย่างเดียว
+//   ส่วนล่าง = การ์ดระบบติดตั้งเดิม (D2) — โหลดใหม่หลังแก้ Serial เพราะ API เขียนแถวแรกกลับลงช่องอินเวอร์เตอร์/แบต
+/** ชิปยี่ห้ออินเวอร์เตอร์ — ข้อมูล O&M มี ABB 463 · HUAWEI 250 · SMA 8 ระบบ (D3) · แผง/แบตใช้ชุดเดิมของฝั่งขาย */
+const OM_BRANDS = { inverters: ["Huawei", "ABB", "DEYE", "SMA"] } as const;
+
+export function HouseEquipmentTab({ houseId, bookingId, readOnly, onChange }: {
+  houseId: number;
+  /** ใบงานที่เปิดอยู่ — ผูกแถว Activity Log กับใบนั้นด้วย (แบบปุ่ม Note) */
+  bookingId?: number | null;
+  readOnly?: boolean;
+  /** หลังแก้ Serial — หน้างานโหลด Activity Log ใหม่ */
+  onChange?: () => void;
+}) {
+  const [ver, setVer] = useState(0);
+  const { d, err } = useHouse(houseId, ver);
   if (err) return <Err m={err} />;
   if (!d) return <Loading />;
+  return (
+    <div className="space-y-3">
+      {/* ★ 21 ต.ค. 69 ผู้ใช้สั่งตรวจการจัดวาง: ใส่กรอบการ์ดแบบเดียวกับการ์ดระบบติดตั้ง/แท็บอื่น
+          (เดิมวางลอยบนพื้นขาวแล้วต่อด้วยการ์ดมีกรอบ — สองหน้าตาซ้อนกัน) · เนื้อในเป็นตัวเดียวกับหน้า lead */}
+      <Card icon={ICON.chip} tone="bg-indigo-100 text-indigo-600" title="Serial อุปกรณ์"
+        sub="Serial — อินเวอร์เตอร์ · แผงโซลาร์ · แบตเตอรี่ · การเพิ่ม/ลบทุกครั้งบันทึกใน Activity Log">
+        {d.systems.length === 0 && <div className="px-4 py-3 text-sm text-gray-400">บ้านนี้ยังไม่มีระบบติดตั้ง — เพิ่ม Serial ไม่ได้</div>}
+        {d.systems.map((s, i) => (
+          <div key={s.id} className="border-b border-gray-100 last:border-0">
+            {/* บ้านหลายระบบ (ตอนนี้ยังไม่มี) — หัวบอกว่าเป็น Serial ของระบบไหน */}
+            {d.systems.length > 1 && (
+              <div className="px-4 pt-3 text-xs font-bold text-gray-500">ระบบที่ {i + 1}{s.kwp ? ` · ${s.kwp} kWp` : ""}</div>
+            )}
+            {/* ★ รู้ขนาด/ยี่ห้ออินเวอร์เตอร์จากไฟล์บัญชีแต่ไม่มี Serial (758 ระบบ) — เดิม Inverter 0 ขัดกับการ์ดข้างล่างที่ขึ้น 3.2 kW
+                inverter_sn = Serial ตัวแรกที่ API เขียนกลับ ⇒ ว่าง = ยังไม่มี Serial */}
+            {!s.inverter_sn && (!!s.inverter_kw || !!s.inverter_brand) && (
+              <div className="px-4 pt-3 text-xs text-gray-500">
+                ระบบติดตั้งระบุอินเวอร์เตอร์{" "}
+                <b className="text-gray-700">{[s.inverter_brand, s.inverter_kw ? `${s.inverter_kw} kW` : null].filter(Boolean).join(" ")}</b>
+                {" "}แต่ยังไม่มี Serial
+              </div>
+            )}
+            <SerialsUploader
+              endpoint={`/api/om/installations/${s.id}/devices${bookingId ? `?booking=${bookingId}` : ""}`}
+              brandSuggestions={OM_BRANDS}
+              readOnly={readOnly}
+              onChange={() => { setVer((v) => v + 1); onChange?.(); }}
+            />
+          </div>
+        ))}
+      </Card>
+      <HouseSystemsCard d={d} houseId={houseId} />
+    </div>
+  );
+}
+
+/** การ์ดระบบติดตั้ง (การ์ดเดียวกับ modal บ้าน) */
+function HouseSystemsCard({ d, houseId }: { d: HouseDetail; houseId: number }) {
   return (
     <Card icon={ICON.sun} tone="bg-amber-100 text-amber-600" title={`ระบบติดตั้ง (${d.systems.length})`}
       sub="Equipment — ขนาด · อินเวอร์เตอร์ · ประกัน · PO · ที่มาข้อมูล" right={<EditLink houseId={houseId} />}>
@@ -222,8 +279,9 @@ export function HouseEquipmentTab({ houseId }: { houseId: number }) {
         </div>
       )}
       {d.systems.length === 0 && <div className="px-4 py-3 text-sm text-gray-400">ไม่มีระบบติดตั้ง</div>}
-      <div className="p-4 grid gap-3 lg:grid-cols-2 items-start">
-        {d.systems.map((s, i) => <SystemCard key={s.id} sel={d} s={s} i={i} className="" />)}
+      {/* ระบบเดียว (ทุกบ้านตอนนี้) = การ์ดเต็มกว้าง สเปกซ้าย · ที่มาข้อมูลขวา · หลายระบบ = 2 ใบต่อแถวแบบเดิม */}
+      <div className={`p-4 grid gap-3 items-start ${d.systems.length > 1 ? "lg:grid-cols-2" : ""}`}>
+        {d.systems.map((s, i) => <SystemCard key={s.id} sel={d} s={s} i={i} className="" wide={d.systems.length === 1} />)}
       </div>
     </Card>
   );

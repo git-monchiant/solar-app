@@ -359,7 +359,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
       items={history}
       renderItem={(h, isLast) => <JobHistoryItem h={h} isLast={isLast} />}
       // หัวกลุ่มวันใช้ค่าเดิมของฝั่งขาย (Today · Yesterday · AUG 6) — 2 ต.ค. 69 ผู้ใช้สั่งรูปแบบเหมือนฝั่งขาย
-      labels={{ empty: "ยังไม่มีประวัติ", emptyHint: "บันทึกการโทรหรือสร้างนัดแล้วจะขึ้นที่นี่" }}
+      labels={{ empty: "ยังไม่มีประวัติ", emptyHint: "การโทร การนัดหมาย และการแก้ไขข้อมูลของบ้านนี้จะแสดงที่นี่" }}
     />
   );
 
@@ -696,17 +696,20 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
             {([
               ["workflow", "Workflow", "M3.75 6h16.5M3.75 12h16.5m-16.5 6h16.5"],
               ["info", "House Info", "M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"],
-              ["equipment", "Equipment", "M3.75 7.5l16.5-4.125M12 6.75c-2.708 0-5.363.224-7.948.655C2.999 7.58 2.25 8.507 2.25 9.574v9.176A2.25 2.25 0 004.5 21h15a2.25 2.25 0 002.25-2.25V9.574c0-1.067-.75-1.994-1.802-2.169A48.329 48.329 0 0012 6.75zM7.5 12.75a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm6.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm3 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z"],
+              // ★ แผน 20261021-03: ชื่อเดียวกับหน้า lead — จอกว้าง "Equipment - Serial" · มือถือ "Equipment"
+              ["equipment", "Equipment - Serial", "M3.75 7.5l16.5-4.125M12 6.75c-2.708 0-5.363.224-7.948.655C2.999 7.58 2.25 8.507 2.25 9.574v9.176A2.25 2.25 0 004.5 21h15a2.25 2.25 0 002.25-2.25V9.574c0-1.067-.75-1.994-1.802-2.169A48.329 48.329 0 0012 6.75zM7.5 12.75a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm6.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm3 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z", "Equipment"],
               ["photos", "Photos", "M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"],
               // ★ แผน 20260928-05 — ไอคอนเดียวกับแท็บ Timeline ของหน้า lead
               ["timeline", "Timeline", "M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25"],
-            ] as const).map(([k, t, d]) => (
+            ] as [typeof tab, string, string, string?][]).map(([k, t, d, short]) => (
               <button key={k} type="button" onClick={() => setTab(k)} title={t}
                 className={`py-3 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px transition-colors inline-flex items-center gap-1.5 shrink-0 cursor-pointer ${tab === k ? "px-4 text-active border-active" : "px-3 md:px-4 text-gray-500 border-transparent hover:text-gray-700"}`}>
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d={d} />
                 </svg>
-                <span className={tab === k ? "" : "hidden md:inline"}>{t}</span>
+                <span className={tab === k ? "" : "hidden md:inline"}>
+                  {short ? <><span className="md:hidden">{short}</span><span className="hidden md:inline">{t}</span></> : t}
+                </span>
               </button>
             ))}
             {/* มือถือย้ายไปแถบล่างติดจอ (แผน 20260929-03) — เดิมโดนตัดขอบขวาของแถบแท็บ · Account ไม่มี (อ่านอย่างเดียว) */}
@@ -769,9 +772,11 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
           <div className="px-4 pb-4 pt-3 space-y-3">
             {err && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-2 text-sm text-red-700">{err}</div>}
 
-            {/* แท็บอื่นนอกจาก Workflow — แสดงอย่างเดียว แก้ที่ modal หน้าบ้าน (ปุ่ม "แก้ไขข้อมูลบ้าน") */}
+            {/* แท็บอื่นนอกจาก Workflow — แสดงอย่างเดียว แก้ที่ modal หน้าบ้าน (ปุ่ม "แก้ไขข้อมูลบ้าน")
+                ยกเว้น Serial อุปกรณ์ในแท็บ Equipment - Serial (แผน 20261021-03) แก้ได้ที่แท็บ · แก้แล้วโหลด Activity Log ใหม่ */}
             {tab === "info" && <HouseInfoTab houseId={item.house_id} />}
-            {tab === "equipment" && <HouseEquipmentTab houseId={item.house_id} />}
+            {tab === "equipment" && <HouseEquipmentTab houseId={item.house_id} bookingId={item.booking_id}
+              readOnly={viewOnly} onChange={onReload} />}
             {tab === "photos" && <JobPhotosTab bookingIds={bookingIds} />}
             {tab === "timeline" && <JobTimelineTab bookings={bookings} history={history} teams={teams} />}
 

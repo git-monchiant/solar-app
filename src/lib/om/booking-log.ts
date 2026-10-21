@@ -27,7 +27,9 @@ export type BookingAction =
   | "repair_open"
   // ★ 28 ก.ย. 69 (แผน 20260928-04 ข้อ 7): ปุ่ม Note ในหน้ารายละเอียด — โน้ตอิสระลงไทม์ไลน์ของบ้าน
   //   แบบ Note ของหน้า lead ฝั่งขาย · ข้อความอยู่ในช่อง reason (300 ตัวอักษร)
-  | "note";
+  | "note"
+  // ★ 21 ต.ค. 69 (แผน 20261021-03): แท็บ Equipment - Serial — เพิ่ม/ลบ Serial อุปกรณ์ (reason = สรุป SN ที่เปลี่ยน)
+  | "device";
 
 export type ActorRole = "admin" | "technician" | "customer" | "system";
 
@@ -84,6 +86,7 @@ const LABEL: Record<BookingAction, string> = {
   pay_cheque: "Account รับเช็คแล้ว รอเงินเข้า", pay_cheque_bounced: "เช็คเด้ง รอชำระใหม่",
   repair_open: "เปิดใบงานซ่อม",
   note: "บันทึกโน้ต",
+  device: "แก้ไข Serial อุปกรณ์",
 };
 
 export const actionLabel = (a: string): string => LABEL[a as BookingAction] ?? a;

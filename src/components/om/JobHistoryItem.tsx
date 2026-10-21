@@ -26,6 +26,8 @@ const I = {
   done: "M9 12.75l2.25 2.25L15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
   cancel: "M6 18L18 6M6 6l12 12",
   plus: "M12 4.5v15m7.5-7.5h-15",
+  // ไอคอนแท็บ Equipment - Serial (ชุดเดียวกับหน้า lead)
+  device: "M3.75 7.5l16.5-4.125M12 6.75c-2.708 0-5.363.224-7.948.655C2.999 7.58 2.25 8.507 2.25 9.574v9.176A2.25 2.25 0 004.5 21h15a2.25 2.25 0 002.25-2.25V9.574c0-1.067-.75-1.994-1.802-2.169A48.329 48.329 0 0012 6.75zM7.5 12.75a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm6.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm3 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z",
 };
 
 // ไอคอน + สีจุดตาม action — โทนเดียวกับฝั่งขาย (โทร ฟ้า · โน้ต เทา · เปลี่ยนสถานะ ฟ้าอ่อน · ยกเลิก แดง)
@@ -56,6 +58,7 @@ const TYPE: Record<string, { icon: string; color: string }> = {
   pay_cheque: { icon: I.pay, color: "bg-amber-500" },
   pay_cheque_bounced: { icon: I.alert, color: "bg-red-500" },
   repair_open: { icon: I.plus, color: "bg-orange-500" },
+  device: { icon: I.device, color: "bg-violet-500" },
 };
 // บันทึกการติดตามทางอื่น (ปุ่ม Follow-up) — ไอคอนตามช่องทางแบบฝั่งขาย
 const CHANNEL: Record<string, { icon: string; color: string }> = {

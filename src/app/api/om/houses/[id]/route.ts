@@ -28,7 +28,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     FROM om_houses h LEFT JOIN om_projects pj ON pj.project_id = h.project_id
     LEFT JOIN users u ON u.id = h.om_excluded_by WHERE h.id = @id;
 
-    SELECT i.id, i.rem_size_kwp kwp, i.promo_size_kw, i.promo_om_years, i.promo_name, i.promo_contract_id,
+    -- ★ ไม่ส่ง promo_name — ข้อความโปรโมชันจาก REM มีราคาติดมา (420 ระบบ · "ห้ามโชว์ราคา" ผู้ใช้เคาะ 2 ก.ย.) และไม่มีหน้าไหนแสดง
+    SELECT i.id, i.rem_size_kwp kwp, i.promo_size_kw, i.promo_om_years, i.promo_contract_id,
            i.inverter_kw, i.inverter_brand, i.inverter_sn,
            CONVERT(char(10), i.install_date, 23) install_date,
            CONVERT(char(10), i.transfer_date, 23) transfer_date,
@@ -81,12 +82,12 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     -- ★ ของแถมตอนขาย — ผู้ใช้เคาะ 2 ก.ย.: ไม่ต้องโชว์รายการและ "ห้ามโชว์ราคา"
     --   ทีม O&M ไม่ต้องรู้ว่าลูกค้าได้ชุดครัว/แอร์ราคาเท่าไหร่ · เอาแค่ "เจอรายการของแถมใน REM"
     --   กับข้อมูลโซลาร์ซึ่งเป็นที่มาของขนาดระบบ  ⇒ ไม่ส่ง price / ชื่อรายการอื่นออกไปที่เบราว์เซอร์เลย
+    -- ★ 21 ต.ค. 69: เลิกส่งชื่อรายการโซลาร์ (solar_name) ด้วย — ข้อความโปรโมชันใน REM มีราคาติดมา
+    --   ("… มูลค่า 125,000 บาท …" 734 จาก 2,336 รายการ) · การ์ดใช้ solar_kw + om_years แทน
     SELECT COUNT(*) n_items,
            SUM(CASE WHEN pr.is_solar = 1 AND pr.is_cancelled = 0 THEN 1 ELSE 0 END) n_solar,
            MAX(CASE WHEN pr.is_solar = 1 AND pr.is_cancelled = 0 THEN pr.solar_kw END) solar_kw,
            MAX(CASE WHEN pr.is_solar = 1 AND pr.is_cancelled = 0 THEN pr.om_years END) om_years,
-           MAX(CASE WHEN pr.is_solar = 1 AND pr.is_cancelled = 0
-                    THEN ISNULL(NULLIF(pr.promotion_name, N''), pr.description1) END) solar_name,
            MAX(pr.contract_id) contract_id
     FROM om_rem_promotions pr
     WHERE pr.contract_id IN (SELECT i.rem_contract_id FROM om_installations i WHERE i.house_id = @id AND i.rem_contract_id IS NOT NULL)
@@ -250,6 +251,8 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
     await rq().query(`DELETE bh FROM om_booking_history bh JOIN om_bookings b ON b.id = bh.booking_id WHERE b.house_id = @id`);
     await rq().query(`DELETE g FROM om_entitlement_grants g JOIN om_installations i ON i.id = g.installation_id WHERE i.house_id = @id`);
     await rq().query(`DELETE FROM om_bookings WHERE house_id = @id`);
+    // Serial อุปกรณ์รายตัว (แผน 20261021-03) — ลูกของ installation มี FK
+    await rq().query(`DELETE d FROM om_installation_devices d JOIN om_installations i ON i.id = d.installation_id WHERE i.house_id = @id`);
     await rq().query(`DELETE FROM om_installations WHERE house_id = @id`);
     // ลูกตรงอื่น ๆ ของบ้าน
     await rq().query(`DELETE FROM om_house_customers WHERE house_id = @id`);

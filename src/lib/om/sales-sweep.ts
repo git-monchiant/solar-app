@@ -1,5 +1,6 @@
 import { sql } from "@/lib/db";
 import { matchLead, type Candidate, type MatchResult, type LeadInput, type Tier } from "@/lib/om/rem-match";
+import { syncSalesDevices } from "@/lib/om/devices";
 
 // ตัดคำนำหน้าชื่อไทย — ต้องตรงกับ dbo.om_strip_title() ที่ใช้ในฝั่ง SQL
 const TITLE_RE = /^(คุณ|นายแพทย์|แพทย์หญิง|นางสาว|น\.ส\.|ด\.ช\.|ด\.ญ\.|นาย|นาง|ดร\.|พญ\.|นพ\.|บริษัท|บจก\.|หจก\.)\s*/;
@@ -263,6 +264,9 @@ export async function syncSalesWarranty(req: () => sql.Request, installationId?:
   const rq = req();
   if (installationId) rq.input("inst", sql.Int, installationId);
   const r = await rq.query(SYNC_SALES_WARRANTY(!!installationId));
+  // ★ 21 ต.ค. 69 (แผน 20261021-03): Serial อุปกรณ์จากใบรับประกันฝั่งขาย → แท็บ Equipment - Serial ของ O&M
+  //   คัดลอกครั้งเดียวต่อระบบเมื่อฝั่งขายออกใบแล้ว (gridtie/closed) — จุดนี้ถูกเรียกทุกรอบกวาด + ตอนสร้างบ้านจากงานขาย
+  await syncSalesDevices(req, installationId);
   return Number(r.recordset[0]?.n ?? 0);
 }
 
