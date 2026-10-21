@@ -110,7 +110,7 @@ export default function OmPaymentPanel({ item, skip, onSaved, onReload, steps = 
   useEffect(() => { load(); }, [load]);
 
   if (skip && !item.q_id) return <div className="text-sm text-gray-600">งานนี้<b>ใช้สิทธิ์ฟรี</b> — ไม่มีค่าบริการ</div>;
-  if (!item.q_id) return <div className="text-sm text-gray-500">ยังไม่มีใบเสนอราคา — ออกใบที่ขั้น 02 ก่อน</div>;
+  if (!item.q_id) return <div className="text-sm text-gray-500">ยังไม่มีใบเสนอราคา — กรุณาออกใบเสนอราคาที่ขั้น 02 ก่อน</div>;
   // ลูกค้าไม่เอา — ใบงานยกเลิกแล้ว ไม่มีอะไรให้ชำระ (API รับสลิปเฉพาะใบงานขั้นชำระเงินอยู่แล้ว)
   if (item.job_status === "cancelled")
     return <div className="text-sm text-gray-500">ใบงานนี้ยกเลิกแล้ว — ไม่ต้องชำระค่าบริการ</div>;
@@ -137,12 +137,12 @@ export default function OmPaymentPanel({ item, skip, onSaved, onReload, steps = 
   return (
     <div className="space-y-3">
       <div className="flex items-baseline gap-2 flex-wrap">
-        <span className="text-sm text-gray-600">ค่าบริการตามใบ <b className="font-mono">{item.q_doc_no}</b></span>
+        <span className="text-sm text-gray-600">ค่าบริการตามใบเสนอราคา <b className="font-mono">{item.q_doc_no}</b></span>
         <span className="ml-auto text-lg font-bold tabular-nums">{formatTHB(Number(item.q_total || 0) + fee)} บาท</span>
       </div>
       {current
         ? <PayStatus pay={current} docNo={item.q_doc_no ?? `om_${item.q_id}`} onChanged={load} showReceipt={!receiptInHeader} />
-        : <div className="text-sm text-gray-600">{bounced.length ? "เช็คเด้ง — รอ Sale แนบหลักฐานชำระใหม่" : "ยังไม่มีสลิปค่าบริการ"}</div>}
+        : <div className="text-sm text-gray-600">{bounced.length ? "เช็คคืน — รอฝ่ายขายแนบหลักฐานการชำระเงินใหม่" : "ยังไม่มีสลิปค่าบริการ"}</div>}
       {/* ขั้น 03 ปิดแล้วแต่เงินยังไม่ยืนยัน (รับเช็คแล้วรอเงินเข้า ฯลฯ) — Account ยืนยันต่อที่นี่ได้ (แผน 20261014-06) */}
       {current && canAccount && !current.confirmed_at && (
         <AccountActions pay={current} onSaved={onSaved} onChanged={() => { load(); onReload?.(); }} />
@@ -159,8 +159,8 @@ function BouncedRows({ rows }: { rows: Pay[] }) {
     <div className="rounded-xl border border-red-200 bg-red-50 px-3.5 py-2.5 space-y-1.5">
       {rows.map((p) => (
         <div key={p.id} className="text-xs text-red-800 leading-relaxed">
-          <b>✗ เช็คเด้ง</b> {formatTHB(Number(p.amount) + Number(p.cc_surcharge_amount || 0))} บาท
-          {" "}· แนบโดย {p.submitted_by_name ?? "—"} · บันทึกเด้งโดย {p.cheque_status_by ?? "—"} · {thDT(p.cheque_status_at)}
+          <b>✗ เช็คคืน</b> {formatTHB(Number(p.amount) + Number(p.cc_surcharge_amount || 0))} บาท
+          {" "}· แนบโดย {p.submitted_by_name ?? "—"} · บันทึกเช็คคืนโดย {p.cheque_status_by ?? "—"} · {thDT(p.cheque_status_at)}
           {p.cheque_status_note && <div className="text-red-700">เหตุผล: {p.cheque_status_note}</div>}
         </div>
       ))}
@@ -176,9 +176,9 @@ function PayStatus({ pay: current, docNo, onChanged, showReceipt = true }: {
   return (
     <div className={`rounded-xl border px-3.5 py-3 ${current.confirmed_at ? "border-emerald-200 bg-emerald-50/60" : "border-amber-200 bg-amber-50"}`}>
       <div className={`text-sm font-bold ${current.confirmed_at ? "text-emerald-800" : "text-amber-800"}`}>
-        {current.confirmed_at ? "✓ Account ยืนยันรับเงินแล้ว"
-          : chequeWaitingMoney ? "✓ รับเช็คแล้ว — รอฝ่ายบัญชียืนยันเงินเข้า"
-          : current.payment_method === "cheque" ? "รอฝ่ายบัญชียืนยันรับเช็ค" : "รอ Account ยืนยันรับเงิน"}
+        {current.confirmed_at ? "✓ ฝ่ายบัญชียืนยันรับเงินแล้ว"
+          : chequeWaitingMoney ? "✓ รับเช็คแล้ว — รอฝ่ายบัญชียืนยันรับเงิน"
+          : current.payment_method === "cheque" ? "รอฝ่ายบัญชียืนยันรับเช็ค" : "รอฝ่ายบัญชียืนยันรับเงิน"}
       </div>
       <div className="mt-0.5 text-xs text-gray-600">
         {methodText(current)}
@@ -208,7 +208,7 @@ function PayStatus({ pay: current, docNo, onChanged, showReceipt = true }: {
       {(current.confirmed_at || chequeWaitingMoney) && (
         <div className="mt-2 text-xs text-emerald-800 leading-relaxed">
           {/* ★ 29 ก.ย. 69 (แผน 20260929-02): ขั้น 01 ปิดแล้วอ่านอย่างเดียว — โทรตกลงวันนัดย้ายไปการ์ดนัดหมาย */}
-          {current.confirmed_at ? "เติมสิทธิ์ที่ซื้อให้บ้านแล้ว · " : "รับเช็คแล้วทำงานต่อได้ (เติมสิทธิ์เมื่อเงินเข้า) · "}
+          {current.confirmed_at ? "เพิ่มสิทธิ์ที่ซื้อให้บ้านแล้ว · " : "รับเช็คแล้ว ดำเนินงานต่อได้ (เพิ่มสิทธิ์เมื่อเงินเข้าบัญชี) · "}
           ขั้นถัดไป <b>โทรตกลงวันนัด</b> ที่ขั้น 04 นัดหมาย
         </div>
       )}
@@ -233,17 +233,17 @@ function AccountActions({ pay, onSaved, onChanged }: { pay: Pay; onSaved: (msg: 
     if (action === "confirm" || action === "cheque_received") {
       const ok = await dialog.confirm(action === "cheque_received"
         ? { title: "ยืนยันรับเช็ค", confirmText: "ยืนยันรับเช็ค",
-            message: "รับเช็คแล้ว Sale โทรนัดได้ · ยืนยันรับเงินอีกครั้งเมื่อเงินเข้าจริง (ตอนนั้นจึงเติมสิทธิ์)" }
+            message: "เมื่อรับเช็คแล้ว ฝ่ายขายโทรนัดลูกค้าได้ · กรุณายืนยันรับเงินอีกครั้งเมื่อเงินเข้าบัญชี (ระบบจะเพิ่มสิทธิ์ในขั้นนั้น)" }
         : { title: "ยืนยันรับเงินค่าบริการ", confirmText: "ยืนยันรับเงิน", variant: "success",
-            message: `${formatTHB(toCharge)} บาท — ยืนยันแล้วระบบเติมสิทธิ์ที่ลูกค้าซื้อให้บ้าน` });
+            message: `${formatTHB(toCharge)} บาท — เมื่อยืนยันแล้ว ระบบจะเพิ่มสิทธิ์ที่ลูกค้าซื้อให้บ้าน` });
       if (!ok) return;
     }
     setBusy(true); setErr("");
     try {
       await apiFetch(`/api/om/payments/${pay.id}`, { method: "POST", body: JSON.stringify({ action, reason }) });
       setRejecting(null);
-      onSaved(action === "cheque_received" ? "รับเช็คแล้ว — Sale โทรนัดได้" : action === "confirm" ? "ยืนยันรับเงินแล้ว"
-        : action === "cheque_bounced" ? "บันทึกเช็คเด้งแล้ว — รอ Sale แนบหลักฐานชำระใหม่" : "ส่งกลับให้แนบสลิปใหม่แล้ว");
+      onSaved(action === "cheque_received" ? "รับเช็คแล้ว — ฝ่ายขายโทรนัดได้" : action === "confirm" ? "ยืนยันรับเงินแล้ว"
+        : action === "cheque_bounced" ? "บันทึกเช็คคืนแล้ว — รอฝ่ายขายแนบหลักฐานการชำระเงินใหม่" : "ส่งกลับให้แนบสลิปใหม่แล้ว");
       onChanged();
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
@@ -256,27 +256,27 @@ function AccountActions({ pay, onSaved, onChanged }: { pay: Pay; onSaved: (msg: 
       <button type="button" disabled={busy} onClick={() => act(chequeFirst ? "cheque_received" : "confirm")}
         className={`w-full h-11 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-1.5 text-white disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer ${
           chequeFirst ? "bg-amber-500 hover:bg-amber-600" : "bg-gradient-to-r from-primary to-primary-dark hover:brightness-110"}`}>
-        {busy ? "กำลังยืนยัน…" : chequeFirst ? "ยืนยันรับเช็ค" : "ยืนยันการชำระเงิน 2"}
+        {busy ? "กำลังยืนยัน…" : chequeFirst ? "ยืนยันรับเช็ค" : "ยืนยันรับเงิน"}
       </button>
       <button type="button" disabled={busy} onClick={() => setRejecting({ reason: "", bounce: chequeWaitingMoney })}
         className="w-full h-8 rounded-lg text-sm font-semibold text-red-600 border border-red-300 bg-white hover:bg-red-50 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40">
         {/* รับเช็คแล้ว = ปฏิเสธ (ลบแถว) ไม่ได้ ใช้เช็คเด้งแทน — API กันซ้ำ (แผน 20261014-03) */}
-        {chequeWaitingMoney ? "✗ เช็คเด้ง / ยกเลิกเช็ค" : "✗ ไม่อนุมัติ / ส่งกลับให้ upload ใหม่"}
+        {chequeWaitingMoney ? "✗ เช็คคืน / ยกเลิกเช็ค" : "✗ ไม่อนุมัติ / ส่งกลับให้แนบสลิปใหม่"}
       </button>
       {rejecting && (
-        <ModalBase title={rejecting.bounce ? "เช็คเด้ง — ค่าบริการ" : "ไม่อนุมัติสลิปค่าบริการ"} size="md" onClose={() => setRejecting(null)}
+        <ModalBase title={rejecting.bounce ? "เช็คคืน — ค่าบริการ" : "ไม่อนุมัติสลิปค่าบริการ"} size="md" onClose={() => setRejecting(null)}
           footer={
             <div className="flex justify-end gap-2">
               <button type="button" disabled={busy} onClick={() => setRejecting(null)}
                 className="h-9 px-4 rounded-lg text-sm font-semibold text-gray-700 border border-gray-200 hover:bg-gray-50 disabled:opacity-50">ยกเลิก</button>
               <button type="button" disabled={!rejecting.reason.trim() || busy} onClick={() => act(rejecting.bounce ? "cheque_bounced" : "reject", rejecting.reason.trim())}
                 className="h-9 px-4 rounded-lg text-sm font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed">
-                {rejecting.bounce ? "ยืนยันเช็คเด้ง" : "ส่งกลับ"}</button>
+                {rejecting.bounce ? "ยืนยันเช็คคืน" : "ส่งกลับ"}</button>
             </div>
           }>
           <p className="text-xs text-gray-600">{rejecting.bounce
-            ? "เก็บรายการเช็คไว้เป็นหลักฐาน · ใบงานที่ยังไม่ถึงวันเข้างานกลับไปขั้นชำระเงิน · Sale ต้องแนบหลักฐานชำระใหม่ กรุณาระบุเหตุผล"
-            : "สลิปนี้จะถูกเอาออก Sale ต้องแนบใหม่ กรุณาระบุเหตุผล"}</p>
+            ? "ระบบจะเก็บรายการเช็คไว้เป็นหลักฐาน · ใบงานที่ช่างยังไม่เริ่มงานจะกลับไปขั้นชำระเงิน · ฝ่ายขายต้องแนบหลักฐานการชำระเงินใหม่ กรุณาระบุเหตุผล"
+            : "สลิปนี้จะถูกนำออก ฝ่ายขายต้องแนบใหม่ กรุณาระบุเหตุผล"}</p>
           <label className="block text-xs font-semibold text-gray-700 mt-4 mb-1">เหตุผล <span className="text-red-500">*</span></label>
           <textarea value={rejecting.reason} onChange={(e) => setRejecting({ ...rejecting, reason: e.target.value })} rows={3} autoFocus maxLength={300}
             placeholder={rejecting.bounce ? "เช่น เช็คคืน เงินในบัญชีไม่พอ / ลูกค้ายกเลิกเช็ค" : "เช่น ยอดในสลิปไม่ตรง / สลิปไม่ชัด / ยังไม่พบเงินเข้าบัญชี"}
@@ -414,9 +414,9 @@ function PaySteps({ item, bookingId, canSubmit, onSaved, onReload, late = false 
   /** "ยืนยันการชำระเงิน 1" — Sale ส่งสลิปเข้าคิว Account */
   const submit = async () => {
     if (!chosen) return;
-    if (files.length === 0) { setNextError("แนบสลิปหรือหลักฐานการชำระอย่างน้อย 1 รูป"); return; }
+    if (files.length === 0) { setNextError("กรุณาแนบสลิปหรือหลักฐานการชำระเงินอย่างน้อย 1 ไฟล์"); return; }
     const payMethod = rowMethod === "cheque" ? "cheque" : tab === "bank" ? "bank_transfer" : tab;
-    if (payMethod === "other" && !otherDetail.trim()) { setNextError("กรอกรายละเอียดการชำระ (ชำระโดย)"); return; }
+    if (payMethod === "other" && !otherDetail.trim()) { setNextError("กรุณากรอกรายละเอียดการชำระเงิน (ชำระโดย)"); return; }
     setBusy(true); setErr("");
     const fd = new FormData();
     fd.set("quotation_id", String(chosen.id)); fd.set("amount", String(net));
@@ -427,7 +427,7 @@ function PaySteps({ item, bookingId, canSubmit, onSaved, onReload, late = false 
       await apiFetch("/api/om/payments", { method: "POST", body: fd });
       for (const f of files) URL.revokeObjectURL(f.url);
       setFiles([]); setOtherDetail("");
-      onSaved(rowMethod === "cheque" ? "แนบภาพเช็คแล้ว — รอฝ่ายบัญชียืนยันรับเช็ค" : "แนบสลิปแล้ว — รอ Account ยืนยันรับเงิน");
+      onSaved(rowMethod === "cheque" ? "แนบภาพเช็คแล้ว — รอฝ่ายบัญชียืนยันรับเช็ค" : "แนบสลิปแล้ว — รอฝ่ายบัญชียืนยันรับเงิน");
       loadPays(); onReload?.();
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
@@ -435,7 +435,7 @@ function PaySteps({ item, bookingId, canSubmit, onSaved, onReload, late = false 
 
   // ไปขั้นย่อยถัดไปต้องเลือกชุดก่อน — แบบ gateCheck ของ OrderStep
   const go = (n: number) => {
-    if (n > sub && !chosen) { setNextError("เลือกใบเสนอราคา"); return; }
+    if (n > sub && !chosen) { setNextError("กรุณาเลือกใบเสนอราคา"); return; }
     setNextError(null); setSub(n);
   };
 
@@ -509,7 +509,7 @@ function PaySteps({ item, bookingId, canSubmit, onSaved, onReload, late = false 
           : "border-gray-200 bg-white text-gray-700 hover:border-active hover:text-active hover:bg-active/5"}`}>
       {paid ? <>ชำระแล้ว</>
         : chequeWaitingMoney ? <>รอรับเงิน</>
-        : pendingApproval ? <><ClockIcon className={full ? "w-4 h-4" : "w-3.5 h-3.5"} strokeWidth={2} />รอยืนยัน</>
+        : pendingApproval ? <><ClockIcon className={full ? "w-4 h-4" : "w-3.5 h-3.5"} strokeWidth={2} />รอยืนยันรับเงิน</>
         : <>
             <svg className={full ? "w-4 h-4" : "w-3.5 h-3.5"} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d={CASH_ICON} />
@@ -526,8 +526,8 @@ function PaySteps({ item, bookingId, canSubmit, onSaved, onReload, late = false 
     </button>
   );
   const companyFull = settings.company_name || "SENA SOLAR ENERGY CO., LTD.";
-  const slipLabel = method === "cheque" ? "หลักฐานเช็ค" : tab === "other" ? "หลักฐานการชำระ" : "สลิปโอนเงิน";
-  const uploadLabel = method === "cheque" ? "อัปโหลดภาพเช็ค" : tab === "other" ? "อัปโหลดหลักฐานการชำระ" : "กรุณาอัปโหลดสลิปโอนเงิน";
+  const slipLabel = method === "cheque" ? "หลักฐานเช็ค" : tab === "other" ? "หลักฐานการชำระเงิน" : "สลิปโอนเงิน";
+  const uploadLabel = method === "cheque" ? "อัปโหลดภาพเช็ค" : tab === "other" ? "อัปโหลดหลักฐานการชำระเงิน" : "กรุณาอัปโหลดสลิปโอนเงิน";
 
   // แผงรับเงินของงวด — แบบ PaymentSection: แท็บช่องทาง → อัปโหลดหลักฐาน → ปุ่มยืนยัน
   const payPanel = current ? (
@@ -539,20 +539,20 @@ function PaySteps({ item, bookingId, canSubmit, onSaved, onReload, late = false 
       ) : (
         <button type="button" disabled
           className="w-full h-11 rounded-lg text-sm font-semibold text-amber-700 bg-amber-50 border border-amber-200 cursor-not-allowed flex items-center justify-center gap-1.5">
-          ⏳ {chequeWaitingMoney ? "รับเช็คแล้ว — รอฝ่ายบัญชียืนยันเงินเข้า" : current.payment_method === "cheque" ? "รอฝ่ายบัญชียืนยันรับเช็ค" : "รออนุมัติการรับชำระเงิน"}
+          ⏳ {chequeWaitingMoney ? "รับเช็คแล้ว — รอฝ่ายบัญชียืนยันรับเงิน" : current.payment_method === "cheque" ? "รอฝ่ายบัญชียืนยันรับเช็ค" : "รอฝ่ายบัญชียืนยันรับเงิน"}
         </button>
       ))}
     </div>
   ) : !canSubmit ? (
     <div className="space-y-3">
       <BouncedRows rows={bouncedRows} />
-      <div className="text-sm text-gray-600">รอ Sale แนบสลิปค่าบริการ{bouncedRows.length ? "ใหม่" : ""}</div>
+      <div className="text-sm text-gray-600">รอฝ่ายขายแนบสลิปค่าบริการ{bouncedRows.length ? "ใหม่" : ""}</div>
     </div>
   ) : (
     <div className="space-y-3">
       {bouncedRows.length > 0 && (<>
         <BouncedRows rows={bouncedRows} />
-        <div className="text-xs font-semibold text-red-700">แนบหลักฐานชำระใหม่ด้านล่าง</div>
+        <div className="text-xs font-semibold text-red-700">กรุณาแนบหลักฐานการชำระเงินใหม่ด้านล่าง</div>
       </>)}
       {method === "cheque" ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800">
@@ -563,19 +563,19 @@ function PaySteps({ item, bookingId, canSubmit, onSaved, onReload, late = false 
         {[qrEnabled, bankEnabled, otherEnabled].filter(Boolean).length > 1 && (
           <div className="flex border-b border-gray-200 -mx-3 px-3">
             {qrEnabled && tabBtn("qr", "Thai QR")}
-            {bankEnabled && tabBtn("bank", "Bank Account")}
-            {otherEnabled && tabBtn("other", "อื่นๆ")}
+            {bankEnabled && tabBtn("bank", "บัญชีธนาคาร")}
+            {otherEnabled && tabBtn("other", "อื่น ๆ")}
           </div>
         )}
         {tab === "qr" && qrEnabled && (
           <div className="max-w-[280px] mx-auto">
             <div className="rounded-xl border border-gray-200 bg-white p-4 flex flex-col items-center gap-2">
               <div className="w-full aspect-square bg-black rounded-lg flex items-center justify-center">
-                {!qrNow ? <span className="text-white text-xs tracking-wider">LOADING…</span>
+                {!qrNow ? <span className="text-white text-xs tracking-wider">กำลังโหลด…</span>
                   : qrNow.error ? <span className="text-white text-xs">{qrNow.error}</span>
                   // eslint-disable-next-line @next/next/no-img-element
                   : qrNow.url ? <img src={qrNow.url} alt="PromptPay QR" className="w-full h-full object-contain p-2 bg-white rounded-lg" />
-                  : <span className="text-white text-sm font-semibold tracking-wider uppercase">NO QR</span>}
+                  : <span className="text-white text-sm font-semibold tracking-wider uppercase">ไม่มี QR</span>}
               </div>
               <div className="text-center">
                 <div className="text-xs font-semibold text-gray-700">{companyFull}</div>
@@ -627,7 +627,7 @@ function PaySteps({ item, bookingId, canSubmit, onSaved, onReload, late = false 
           <div>
             <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">ชำระโดย / รายละเอียด <span className="text-red-500">*</span></label>
             <textarea value={otherDetail} onChange={(e) => setOtherDetail(e.target.value)} rows={5} maxLength={150}
-              placeholder="รับชำระรูปแบบอื่นๆ (โปรดระบุให้ละเอียด เช่น เงินสด ผู้รับเงิน วันที่รับ)"
+              placeholder="รับชำระรูปแบบอื่น ๆ (โปรดระบุให้ละเอียด เช่น เงินสด ผู้รับเงิน วันที่รับ)"
               className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-active" />
           </div>
         )}
@@ -669,7 +669,7 @@ function PaySteps({ item, bookingId, canSubmit, onSaved, onReload, late = false 
         {files.length > 0 && (
           <button type="button" disabled={busy || (method !== "cheque" && tab === "other" && !otherDetail.trim())} onClick={submit}
             className="w-full h-11 mt-3 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-1.5 text-white bg-gradient-to-r from-amber-500 to-amber-600 hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer">
-            {busy ? "กำลังส่ง…" : "ยืนยันการชำระเงิน 1"}
+            {busy ? "กำลังส่ง…" : "ยืนยันการชำระเงิน"}
           </button>
         )}
       </div>
@@ -726,7 +726,7 @@ function PaySteps({ item, bookingId, canSubmit, onSaved, onReload, late = false 
             </div>
             <div className="grid grid-cols-4 gap-2">
               <label className="col-span-2 min-w-0">
-                <span className="text-xxs text-gray-500">Discount Text</span>
+                <span className="text-xxs text-gray-500">ชื่อส่วนลด</span>
                 <input type="text" disabled value={chosen?.discount_reason ?? ""} placeholder="เช่น โปรโมชัน, ส่วนลดพนักงาน"
                   className="mt-0.5 w-full h-8 px-3 rounded-lg border border-gray-200 text-sm disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-600" />
               </label>

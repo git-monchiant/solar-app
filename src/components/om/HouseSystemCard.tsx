@@ -51,6 +51,11 @@ export interface HouseDetail {
     created_at: string | null; batch_file: string | null; batch_note: string | null }[];
 }
 
+// ★ 21 ต.ค. 69 แผน 20261021-01: ป้ายไทยของค่าในฐาน — ค่าที่บันทึก/ตัวเลือกใน select ยังเป็นรหัสเดิม
+//   ใช้ร่วม modal หน้าบ้าน + แท็บข้อมูลบ้านในหน้างานบริการ
+export const SEGMENT: Record<string, string> = { house: "บ้าน", condo: "คอนโด", sales_office: "สำนักงานขาย", facility: "ส่วนกลาง" };
+export const unitStatusLabel = (s: string | null) => (s === "occupied" ? "มีผู้อยู่อาศัย" : s);
+
 // ★ คำเรียก "ที่มาข้อมูล" ที่ผู้ใช้เคาะ 9 ก.ย. 69 — ไฟล์ของฝ่ายบัญชี vs ไฟล์นำเข้าของทีม O&M
 //   ห้ามใช้ชื่อคนหรือชื่อไฟล์ดิบเป็นป้าย คนอ่านต้องรู้ทันทีว่ามาจากฝ่ายไหน
 /** ชุดข้อมูลที่ระบบสร้างเองจาก REM (rem_reconcile / ผู้ใช้ระบุโครงการ) — ชื่อ "ไฟล์" เป็นชื่อตารางภายใน ไม่ใช่ไฟล์นำเข้า */

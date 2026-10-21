@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
   const chatBarText = String(body.chat_bar_text || "เมนู").slice(0, 14);
   const layout = body.layout as RichMenuLayout;
 
-  if (!name) return NextResponse.json({ error: "ต้องตั้งชื่อเวอร์ชัน" }, { status: 400 });
+  if (!name) return NextResponse.json({ error: "กรุณาตั้งชื่อเวอร์ชัน" }, { status: 400 });
   const invalid = validateLayout(layout);
   if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
 

@@ -43,7 +43,7 @@ export default function OmTodayPage() {
         subtitle={`${new Date().toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })} · O&M`}
         search={q}
         onSearchChange={setQ}
-        searchPlaceholder="ค้นบ้านเลขที่ · ชื่อลูกค้า · เบอร์โทร"
+        searchPlaceholder="ค้นหาบ้านเลขที่ · ชื่อลูกค้า · เบอร์โทร"
         tabs={TODAY_TABS.map((t) => ({ key: t.k, label: t.t, count: counts[t.k] ?? 0 }))}
         activeTab={tab}
         onTabChange={setTab}
@@ -69,7 +69,7 @@ export default function OmTodayPage() {
             </div>
             {items.length < n && (
               <p className="mt-3 text-center text-xs text-gray-400">
-                แสดง {items.length.toLocaleString("th-TH")} จาก {n.toLocaleString("th-TH")} รายการ — ค้นด้วยบ้านเลขที่/ชื่อเพื่อหาที่เหลือ
+                แสดง {items.length.toLocaleString("th-TH")} จาก {n.toLocaleString("th-TH")} รายการ — ค้นหาด้วยบ้านเลขที่หรือชื่อเพื่อดูรายการที่เหลือ
               </p>
             )}
           </>

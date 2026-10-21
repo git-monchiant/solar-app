@@ -3,6 +3,7 @@ import { requireAnyRole } from "@/lib/auth";
 import { OM_WORK_ROLES } from "@/lib/om/om-roles";
 import { sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
+import { omErrorText } from "@/lib/om/api-error";
 import {
   ALLOWED_PHOTO_MIME, MAX_PHOTO_BYTES, buildPhotoName, isPhotoKind,
   parsePhotos, removePhoto, savePhoto, type JobPhoto,
@@ -42,12 +43,12 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   const form = await req.formData().catch(() => null);
   const file = form?.get("file");
   const kind = String(form?.get("kind") ?? "");
-  if (!(file instanceof File)) return NextResponse.json({ error: "ไม่พบไฟล์" }, { status: 400 });
-  if (!isPhotoKind(kind)) return NextResponse.json({ error: "ต้องระบุว่าเป็นรูปก่อนหรือหลัง" }, { status: 400 });
+  if (!(file instanceof File)) return NextResponse.json({ error: "กรุณาแนบไฟล์" }, { status: 400 });
+  if (!isPhotoKind(kind)) return NextResponse.json({ error: "กรุณาระบุว่าเป็นรูปก่อนหรือหลังให้บริการ" }, { status: 400 });
   if (!ALLOWED_PHOTO_MIME.includes(file.type))
-    return NextResponse.json({ error: `ไฟล์ชนิด ${file.type || "ไม่ทราบ"} อัปโหลดไม่ได้ — รับเฉพาะรูปภาพ` }, { status: 400 });
+    return NextResponse.json({ error: "อัปโหลดได้เฉพาะไฟล์รูปภาพ" }, { status: 400 });
   if (file.size > MAX_PHOTO_BYTES)
-    return NextResponse.json({ error: "ไฟล์ใหญ่เกิน 15 MB" }, { status: 413 });
+    return NextResponse.json({ error: "ไฟล์มีขนาดเกิน 15 MB" }, { status: 413 });
 
   const db = await getOmDb();
   const cur = await current(db, id);
@@ -64,7 +65,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   } catch (e) {
     // เขียนฐานไม่สำเร็จ = ไฟล์บนดิสก์จะกลายเป็นขยะที่ไม่มีใครอ้างถึง ⇒ เก็บกวาดทันที
     await removePhoto(name);
-    return NextResponse.json({ error: e instanceof Error ? e.message : "บันทึกไม่สำเร็จ" }, { status: 500 });
+    return NextResponse.json({ error: omErrorText(e, "บันทึกรูปไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "POST /api/om/jobs/[id]/photos") }, { status: 500 });
   }
   return NextResponse.json({ ok: true, photos }, { status: 201 });
 }

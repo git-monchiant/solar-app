@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
+import { omErrorText } from "@/lib/om/api-error";
 
 // ทะเบียนหมวด FAQ — คุมรายชื่อ + ลำดับชิปกรองที่ลูกค้าเห็น
 // ★ 10 ก.ย. 69 เลิกใช้ตาราง om_faq_categories (มีแค่ 4 แถว ทำหน้าที่แค่บอกลำดับ)
@@ -62,7 +63,7 @@ export async function POST(req: NextRequest) {
   const gate = await requireAuth(req);
   if (gate.error) return gate.error;
   const name = String((await req.json().catch(() => ({}))).name || "").trim();
-  if (!name) return NextResponse.json({ error: "ต้องใส่ชื่อหมวด" }, { status: 400 });
+  if (!name) return NextResponse.json({ error: "กรุณาระบุชื่อหมวด" }, { status: 400 });
 
   const db = await getOmDb();
   const cats = await readCats(db);
@@ -80,7 +81,7 @@ export async function PATCH(req: NextRequest) {
   if (gate.error) return gate.error;
   const b = await req.json().catch(() => ({}));
   const name = String(b.name ?? "").trim();
-  if (!name) return NextResponse.json({ error: "ต้องระบุชื่อหมวด" }, { status: 400 });
+  if (!name) return NextResponse.json({ error: "กรุณาระบุชื่อหมวด" }, { status: 400 });
 
   const db = await getOmDb();
   const cats = await readCats(db);
@@ -89,9 +90,9 @@ export async function PATCH(req: NextRequest) {
 
   const newName = b.new_name === undefined ? null : String(b.new_name).trim();
   if (b.new_name !== undefined && !newName)
-    return NextResponse.json({ error: "ชื่อหมวดห้ามว่าง" }, { status: 400 });
+    return NextResponse.json({ error: "กรุณาระบุชื่อหมวด" }, { status: 400 });
   if (newName && newName !== name && cats.some((c) => c.name === newName))
-    return NextResponse.json({ error: "ชื่อหมวดซ้ำ" }, { status: 409 });
+    return NextResponse.json({ error: "มีหมวดชื่อนี้อยู่แล้ว" }, { status: 409 });
 
   if (newName) hit.name = newName;
   if (b.sort_order !== undefined) hit.sort_order = Number(b.sort_order);
@@ -110,7 +111,7 @@ export async function PATCH(req: NextRequest) {
     await tx.commit();
   } catch (e) {
     await tx.rollback().catch(() => {});
-    return NextResponse.json({ error: e instanceof Error ? e.message : "บันทึกไม่สำเร็จ" }, { status: 400 });
+    return NextResponse.json({ error: omErrorText(e, "บันทึกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "PATCH /api/om/faq/categories") }, { status: 400 });
   }
   return NextResponse.json({ ok: true });
 }
@@ -120,14 +121,14 @@ export async function DELETE(req: NextRequest) {
   const gate = await requireAuth(req);
   if (gate.error) return gate.error;
   const name = (req.nextUrl.searchParams.get("name") ?? "").trim();
-  if (!name) return NextResponse.json({ error: "ต้องระบุชื่อหมวด" }, { status: 400 });
+  if (!name) return NextResponse.json({ error: "กรุณาระบุชื่อหมวด" }, { status: 400 });
 
   const db = await getOmDb();
   const used = await db.request().input("n", sql.NVarChar(60), name)
     .query(`SELECT COUNT(*) n FROM om_faq WHERE category = @n`);
   if (used.recordset[0].n > 0)
     return NextResponse.json(
-      { error: `ยังมี ${used.recordset[0].n} คำถามใช้หมวดนี้ — ย้ายหมวดก่อนจึงจะลบได้` }, { status: 409 });
+      { error: `ยังมี ${used.recordset[0].n} คำถามในหมวดนี้ — กรุณาย้ายคำถามไปหมวดอื่นก่อนลบ` }, { status: 409 });
 
   const cats = (await readCats(db)).filter((c) => c.name !== name);
   await writeCats(() => db.request(), cats, gate.userId ?? null);

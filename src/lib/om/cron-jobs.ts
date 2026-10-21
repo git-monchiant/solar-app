@@ -6,6 +6,7 @@ import { reconcileRemLinks } from "@/lib/om/rem-reconcile";
 import { runSweep } from "@/lib/om/sales-sweep";
 import { getSetting } from "@/lib/om/settings";
 import { notifyOmUser } from "@/lib/om/notifications";
+import { formatThaiDate } from "@/lib/utils/formatters";
 
 // ตัวรันงานเบื้องหลัง — ใช้ร่วมกันทั้ง endpoint /api/om/cron (ตัวตั้งเวลาข้างนอกเรียก)
 // และ scheduler ในแอป (instrumentation) · ทุกงานเขียน om_sync_log ดูย้อนได้
@@ -26,10 +27,10 @@ export async function runJobs(
       const made = r.results.filter((x) => x.action === "created" || x.action === "linked").length;
       const queued = r.results.filter((x) => x.action === "queued").length;
       await finishSync(db, logId, { status: "ok", fetched: r.scanned, inserted: made, skipped: queued,
-        message: `กวาด ${r.scanned} · เข้าระบบ ${made} · เข้าคิว ${queued} · ตามวันประกัน ${r.warrantySynced}` });
+        message: `ตรวจสอบ ${r.scanned} รายการ · เข้าระบบ ${made} · รอตรวจสอบ ${queued} · ปรับวันประกัน ${r.warrantySynced}` });
       out.sweep = { scanned: r.scanned, committed: made, queued, warrantySynced: r.warrantySynced };
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "กวาดไม่สำเร็จ";
+      const msg = e instanceof Error ? e.message : "ดึงงานขายไม่สำเร็จ";
       await finishSync(db, logId, { status: "error", message: msg });
       out.sweep = { error: msg };
     }
@@ -40,7 +41,7 @@ export async function runJobs(
   if ((flags.rem || flags.promo) && !remConfigured()) {
     const logId = await logSync(db, "rem_sync", "cron", actor);
     await finishSync(db, logId, { status: "error",
-      message: "ยังไม่ได้ตั้ง REM_API_KEY บนเซิร์ฟเวอร์นี้ — ข้ามดึงทะเบียน REM และของแถม" });
+      message: "ยังไม่ได้ตั้งค่าการเชื่อมต่อ REM บนเซิร์ฟเวอร์นี้ — ข้ามการดึงข้อมูล REM และของแถม" });
     out.rem = { error: "ยังไม่ได้ตั้ง REM_API_KEY" };
   }
 
@@ -68,7 +69,7 @@ export async function runJobs(
         message: `${targets.length} โครงการ · ${rows} แถว` });
       out.rem = { projects: targets.length, rows, skipped };
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "sync ไม่สำเร็จ";
+      const msg = e instanceof Error ? e.message : "ดึงข้อมูล REM ไม่สำเร็จ";
       await finishSync(db, logId, { status: "error", fetched: rows, message: msg });
       out.rem = { error: msg };
     }
@@ -80,10 +81,10 @@ export async function runJobs(
     try {
       const r = await reconcileRemLinks(db);
       await finishSync(db, logId, { status: "ok", inserted: r.contractsLinked + r.owners.created,
-        message: `เปิดบ้าน ${r.housesOpened} · เติมระบบ ${r.installationsCreated} · สร้างบ้าน ${r.housesCreated} · เชื่อมสัญญา ${r.contractsLinked} · ขนาดจากโปรฯ ${r.promoFilled} · เติม unit ${r.unitsLinked} · สร้างเจ้าของ ${r.owners.created} · สิทธิ์ ${r.grantsCreated}` });
+        message: `เปิดบ้าน ${r.housesOpened} · เติมระบบ ${r.installationsCreated} · สร้างบ้าน ${r.housesCreated} · เชื่อมสัญญา ${r.contractsLinked} · ขนาดจากโปรฯ ${r.promoFilled} · เติมยูนิต ${r.unitsLinked} · สร้างเจ้าของ ${r.owners.created} · สิทธิ์ ${r.grantsCreated}` });
       out.reconcile = { contractsLinked: r.contractsLinked, unitsLinked: r.unitsLinked, ownersCreated: r.owners.created };
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "reconcile ไม่สำเร็จ";
+      const msg = e instanceof Error ? e.message : "เชื่อมโยงข้อมูล REM ไม่สำเร็จ";
       await finishSync(db, logId, { status: "error", message: msg });
       out.reconcile = { error: msg };
     }
@@ -127,7 +128,8 @@ export async function runJobs(
       // วันนี้ตามเวลาไทย — toISOString() เปล่า ๆ เป็น UTC ช่วงตีหนึ่งถึงเจ็ดโมงจะเพี้ยนไปหนึ่งวัน
       const thToday = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
       for (const row of r.recordset) {
-        const when = String(row.ymd) === thToday ? "วันนี้" : "วันที่ " + String(row.ymd);
+        // ★ 21 ต.ค. 69 แผน 20261021-01: หัวข้อแจ้งเตือนใช้วันที่ไทย (เดิม 2026-10-22) — event_key ยังใช้ ymd เหมือนเดิม
+        const when = String(row.ymd) === thToday ? "วันนี้" : "วันที่ " + formatThaiDate(String(row.ymd));
         const ok = await notifyOmUser(db, {
           recipientUserId: Number(row.owner_user_id),
           type: "om_job_reminder",
@@ -141,7 +143,7 @@ export async function runJobs(
         if (ok) sent++;
       }
       await finishSync(db, logId, { status: "ok", fetched: r.recordset.length, inserted: sent,
-        message: `นัดใน ${days} วัน ${r.recordset.length} ใบ · แจ้ง ${sent}` });
+        message: `นัดภายใน ${days} วัน ${r.recordset.length} ใบ · แจ้งเตือน ${sent} รายการ` });
       out.notify = { due: r.recordset.length, sent };
     } catch (e) {
       const msg = e instanceof Error ? e.message : "แจ้งเตือนไม่สำเร็จ";

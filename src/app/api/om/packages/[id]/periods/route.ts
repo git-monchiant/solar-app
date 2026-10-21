@@ -56,7 +56,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const packageId = Number((await params).id);
   const body = await req.json().catch(() => null);
   const rows: PeriodInput[] | null = Array.isArray(body) ? body : null;
-  if (!rows || rows.length === 0) return NextResponse.json({ error: "ต้องมีช่วงราคาอย่างน้อย 1 ช่วง" }, { status: 400 });
+  if (!rows || rows.length === 0) return NextResponse.json({ error: "กรุณาระบุช่วงราคาอย่างน้อย 1 ช่วง" }, { status: 400 });
   if (rows.filter((r) => r.is_active).length > 1) {
     return NextResponse.json({ error: "ตั้งช่วงราคาที่ใช้งานได้ครั้งละ 1 ช่วงเท่านั้น" }, { status: 400 });
   }
@@ -74,11 +74,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   for (const prev of existing.filter(isLocked)) {
     const next = rows.find((r) => Number(r.id) === prev.id);
     const why = prev.is_active ? "ที่ใช้งานอยู่" : "ที่เริ่มไปแล้ว";
-    if (!next) return NextResponse.json({ error: `ลบช่วงราคา${why}ไม่ได้ — เพิ่มช่วงราคาใหม่ในอนาคตแทน` }, { status: 409 });
+    if (!next) return NextResponse.json({ error: `ลบช่วงราคา${why}ไม่ได้ — กรุณาเพิ่มช่วงราคาใหม่ในอนาคตแทน` }, { status: 409 });
     if (Number(next.price ?? 0) !== Number(prev.price ?? 0)
       || dayOf(next.start_date) !== dayOf(prev.start_date)
       || dayOf(next.expire_date) !== dayOf(prev.expire_date)) {
-      return NextResponse.json({ error: `ช่วงราคา${why}แก้ไขไม่ได้ — เพิ่มช่วงราคาใหม่ในอนาคตแทน` }, { status: 409 });
+      return NextResponse.json({ error: `ช่วงราคา${why}แก้ไขไม่ได้ — กรุณาเพิ่มช่วงราคาใหม่ในอนาคตแทน` }, { status: 409 });
     }
   }
 
@@ -91,7 +91,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: "สร้างช่วงราคาย้อนหลังไม่ได้ — วันที่เริ่มใช้ต้องเป็นวันนี้หรือหลังจากนั้น" }, { status: 400 });
     }
     if ((!prev || expire !== dayOf(prev.expire_date)) && expire && expire < todayStr()) {
-      return NextResponse.json({ error: "วันหมดอายุย้อนหลังไม่ได้ — ต้องเป็นวันนี้หรือหลังจากนั้น" }, { status: 400 });
+      return NextResponse.json({ error: "ตั้งวันหมดอายุย้อนหลังไม่ได้ — กรุณาเลือกวันนี้หรือหลังจากนั้น" }, { status: 400 });
     }
     if (start && expire && expire < start) {
       return NextResponse.json({ error: "วันหมดอายุต้องไม่ก่อนวันที่เริ่มใช้" }, { status: 400 });

@@ -13,13 +13,13 @@ import FallbackImage from "@/components/ui/FallbackImage";
 import { formatThaiDate } from "@/lib/utils/formatters";
 import { statusLabel, statusTone } from "@/lib/om/booking";
 import { thD, thDT } from "@/lib/om/service-view";
-import { SystemCard, type HouseDetail } from "@/components/om/HouseSystemCard";
+import { SystemCard, SEGMENT, unitStatusLabel, type HouseDetail } from "@/components/om/HouseSystemCard";
 import { useOmPhotoUrls } from "@/lib/hooks/useOmPhotoUrls";
 import { UploadTile } from "@/components/lead/detail/PhotosTab";
 import SerialsUploader from "@/components/lead/detail/SerialsUploader";
 
 const ROLE: Record<string, string> = { owner: "เจ้าของ", resident: "ผู้อยู่อาศัย", contact: "ผู้ติดต่อ" };
-const SRC: Record<string, string> = { contract_base: "สิทธิ์ตั้งต้น", renewal: "ต่อสัญญา", purchase: "ซื้อเพิ่ม", import: "import", manual_adjust: "ปรับมือ", expire: "หมดอายุ" };
+const SRC: Record<string, string> = { contract_base: "สิทธิ์ตั้งต้น", renewal: "ต่อสัญญา", purchase: "ซื้อเพิ่ม", import: "นำเข้าข้อมูล", manual_adjust: "ปรับมือ", expire: "หมดอายุ" };
 
 /** กล่องแบบแท็บ info ของหน้า lead — แถบหัวเทา (ไอคอน + ชื่อ + คำอธิบาย) · ปุ่มขวาได้ */
 function Card({ icon, tone, title, sub, right, children }: {
@@ -100,8 +100,8 @@ export function HouseInfoTab({ houseId }: { houseId: number }) {
   const fields: [string, React.ReactNode][] = [
     ["บ้านเลขที่", h.house_number || "—"],
     ["โครงการ", <>{h.project_name || "—"}{h.project_id && <span className="ml-1 text-xxs text-gray-400">รหัส {h.project_id}</span>}</>],
-    ["segment", h.segment],
-    ["สถานะยูนิต", h.unit_status || "—"],
+    ["ประเภท", SEGMENT[h.segment] ?? h.segment],
+    ["สถานะยูนิต", unitStatusLabel(h.unit_status) || "—"],
     ["แบบบ้าน", h.model_name || "—"],
     ["เนื้อที่", h.titledeed_area ? `${h.titledeed_area} ตร.ว.` : "—"],
   ];
@@ -114,7 +114,7 @@ export function HouseInfoTab({ houseId }: { houseId: number }) {
         </div>
       )}
 
-      <Card icon={ICON.house} tone="bg-sky-100 text-sky-600" title="ข้อมูลบ้าน" sub="House — จาก REM / ระบบขาย / ไฟล์นำเข้า"
+      <Card icon={ICON.house} tone="bg-sky-100 text-sky-600" title="ข้อมูลบ้าน" sub="ข้อมูลจาก REM / ระบบขาย / ไฟล์นำเข้า"
         right={<EditLink houseId={houseId} />}>
         <div className="px-4 py-3 grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-3">
           {fields.map(([k, v]) => (
@@ -134,21 +134,21 @@ export function HouseInfoTab({ houseId }: { houseId: number }) {
           </div>
           {h.note && (
             <div className="col-span-2 md:col-span-3">
-              <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">note ทีม <span className="normal-case tracking-normal font-normal">— ลูกค้าไม่เห็น</span></div>
+              <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">หมายเหตุ <span className="normal-case tracking-normal font-normal">— ลูกค้าไม่เห็น</span></div>
               <div className="text-sm text-gray-700 whitespace-pre-line">{h.note}</div>
             </div>
           )}
         </div>
       </Card>
 
-      <Card icon={ICON.users} tone="bg-emerald-100 text-emerald-600" title={`ลูกค้า (${d.customers.length})`} sub="Customers — เจ้าของ / ผู้อยู่อาศัย / ผู้ติดต่อ">
-        {d.customers.length === 0 && <div className="px-4 py-3 text-sm text-gray-400">ยังไม่ผูกลูกค้า</div>}
+      <Card icon={ICON.users} tone="bg-emerald-100 text-emerald-600" title={`ลูกค้า (${d.customers.length})`} sub="เจ้าของ / ผู้อยู่อาศัย / ผู้ติดต่อ">
+        {d.customers.length === 0 && <div className="px-4 py-3 text-sm text-gray-400">ยังไม่ระบุลูกค้า</div>}
         {d.customers.map((c) => (
           <div key={c.link_id} className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-100 last:border-0 text-sm">
             <div className="flex-1 min-w-0">
               <b className="text-gray-900">{c.full_name}</b>
               <div className="text-xs text-gray-500">
-                {c.phone ? <a href={`tel:${c.phone}`} className="tabular-nums text-gray-600 no-underline hover:text-active">{c.phone}</a> : "ไม่มีเบอร์"}
+                {c.phone ? <a href={`tel:${c.phone}`} className="tabular-nums text-gray-600 no-underline hover:text-active">{c.phone}</a> : "ไม่มีเบอร์โทร"}
               </div>
             </div>
             <span className={`text-xxs font-bold px-2 py-0.5 rounded-full ${c.role === "owner" ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
@@ -157,7 +157,7 @@ export function HouseInfoTab({ houseId }: { houseId: number }) {
         ))}
       </Card>
 
-      <Card icon={ICON.ticket} tone="bg-teal-100 text-teal-600" title="สิทธิ์ล้างแผง" sub="Entitlements — ได้ / ใช้ / คงเหลือ"
+      <Card icon={ICON.ticket} tone="bg-teal-100 text-teal-600" title="สิทธิ์ล้างแผง" sub="ที่ได้รับ / ใช้ไป / คงเหลือ"
         right={<span className="text-xl font-bold text-primary-dark shrink-0">{balance} <small className="text-xxs font-medium text-gray-500">ครั้ง คงเหลือ</small></span>}>
         {/* ครบรอบถัดไป — สูตรเดียวกับแท็บติดตาม (แผน 20260928-02) */}
         {d.systems.length > 0 && (
@@ -166,14 +166,14 @@ export function HouseInfoTab({ houseId }: { houseId: number }) {
             {h.wash_due
               ? <b className="text-orange-600">ถึงรอบล้างแล้ว{h.next_wash ? "" : " · ยังไม่เคยล้าง"}</b>
               : <>ครบรอบถัดไป <b className="text-gray-900">{formatThaiDate(h.next_wash)}</b></>}
-            {h.wash_due && balance <= 0 ? <span className="text-red-600"> · สิทธิ์หมด ต้องเสนอราคาก่อนนัด</span> : null}
+            {h.wash_due && balance <= 0 ? <span className="text-red-600"> · ไม่มีสิทธิ์คงเหลือ ต้องเสนอราคาก่อนนัด</span> : null}
           </div>
         )}
         {otherBals.length > 0 && (
           <div className="px-4 py-2 border-b border-gray-100 flex flex-wrap gap-1.5">
             {otherBals.map((b) => (
               <span key={b.service_type_id} className="text-xxs font-bold px-2 py-0.5 rounded-full bg-sky-50 text-sky-700">
-                {b.service_type_label} เหลือ {Math.max(0, b.balance)}/{b.total_granted}
+                {b.service_type_label} คงเหลือ {Math.max(0, b.balance)}/{b.total_granted}
               </span>
             ))}
           </div>
@@ -230,7 +230,7 @@ export function HouseEquipmentTab({ houseId, bookingId, readOnly, onChange }: {
       {/* ★ 21 ต.ค. 69 ผู้ใช้สั่งตรวจการจัดวาง: ใส่กรอบการ์ดแบบเดียวกับการ์ดระบบติดตั้ง/แท็บอื่น
           (เดิมวางลอยบนพื้นขาวแล้วต่อด้วยการ์ดมีกรอบ — สองหน้าตาซ้อนกัน) · เนื้อในเป็นตัวเดียวกับหน้า lead */}
       <Card icon={ICON.chip} tone="bg-indigo-100 text-indigo-600" title="Serial อุปกรณ์"
-        sub="Serial — อินเวอร์เตอร์ · แผงโซลาร์ · แบตเตอรี่ · การเพิ่ม/ลบทุกครั้งบันทึกใน Activity Log">
+        sub="อินเวอร์เตอร์ · แผงโซลาร์ · แบตเตอรี่ · การเพิ่ม/ลบทุกครั้งบันทึกใน Activity Log">
         {d.systems.length === 0 && <div className="px-4 py-3 text-sm text-gray-400">บ้านนี้ยังไม่มีระบบติดตั้ง — เพิ่ม Serial ไม่ได้</div>}
         {d.systems.map((s, i) => (
           <div key={s.id} className="border-b border-gray-100 last:border-0">
@@ -265,7 +265,7 @@ export function HouseEquipmentTab({ houseId, bookingId, readOnly, onChange }: {
 function HouseSystemsCard({ d, houseId }: { d: HouseDetail; houseId: number }) {
   return (
     <Card icon={ICON.sun} tone="bg-amber-100 text-amber-600" title={`ระบบติดตั้ง (${d.systems.length})`}
-      sub="Equipment — ขนาด · อินเวอร์เตอร์ · ประกัน · PO · ที่มาข้อมูล" right={<EditLink houseId={houseId} />}>
+      sub="ขนาด · อินเวอร์เตอร์ · ประกัน · PO · ที่มาข้อมูล" right={<EditLink houseId={houseId} />}>
       {/* ★ ผู้ใช้เคาะ 2 ก.ย.: ของแถมไม่ต้องโชว์เป็นรายการและห้ามโชว์ราคา (ข้อความเดียวกับ modal บ้าน) */}
       {!!d.promo?.n_items && (
         <div className="px-4 pt-3 text-xxs text-gray-500">
@@ -331,7 +331,7 @@ export function JobPhotosTab({ bookingIds }: { bookingIds: number[] }) {
   // ★ ลำดับต้องตรงกับที่วาดด้านล่างเป๊ะ (ใบงาน → ก่อน → หลัง) ไม่งั้นกดรูปแล้ว lightbox เปิดผิดรูป
   const items = shown.flatMap((j) => KINDS.flatMap((kind) => j.photos.filter((p) => p.kind === kind).map((p) => ({
     src: `/api/om/jobs/${j.id}/photos/${p.file}`,
-    label: `ใบงาน #${j.id} · ${kind === "before" ? "ก่อนทำงาน" : "หลังทำงาน"}`,
+    label: `ใบงานเลขที่ ${j.id} · ${kind === "before" ? "ก่อนทำงาน" : "หลังทำงาน"}`,
   }))));
   // ★ <img src> ตรงไปที่ API ไม่ได้ (แนบ header สิทธิ์ไม่ได้ → 403) — ดึงเป็น blob URL ก่อน (เรียกก่อน return ใด ๆ)
   const blobs = useOmPhotoUrls(items.map((i) => i.src));
@@ -343,7 +343,7 @@ export function JobPhotosTab({ bookingIds }: { bookingIds: number[] }) {
 
   return (
     <Card icon={ICON.photo} tone="bg-violet-100 text-violet-600" title={`รูปหน้างาน (${gallery.length})`}
-      sub="Photos — รูปก่อน / หลังทำงาน จากใบตรวจรับงานทุกใบของบ้านนี้">
+      sub="รูปก่อน / หลังทำงาน จากใบตรวจรับงานทุกใบของบ้านนี้">
       {upErr && <div className="px-4 pt-3"><Err m={upErr} /></div>}
       {!shown.length && (
         <div className="px-4 py-10 text-center text-sm text-gray-400">
@@ -353,7 +353,7 @@ export function JobPhotosTab({ bookingIds }: { bookingIds: number[] }) {
       {shown.map((j) => (
         <div key={j.id} className="border-b border-gray-100 last:border-0 px-4 py-3">
           <div className="flex items-center gap-2 flex-wrap mb-2 text-xs">
-            <b className="text-gray-800">ใบงาน #{j.id}</b>
+            <b className="text-gray-800">ใบงานเลขที่ {j.id}</b>
             {j.service_type && <span className="text-gray-500">· {j.service_type}</span>}
             {j.scheduled_at && <span className="text-gray-500">· นัด {thD(j.scheduled_at)}</span>}
             {j.status && <span className={`text-xxs font-semibold px-2 py-0.5 rounded-full text-white ${statusTone(j.status)}`}>{statusLabel(j.status)}</span>}

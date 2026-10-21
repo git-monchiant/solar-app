@@ -19,7 +19,7 @@ import { DownloadIcon } from "@/components/ui/icons";
 import { useActiveMenuItem } from "@/lib/hooks/useActiveModule";
 import { getWithTtl, setWithTtl, TWO_HOURS_MS } from "@/lib/storage-ttl";
 import { formatTHB } from "@/lib/utils/formatters";
-import { TABS, TONE_SOFT } from "@/lib/om/service-view";
+import { BUCKET_LABEL, TABS, TONE_SOFT } from "@/lib/om/service-view";
 import OmDashBucketModal, { type BucketSpec } from "@/components/om/OmDashBucketModal";
 
 type Data = {
@@ -155,7 +155,7 @@ export default function OmDashboardPage() {
   return (
     <div>
       <div className="dashboard-pdf-skip">
-        <Header title={activeItem?.label ?? "Dashboard"} subtitle="O&M · บ้านในความดูแล · สิทธิ์ · งานค้าง"
+        <Header title={activeItem?.label ?? "Dashboard"} subtitle="O&M · บ้านในความดูแล · สิทธิ์ · งานบริการ"
           rightContent={
             <div className="flex items-center gap-2">
               {/* ช่วงวันที่ — ช่องเดียวกับ Dashboard I (ไม่มีโหมด สร้างลีด/กิจกรรม: ตัวเลข O&M ใช้วันที่ของมันเอง) */}
@@ -176,7 +176,7 @@ export default function OmDashboardPage() {
               </div>
               <button type="button" disabled={pdfLoading} onClick={downloadPdf}
                 className="cursor-pointer inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-white border border-gray-200 text-xs font-semibold text-gray-700 hover:border-gray-300 disabled:opacity-60 disabled:cursor-wait transition-colors"
-                title="ดาวน์โหลดภาพรวม O&M เป็น PDF" aria-label="ดาวน์โหลดภาพรวม O&M เป็น PDF">
+                title="ดาวน์โหลด Dashboard O&M เป็น PDF" aria-label="ดาวน์โหลด Dashboard O&M เป็น PDF">
                 {pdfLoading ? (
                   <>
                     <div className="w-3.5 h-3.5 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
@@ -233,7 +233,7 @@ export default function OmDashboardPage() {
                 {/* ถึงรอบ + ยังไม่ถึงรอบ = ทั้งหมด · "ไม่เคยล้าง" เป็นส่วนหนึ่งของถึงรอบ จึงอยู่ในชิปเดียวกัน
                     ★ 14 ต.ค. 69 เดิมวาง 3 ชิปเรียงกัน อ่านเป็น 3 กอง (1,695 + 756 + 133 ≠ 1,828) */}
                 <div className="mt-auto pt-4 grid grid-cols-2 gap-1.5">
-                  <Chip n={n(d.houses.due)} l="ถึงรอบล้าง" detail={`ในนี้ไม่เคยล้างเลย ${n(d.houses.never_washed)}`}
+                  <Chip n={n(d.houses.due)} l="ถึงรอบล้าง" detail={`ในจำนวนนี้ไม่เคยล้าง ${n(d.houses.never_washed)}`}
                     tone="bg-orange-50 text-orange-700"
                     onOpen={open({ title: "บ้านที่ถึงรอบล้าง", kind: "house", params: { scope: "due" } })} />
                   <Chip n={n(d.houses.not_due)} l="ยังไม่ถึงรอบ" tone="bg-emerald-50 text-emerald-700"
@@ -261,13 +261,14 @@ export default function OmDashboardPage() {
 
               <div className="rounded-2xl bg-white border border-gray-200 p-4 flex flex-col">
                 <div className="flex items-baseline justify-between mb-3">
-                  <span className="text-sm font-bold text-violet-700">งานในลิสต์บริการ</span>
-                  <Link href="/om/services" className="dashboard-pdf-skip text-xs font-semibold text-violet-600 hover:underline">เปิดลิสต์ →</Link>
+                  {/* ★ 21 ต.ค. 69 แผน 20261021-01: ไม่ใช้ "งานบริการทั้งหมด" ตามร่าง — เลขนี้ไม่รวมแท็บปิดงาน */}
+                  <span className="text-sm font-bold text-violet-700">งานบริการที่ยังไม่ปิด</span>
+                  <Link href="/om/services" className="dashboard-pdf-skip text-xs font-semibold text-violet-600 hover:underline">ดูรายการ →</Link>
                 </div>
-                <BigNum onOpen={open(tabSpec("งานในลิสต์บริการ", ["all"]))}>{n(d.jobs_total)}</BigNum>
+                <BigNum onOpen={open(tabSpec("งานบริการที่ยังไม่ปิด", ["all"]))}>{n(d.jobs_total)}</BigNum>
                 <div className="mt-2 text-xxs text-gray-400 leading-relaxed">
                   {/* ห้ามตัด "ปิด / งาน" กลางคำ (จอ 1600 ขึ้นบรรทัดใหม่ตรงนั้นพอดี) */}
-                  เลขเดียวกับตัวเลขบนการ์ด O&M หน้าแรก — ทุกแท็บในลิสต์ <span className="whitespace-nowrap">ยกเว้นปิดงาน</span>
+                  ตรงกับตัวเลขบนการ์ด O&M หน้าแรก — รวมทุกแท็บในหน้างานบริการ <span className="whitespace-nowrap">ยกเว้นปิดงาน</span>
                 </div>
                 {/* 3 กองที่รวมกันได้เลขใหญ่ (ผู้ใช้เคาะ 14 ต.ค. 69)
                     ใบงานเปิดอยู่ = แท็บที่เหลือ (ไม่ใช่ติดตาม / ทางออก / ปิดงาน) จึงรวมได้เท่าเลขใหญ่เสมอ */}
@@ -275,15 +276,17 @@ export default function OmDashboardPage() {
                   const g = (k: string) => d.buckets[k] ?? 0;
                   const stuck = STUCK.reduce((s, k) => s + g(k), 0);
                   const openKeys = TABS.map((t) => t.k as string).filter((k) => k !== "follow" && k !== "closed" && !STUCK.includes(k));
+                  // ★ 21 ต.ค. 69 แผน 20261021-01: ป้ายอ่านจากชื่อแท็บ (service-view) — เปลี่ยนชื่อแท็บแล้วชิปตามเอง ไม่ต้องแก้สองที่
+                  const stuckLabels = STUCK.map((k) => BUCKET_LABEL[k] ?? k);
                   return (
                     <div className="mt-auto pt-4 grid grid-cols-3 gap-1.5">
-                      <Chip n={n(g("follow"))} l="ต้องโทร" tone={TONE_SOFT.follow} onOpen={open(tabSpec("ต้องโทร", ["follow"]))} />
+                      <Chip n={n(g("follow"))} l="ติดตาม" tone={TONE_SOFT.follow} onOpen={open(tabSpec("แท็บติดตาม", ["follow"]))} />
                       <Chip n={n(d.jobs_total - g("follow") - stuck)} l="ใบงานเปิดอยู่" tone="bg-violet-50 text-violet-700"
                         onOpen={open(tabSpec("ใบงานเปิดอยู่", openKeys))} />
                       {/* ตัดบรรทัดได้แค่ตรง · — ปล่อยให้เบราว์เซอร์ตัดเองได้ "สิทธิ์ / หมด" · "ปฏิ / เสธ" */}
                       <Chip n={n(stuck)} tone="bg-rose-50 text-rose-700"
-                        onOpen={open(tabSpec("ติดต่อไม่ได้ · ปฏิเสธ · สิทธิ์หมด", STUCK))}
-                        l={["ติดต่อไม่ได้", "ปฏิเสธ", "สิทธิ์หมด"].map((t, i) => (
+                        onOpen={open(tabSpec(stuckLabels.join(" · "), STUCK))}
+                        l={stuckLabels.map((t, i) => (
                           <span key={t}>{i > 0 && " · "}<span className="whitespace-nowrap">{t}</span></span>
                         ))} />
                     </div>
@@ -332,7 +335,7 @@ export default function OmDashboardPage() {
                     <div className="text-right">
                       <div className="text-xs text-teal-700 leading-tight">ยังค้างรับ <span className="text-teal-600/70">(ทั้งหมด)</span></div>
                       <button type="button" title="ดูรายการที่รวมเป็นยอดนี้"
-                        onClick={open({ title: "ยังค้างรับ ทั้งหมด (รวมรอ Account ยืนยัน)", kind: "value", params: { scope: "outstanding", from, to } })}
+                        onClick={open({ title: "ยังค้างรับ ทั้งหมด (รวมรอฝ่ายบัญชียืนยัน)", kind: "value", params: { scope: "outstanding", from, to } })}
                         className="text-lg font-bold font-mono tabular-nums text-amber-700 leading-none mt-0.5 cursor-pointer hover:underline">
                         {fmtBaht(d.value.outstanding)}
                       </button>
@@ -363,7 +366,7 @@ export default function OmDashboardPage() {
                   <div className="space-y-1">
                     {d.projects.map((p) => (
                       <button key={p.project_id ?? "-"} type="button"
-                        onClick={open(tabSpec(`ต้องโทร · ${p.project_name || "(ไม่ระบุโครงการ)"}`, ["follow"], p.project_id ?? ""))}
+                        onClick={open(tabSpec(`ติดตาม · ${p.project_name || "(ไม่ระบุโครงการ)"}`, ["follow"], p.project_id ?? ""))}
                         className="w-full flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-gray-50 cursor-pointer text-left">
                         <span className="flex-1 min-w-0 truncate text-sm text-gray-700">{p.project_name || "(ไม่ระบุโครงการ)"}</span>
                         {/* มือถือซ่อนแท่ง ให้ชื่อโครงการมีที่ (ไม่งั้นเหลือแค่ "เสนาวิล...") */}
@@ -377,7 +380,7 @@ export default function OmDashboardPage() {
                     ))}
                   </div>
                 )}
-                <div className="mt-2 text-xxs text-gray-400">เลขหนา = ยังโทรได้ · เลขจาง = ทั้งหมดในลิสต์ของโครงการนั้น · กดแถวดูรายชื่อที่ต้องโทร</div>
+                <div className="mt-2 text-xxs text-gray-400">ตัวเลขหนาคืองานในแท็บติดตาม · ตัวเลขจางคืองานทั้งหมดของโครงการ · กดที่แถวเพื่อดูรายชื่อ</div>
               </div>
 
               <div className="rounded-2xl bg-white border border-gray-200 p-4 flex flex-col">
@@ -414,7 +417,7 @@ export default function OmDashboardPage() {
                         );
                       })}
                     </div>
-                    <div className="mt-2 text-xxs text-gray-400">แท่งสีอ่อน = เดือนนี้ ยังไม่จบเดือน · กดแท่งดูรายชื่อ</div>
+                    <div className="mt-2 text-xxs text-gray-400">แท่งสีอ่อนคือเดือนปัจจุบัน (ยังไม่ครบเดือน) · กดที่แท่งเพื่อดูรายชื่อ</div>
                   </>
                 )}
               </div>

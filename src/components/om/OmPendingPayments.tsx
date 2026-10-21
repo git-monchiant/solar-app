@@ -32,7 +32,7 @@ const paidTotal = (it: OmPendingPayment) => it.amount + Number(it.cc_surcharge_a
 const methodText = (it: OmPendingPayment) => (METHOD[it.payment_method ?? ""] ?? it.payment_method)
   + (it.cc_surcharge_amount > 0 ? ` +${it.cc_surcharge_pct}% (ค่าธรรมเนียม ${fmt(it.cc_surcharge_amount)})` : "")
   + (it.payment_method === "cheque"
-    ? (it.cheque_received_at ? ` · รับเช็คแล้ว${it.cheque_received_by ? ` โดย ${it.cheque_received_by}` : ""} รอเงินเข้า` : " · รอรับเช็ค")
+    ? (it.cheque_received_at ? ` · รับเช็คแล้ว${it.cheque_received_by ? ` โดย ${it.cheque_received_by}` : ""} · รอยืนยันรับเงิน` : " · รอรับเช็ค")
     : "");
 
 export default function OmPendingPayments({ items, focusedId }: {
@@ -55,7 +55,7 @@ export default function OmPendingPayments({ items, focusedId }: {
     <div className="space-y-2">
       <div className="flex items-center gap-2 px-1 pt-2">
         <span className="rounded-md bg-pink-50 px-2 py-0.5 text-xxs font-semibold text-pink-700">งานบริการ O&amp;M</span>
-        <span className="text-xs text-gray-500">ค่าบริการรอยืนยัน {items.length} รายการ</span>
+        <span className="text-xs text-gray-500">ค่าบริการรอยืนยันรับเงิน {items.length} รายการ</span>
       </div>
       <div className="space-y-2 md:space-y-0 md:bg-white md:rounded-xl md:border md:border-gray-300 md:divide-y md:divide-gray-100">
         {items.map((it) => {
@@ -71,7 +71,7 @@ export default function OmPendingPayments({ items, focusedId }: {
           ) : (
             <button type="button" onClick={() => openPayment(it)}
               className={`h-8 px-3 rounded-lg text-sm font-semibold text-white bg-emerald-500 hover:bg-emerald-600 inline-flex items-center justify-center shrink-0 ${cls}`}>
-              กดยืนยันรับเงิน
+              ยืนยันรับเงิน
             </button>
           );
           const name = <OmServiceLink houseId={it.house_id} className="font-semibold text-gray-900 hover:text-primary">{it.customer_name}</OmServiceLink>;

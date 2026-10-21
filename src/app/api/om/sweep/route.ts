@@ -4,6 +4,7 @@ import { sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
 import { runSweep } from "@/lib/om/sales-sweep";
 import { finishSync, logSync } from "@/lib/om/rem-sync";
+import { omErrorText } from "@/lib/om/api-error";
 
 // กวาดงานขายที่ติดตั้งเสร็จ → บ้าน O&M · ตัดสิน 1 ก.ย. ให้รันทุก 1 ชั่วโมง
 // ★ มั่นใจ = ทำเลย · ไม่มั่นใจ = เข้าคิว om_match_queue ไม่แตะข้อมูลจริง
@@ -53,11 +54,11 @@ export async function POST(req: NextRequest) {
     const made = out.results.filter((x) => x.action === "created" || x.action === "linked").length;
     const queued = out.results.filter((x) => x.action === "queued").length;
     if (!dryRun) await finishSync(db, logId, { status: "ok", fetched: out.scanned, inserted: made, skipped: queued,
-      message: `กวาด ${out.scanned} · เข้าระบบ ${made} · เข้าคิว ${queued} · ตามวันประกัน ${out.warrantySynced}` });
+      message: `ตรวจสอบ ${out.scanned} รายการ · เข้าระบบ ${made} · รอตรวจสอบ ${queued} · ปรับวันประกัน ${out.warrantySynced}` });
     return NextResponse.json({ ok: true, dry_run: dryRun, ...out });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "กวาดไม่สำเร็จ";
+    const msg = e instanceof Error ? e.message : "ดึงงานขายไม่สำเร็จ";
     if (!dryRun) await finishSync(db, logId, { status: "error", message: msg });
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return NextResponse.json({ error: omErrorText(e, "ดึงงานขายไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "POST /api/om/sweep") }, { status: 500 });
   }
 }

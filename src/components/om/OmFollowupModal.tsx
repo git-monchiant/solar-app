@@ -21,7 +21,7 @@ import { CheckIcon, ClockIcon, LineIcon, PhoneIcon } from "@/components/ui/icons
 const METHODS: { value: string; label: string; icon: React.ReactNode }[] = [
   { value: "call", label: "โทร", icon: <PhoneIcon className="w-4 h-4" /> },
   {
-    value: "visit", label: "เยี่ยม",
+    value: "visit", label: "ลงพื้นที่",
     icon: (
       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
@@ -30,7 +30,7 @@ const METHODS: { value: string; label: string; icon: React.ReactNode }[] = [
   },
   { value: "line", label: "LINE", icon: <LineIcon className="w-4 h-4" /> },
   {
-    value: "other", label: "อื่นๆ",
+    value: "other", label: "อื่น ๆ",
     icon: (
       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375m-13.5 3.01c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" />
@@ -43,11 +43,11 @@ const METHODS: { value: string; label: string; icon: React.ReactNode }[] = [
 type OutcomeRow = { value: string; label: string; tone: "ok" | "fail" | "neutral" } | { group: string };
 const OUTCOMES: OutcomeRow[] = [
   { value: "informed", label: "แจ้งรอบล้างแล้ว", tone: "ok" },
-  { value: "busy", label: "ลูกค้าไม่สะดวกคุย", tone: "ok" },
+  { value: "busy", label: "ลูกค้าขอให้ติดต่อภายหลัง", tone: "ok" },
   { group: "ติดต่อไม่ได้" },
   { value: "no_answer", label: "ไม่รับสาย", tone: "fail" },
   { value: "wrong_number", label: "ข้อมูลติดต่อไม่ถูกต้อง", tone: "fail" },
-  { value: "other", label: "อื่นๆ", tone: "neutral" },
+  { value: "other", label: "อื่น ๆ", tone: "neutral" },
 ];
 
 const ymd = (d: Date) => d.toLocaleDateString("sv-SE");
@@ -102,7 +102,7 @@ export default function OmFollowupModal({ houseId, bookingId, phone, rules, jobA
 
   // ผลของตัวเลือก — บอกก่อนกด (ของ O&M เพิ่มจากฝั่งขาย: ไม่รับสายครบกี่ครั้งจะย้ายแท็บ)
   const hint = outcome === "no_answer"
-    ? (jobActive ? "จดประวัติอย่างเดียว ใบงานอยู่ขั้นเดิม" : `จดประวัติ · ไม่รับสายครบ ${maxTry} ครั้งจะย้ายไปแท็บติดต่อไม่ได้`)
+    ? (jobActive ? "บันทึกประวัติเท่านั้น ใบงานอยู่ขั้นเดิม" : `บันทึกประวัติ · หากไม่รับสายครบ ${maxTry} ครั้ง จะย้ายไปแท็บติดต่อไม่ได้`)
     : outcome === "wrong_number"
     ? (method === "call" ? `ทำเครื่องหมายเบอร์${phone ? ` ${phone}` : "นี้"}ว่าใช้ไม่ได้ · ` : "") + (jobActive ? "ใบงานอยู่ขั้นเดิม" : "ย้ายไปแท็บติดต่อไม่ได้")
     : "";
@@ -120,7 +120,8 @@ export default function OmFollowupModal({ houseId, bookingId, phone, rules, jobA
           <span className="w-7 h-7 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center">
             <ClockIcon className="w-4 h-4" strokeWidth={2} />
           </span>
-          <span>บันทึกการติดตาม</span>
+          {/* ★ 21 ต.ค. 69 แผน 20261021-01: เปิดจากปุ่มอังกฤษ "Follow-up" (ชุดเดียวกับหน้า lead) — หัวหน้าต่างใช้คำเดียวกับปุ่ม */}
+          <span>Follow-up — บันทึกการติดตาม</span>
         </div>
       }
       onClose={onClose}

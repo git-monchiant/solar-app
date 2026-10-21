@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
   const question = String(b.question || "").trim();
   const answer = String(b.answer || "").trim();
   if (!question || !answer) {
-    return NextResponse.json({ error: "ต้องมีทั้งคำถามและคำตอบ" }, { status: 400 });
+    return NextResponse.json({ error: "กรุณากรอกทั้งคำถามและคำตอบ" }, { status: 400 });
   }
   const db = await getOmDb();
   const r = await db.request()
@@ -42,7 +42,7 @@ export async function PATCH(req: NextRequest) {
   const gate = await requireAuth(req);
   if (gate.error) return gate.error;
   const b = await req.json().catch(() => ({}));
-  if (!b.id) return NextResponse.json({ error: "ต้องระบุ id" }, { status: 400 });
+  if (!b.id) return NextResponse.json({ error: "ไม่พบรายการ" }, { status: 400 });
 
   const db = await getOmDb();
   await db.request()
@@ -71,7 +71,7 @@ export async function DELETE(req: NextRequest) {
   const gate = await requireAuth(req);
   if (gate.error) return gate.error;
   const id = Number(req.nextUrl.searchParams.get("id"));
-  if (!id) return NextResponse.json({ error: "ต้องระบุ id" }, { status: 400 });
+  if (!id) return NextResponse.json({ error: "ไม่พบรายการ" }, { status: 400 });
   const db = await getOmDb();
   await db.request().input("id", sql.Int, id).query(`DELETE FROM om_faq WHERE id = @id`);
   return NextResponse.json({ ok: true });

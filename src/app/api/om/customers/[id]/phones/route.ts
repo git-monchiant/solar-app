@@ -3,6 +3,7 @@ import { requireAnyRole } from "@/lib/auth";
 import { OM_WORK_ROLES } from "@/lib/om/om-roles";
 import { sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
+import { omErrorText } from "@/lib/om/api-error";
 
 // เบอร์ของลูกค้า — เพิ่ม · ลบ · ตั้งเป็นเบอร์หลัก (log ทุกครั้ง)
 
@@ -21,7 +22,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   const id = Number((await ctx.params).id);
   const b = await req.json().catch(() => ({}));
   const phone = norm(b.phone);
-  if (!/^0\d{9}$/.test(phone)) return NextResponse.json({ error: "เบอร์ต้องเป็น 10 หลักขึ้นต้นด้วย 0" }, { status: 400 });
+  if (!/^0\d{9}$/.test(phone)) return NextResponse.json({ error: "กรุณากรอกเบอร์โทร 10 หลัก ขึ้นต้นด้วย 0" }, { status: 400 });
 
   const db = await getOmDb();
   const dup = await db.request().input("c", sql.Int, id).input("p", sql.VarChar(20), phone)
@@ -44,7 +45,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     await tx.commit();
   } catch (e) {
     await tx.rollback();
-    return NextResponse.json({ error: e instanceof Error ? e.message : "บันทึกไม่สำเร็จ" }, { status: 500 });
+    return NextResponse.json({ error: omErrorText(e, "บันทึกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "POST /api/om/customers/[id]/phones") }, { status: 500 });
   }
   return NextResponse.json({ ok: true });
 }
@@ -69,7 +70,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     await tx.commit();
   } catch (e) {
     await tx.rollback();
-    return NextResponse.json({ error: e instanceof Error ? e.message : "บันทึกไม่สำเร็จ" }, { status: 400 });
+    return NextResponse.json({ error: omErrorText(e, "บันทึกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "PATCH /api/om/customers/[id]/phones") }, { status: 400 });
   }
   return NextResponse.json({ ok: true });
 }
@@ -97,7 +98,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
     await tx.commit();
   } catch (e) {
     await tx.rollback();
-    return NextResponse.json({ error: e instanceof Error ? e.message : "ลบไม่สำเร็จ" }, { status: 400 });
+    return NextResponse.json({ error: omErrorText(e, "ลบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "DELETE /api/om/customers/[id]/phones") }, { status: 400 });
   }
   return NextResponse.json({ ok: true });
 }

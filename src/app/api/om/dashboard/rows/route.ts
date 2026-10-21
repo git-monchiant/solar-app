@@ -6,6 +6,7 @@ import { isCleaning } from "@/lib/om/entitlement";
 import { OM_FOLLOW_DROP_SQL, OM_FOLLOW_SCOPE_SQL } from "@/lib/om/follow-sql";
 import { getSettings } from "@/lib/om/settings";
 import { TABS } from "@/lib/om/service-view";
+import { omErrorText } from "@/lib/om/api-error";
 import {
   DUE_WASH_SQL, EVER_WASHED_SQL, HOUSE_GRANTED_SQL, HOUSE_INFO_COLS, HOUSE_USED_SQL, OM_CARED_HOUSE_SQL,
   OM_MONEY_ROLES, dashRange, inRange, loadOmQuoteMoney,
@@ -36,7 +37,7 @@ export async function GET(req: NextRequest) {
       const raw = (u.get("k") ?? "").split(",").map((s) => s.trim());
       // k=all = ทุกแท็บยกเว้นปิดงาน — เลขการ์ด "งานในลิสต์บริการ" (= badge การ์ด O&M หน้าแรก)
       const keys = raw.includes("all") ? [...TAB_KEYS].filter((k) => k !== "closed") : raw.filter((k) => TAB_KEYS.has(k));
-      if (!keys.length) return NextResponse.json({ error: "ไม่รู้จักแท็บนี้" }, { status: 400 });
+      if (!keys.length) return NextResponse.json({ error: "ไม่พบแท็บที่ระบุ" }, { status: 400 });
       const cfg = await getSettings("call.");
       // keys ผ่าน TAB_KEYS แล้ว (ค่าคงที่ในโค้ด) — ต่อเป็น IN ได้ปลอดภัย
       const r = await db.request()
@@ -100,7 +101,7 @@ export async function GET(req: NextRequest) {
 
     if (kind === "value") {
       if ((await requireAnyActiveRole(req, OM_MONEY_ROLES)).error)
-        return NextResponse.json({ error: "ไม่มีสิทธิ์ดูมูลค่างาน O&M" }, { status: 403 });
+        return NextResponse.json({ error: "ไม่มีสิทธิ์เข้าถึงมูลค่างาน O&M" }, { status: 403 });
       const { from, to } = dashRange(u);
       const all = await loadOmQuoteMoney(db);
       // ชุดเดียวกับการ์ดมูลค่างาน: มูลค่า/รับแล้ว = ใบที่ลูกค้ารับในช่วง · ค้างรับ = ทุกใบ
@@ -109,8 +110,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ rows });
     }
 
-    return NextResponse.json({ error: "ไม่รู้จักชุดข้อมูลนี้" }, { status: 400 });
+    return NextResponse.json({ error: "ไม่พบชุดข้อมูลที่ระบุ" }, { status: 400 });
   } catch (e) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : "อ่านรายชื่อไม่สำเร็จ" }, { status: 500 });
+    return NextResponse.json({ error: omErrorText(e, "โหลดรายชื่อไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "GET /api/om/dashboard/rows") }, { status: 500 });
   }
 }

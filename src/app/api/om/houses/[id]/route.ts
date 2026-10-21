@@ -6,6 +6,7 @@ import { getOmDb } from "@/lib/om/line";
 import { HOUSE_MANAGE_ROLES } from "@/lib/om/om-roles";
 import { CLEANING_ID_SQL, DUE_WASH_SQL, NEXT_WASH_SQL } from "@/lib/om/entitlement";
 import { finishSync, logSync } from "@/lib/om/rem-sync";
+import { omErrorText } from "@/lib/om/api-error";
 
 // บ้านรายหลัง — ดูครบ (ระบบติดตั้ง · สิทธิ์ ledger · ลูกค้า · นัด) + แก้ข้อมูลบ้าน
 
@@ -170,7 +171,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   // ★ 15 ต.ค. 69 ผู้ใช้เคาะ: ซ่อน/เอากลับ เฉพาะ admin / หัวหน้า (ปุ่มย้ายเข้าเมนู "⋯" ของหน้าบ้าน) — กันที่ API ด้วย
   if (b.restore === true || typeof b.exclude === "string") {
     const mg = await requireAnyRole(req, HOUSE_MANAGE_ROLES);
-    if (mg.error) return NextResponse.json({ error: "ซ่อน / เอากลับเข้าระบบ ได้เฉพาะ admin และหัวหน้า" }, { status: 403 });
+    if (mg.error) return NextResponse.json({ error: "ซ่อนหรือนำกลับเข้าระบบได้เฉพาะผู้ดูแลระบบและหัวหน้างาน" }, { status: 403 });
     const on = b.restore === true;
     await db.request().input("id", sql.Int, id).input("u", sql.Int, gate.userId ?? null)
       .input("r", sql.NVarChar(300), on ? null : String(b.exclude).slice(0, 300))
@@ -186,7 +187,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
   const seg = b.segment !== undefined ? String(b.segment) : old.segment;
   if (!["house", "condo", "sales_office", "facility"].includes(seg)) {
-    return NextResponse.json({ error: "segment ไม่ถูกต้อง" }, { status: 400 });
+    return NextResponse.json({ error: "ประเภทบ้านไม่ถูกต้อง" }, { status: 400 });
   }
 
   await db.request().input("id", sql.Int, id)
@@ -235,7 +236,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
   const washes = Number(c.washes), bookings = Number(c.bookings), lineLinks = Number(c.line_links);
   if (!force && (washes > 0 || bookings > 0 || lineLinks > 0)) {
     return NextResponse.json({
-      error: `บ้านนี้มีประวัติงานจริง (ล้าง ${washes} · นัด ${bookings} · LINE ${lineLinks}) — ลบถาวรไม่ได้ ให้ใช้ “ซ่อนออกจากงาน O&M” แทน`,
+      error: `บ้านนี้มีประวัติการใช้บริการ (ใช้สิทธิ์ ${washes} ครั้ง · ใบงาน ${bookings} ใบ · LINE ${lineLinks} บัญชี) — ลบถาวรไม่ได้ กรุณาใช้ “ซ่อนออกจากงาน O&M” แทน`,
       locked: true, washes, bookings, lineLinks,
     }, { status: 409 });
   }
@@ -268,8 +269,8 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
   } catch (e) {
     await tx.rollback();
     const msg = e instanceof Error ? e.message : "ลบไม่สำเร็จ";
-    await finishSync(db, logId, { status: "error", message: msg });
-    return NextResponse.json({ error: msg }, { status: 500 });
+    await finishSync(db, logId, { status: "error", message: msg });   // log ฝั่งระบบเก็บข้อความจริงไว้ตรวจ
+    return NextResponse.json({ error: omErrorText(e, "ลบบ้านไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "DELETE /api/om/houses/[id]") }, { status: 500 });
   }
   await finishSync(db, logId, { status: "ok", inserted: 1,
     message: `ลบถาวร${force ? "(FORCE)" : ""} — ระบบ ${Number(c.systems)} · ลูกค้า ${Number(c.customers)} · ล้าง ${washes} · นัด ${bookings} · LINE ${lineLinks}` });

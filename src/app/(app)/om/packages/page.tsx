@@ -71,7 +71,7 @@ export default function OmPackagesPage() {
   return (
     <div>
       <ListPageHeader
-        title="O&M Service Packages"
+        title="แพ็กเกจบริการ O&M"
         subtitle="SENA SOLAR ENERGY"
         search={search}
         onSearchChange={setSearch}
@@ -153,7 +153,7 @@ export default function OmPackagesPage() {
             </div>
 
             {tiers.length === 0 && (
-              <div className="rounded-xl bg-white border border-gray-300 px-5 py-10 text-center text-sm text-gray-400">ไม่พบแพ็คเกจตามเงื่อนไขที่เลือก</div>
+              <div className="rounded-xl bg-white border border-gray-300 px-5 py-10 text-center text-sm text-gray-400">ไม่พบแพ็กเกจตามเงื่อนไขที่เลือก</div>
             )}
           </>
         )}

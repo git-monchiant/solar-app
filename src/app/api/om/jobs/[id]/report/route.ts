@@ -6,6 +6,7 @@ import { getOmDb } from "@/lib/om/line";
 import { failCount, jobNo, type Checks } from "@/lib/om/job-form";
 import { loadForm, loadJobReport, loadQcSigner, qcSignerId } from "@/lib/om/job-report";
 import { logBooking } from "@/lib/om/booking-log";
+import { omErrorText } from "@/lib/om/api-error";
 
 // ใบตรวจรับงาน / ใบบริการ ของงานหน้างาน — ★ ตารางเดียว om_job_report
 //   ผลตรวจเก็บเป็น JSON แบบเดียวกับ dbo.install_checklists ของระบบขาย (ผู้ใช้สั่ง "อย่าสร้างตารางเยอะ")
@@ -40,7 +41,7 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
   const repairNeeded = hasRepair ? b.repair_needed === true : null;
   const repairDetail = repairNeeded && typeof b.repair_detail === "string" ? b.repair_detail.trim().slice(0, 1000) : "";
   if (repairNeeded && !repairDetail)
-    return NextResponse.json({ error: "ติ๊กพบงานซ่อมแล้ว ต้องเล่าอาการ / สิ่งที่ต้องซ่อมด้วย" }, { status: 400 });
+    return NextResponse.json({ error: "เลือก \"พบงานซ่อม\" แล้ว กรุณาระบุอาการหรือรายการที่ต้องซ่อม" }, { status: 400 });
 
   const db = await getOmDb();
   const cur = (await db.request().input("id", sql.Int, id)
@@ -60,7 +61,7 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
       : it.kind === "num" ? !(typeof ms[it.code] === "number" && Number.isFinite(ms[it.code]))
       : false));
     if (miss.length)
-      return NextResponse.json({ error: `ใบตรวจยังกรอกไม่ครบ ${miss.length} ข้อ — ${miss.slice(0, 5).map((it) => it.label_th).join(" · ")}${miss.length > 5 ? " …" : ""}` }, { status: 400 });
+      return NextResponse.json({ error: `ใบตรวจรับงานยังกรอกไม่ครบ ${miss.length} ข้อ — ${miss.slice(0, 5).map((it) => it.label_th).join(" · ")}${miss.length > 5 ? " …" : ""}` }, { status: 400 });
   }
   // ★ 15 ต.ค. 69 ผลตรวจคิดจากข้อที่ติ๊ก ไม่เชื่อค่าที่ส่งมา (เอาปุ่มผ่าน/ไม่ผ่านของขั้นส่งมอบออกแล้ว)
   //   มีข้อผ่าน/ไม่ผ่านที่ติ๊ก "ไม่ผ่าน" แม้ข้อเดียว = ไม่ผ่าน · ส่ง result มา = กำลังลงผล (ปิดงาน) · ไม่ส่ง = บันทึกร่าง
@@ -147,6 +148,6 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
     return NextResponse.json({ ok: true, job_no: b.job_no || jobNo(id), form_id: head?.id ?? null });
   } catch (e) {
     await tx.rollback().catch(() => {});
-    return NextResponse.json({ error: e instanceof Error ? e.message : "บันทึกไม่สำเร็จ" }, { status: 500 });
+    return NextResponse.json({ error: omErrorText(e, "บันทึกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "PUT /api/om/jobs/[id]/report") }, { status: 500 });
   }
 }

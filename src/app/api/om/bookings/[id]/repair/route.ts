@@ -5,6 +5,7 @@ import { sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
 import { ACTIVE_STATUS, statusLabel } from "@/lib/om/booking";
 import { logBooking } from "@/lib/om/booking-log";
+import { omErrorText } from "@/lib/om/api-error";
 
 // เปิดใบงานซ่อมจากใบงาน @id (แผน docs/plan/20260924-02 เฟส 5 · ผู้ใช้เคาะ 28 ก.ย. 69)
 //   ช่างติ๊ก "พบงานซ่อม" ในใบตรวจรับงาน → ทีม O&M กดเปิดที่นี่ + เลือกในประกัน/นอกประกัน
@@ -24,9 +25,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   const id = Number((await ctx.params).id);
   const b = await req.json().catch(() => ({}));
   if (typeof b.in_warranty !== "boolean")
-    return NextResponse.json({ error: "เลือกก่อนว่างานซ่อมนี้อยู่ในประกันหรือนอกประกัน" }, { status: 400 });
+    return NextResponse.json({ error: "กรุณาเลือกว่างานซ่อมนี้อยู่ในประกันหรือนอกประกัน" }, { status: 400 });
   const detail = typeof b.detail === "string" ? b.detail.trim().slice(0, 1000) : "";
-  if (!detail) return NextResponse.json({ error: "ต้องระบุอาการ / สิ่งที่ต้องซ่อม" }, { status: 400 });
+  if (!detail) return NextResponse.json({ error: "กรุณาระบุอาการหรือรายการที่ต้องซ่อม" }, { status: 400 });
 
   const db = await getOmDb();
   const tx = new sql.Transaction(db);
@@ -39,17 +40,17 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       { id: number; house_id: number; status: string; owner_user_id: number | null } | undefined;
     if (!src) return fail("ไม่พบใบงานนี้", 404);
     if (src.status !== "closed")
-      return fail(`เปิดใบงานซ่อมได้หลังปิดงานนี้แล้ว (ตอนนี้: ${statusLabel(src.status)})`);
+      return fail(`เปิดใบงานซ่อมได้หลังปิดใบงานนี้แล้ว (สถานะปัจจุบัน: ${statusLabel(src.status)})`);
 
     const child = (await new sql.Request(tx).input("id", sql.Int, id).query(`
       SELECT TOP 1 id FROM om_bookings WHERE parent_booking_id = @id AND status <> 'cancelled'`)).recordset[0];
-    if (child) return fail(`เปิดใบงานซ่อมจากงานนี้ไปแล้ว (ใบงาน #${child.id})`);
+    if (child) return fail(`เปิดใบงานซ่อมจากใบงานนี้ไปแล้ว (ใบงานเลขที่ ${child.id})`);
 
     const active = (await new sql.Request(tx).input("h", sql.Int, src.house_id).query(`
       SELECT TOP 1 id, status FROM om_bookings WITH (UPDLOCK, HOLDLOCK)
        WHERE house_id = @h AND status IN (${ACTIVE_STATUS.map((s) => `'${s}'`).join(",")})`)).recordset[0];
     if (active)
-      return fail(`บ้านนี้มีใบงานค้างอยู่ (#${active.id} ${statusLabel(active.status)}) — จบงานนั้นก่อนแล้วค่อยเปิดใบซ่อม`);
+      return fail(`บ้านนี้มีใบงานที่ยังไม่ปิด (ใบงานเลขที่ ${active.id} · ${statusLabel(active.status)}) — กรุณาปิดใบงานนั้นก่อนเปิดใบงานซ่อม`);
 
     const type = (await new sql.Request(tx)
       .query(`SELECT TOP 1 id FROM om_service_type WHERE code = N'repair'`)).recordset[0];
@@ -75,6 +76,6 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     return NextResponse.json({ ok: true, id: newId, status });
   } catch (e) {
     await tx.rollback().catch(() => {});
-    return NextResponse.json({ error: e instanceof Error ? e.message : "เปิดใบงานซ่อมไม่สำเร็จ" }, { status: 500 });
+    return NextResponse.json({ error: omErrorText(e, "เปิดใบงานซ่อมไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "POST /api/om/bookings/[id]/repair") }, { status: 500 });
   }
 }

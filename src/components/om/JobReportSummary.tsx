@@ -123,7 +123,7 @@ export default function JobReportSummary({ bookingId, startedAt }: {
           {doneRow("ประเภทงาน", job.service_type || "-")}
           {doneRow("ทีมช่าง", job.team_name || "-")}
           {doneRow("ขนาดติดตั้ง", job.kwp_list ? `${job.kwp_list} kW` : "-")}
-          {doneRow("ใบตรวจ", form ? `${form.label_th} · v${form.version}` : "-")}
+          {doneRow("ใบตรวจรับงาน", form ? `${form.label_th} · v${form.version}` : "-")}
           {doneRow("ผลตรวจ", r?.result === "pass" ? <span className="text-emerald-700 font-semibold">✓ ผ่าน</span>
             : r?.result === "fail" ? <span className="text-red-600 font-semibold">✗ ไม่ผ่าน</span> : "-")}
         </div>
@@ -146,7 +146,7 @@ export default function JobReportSummary({ bookingId, startedAt }: {
         <div className="space-y-0.5">
           {doneRow("ผลตรวจรายข้อ", !bools.length ? "-"
             // ช่างกดผลตรวจผ่านโดยไม่ติ๊กรายข้อ (มีจริง เช่นใบ #148) — "✓ 0 / 7" สีเขียวชวนเข้าใจผิด
-            : passed + failed === 0 ? <span className="text-gray-400">ไม่ได้ติ๊กรายข้อ · 0 / {bools.length}</span> : (
+            : passed + failed === 0 ? <span className="text-gray-400">ไม่ได้ระบุผลรายข้อ · 0 / {bools.length}</span> : (
             <>
               <span className="text-emerald-700 font-semibold">✓ {passed}</span>
               {failed > 0 && <> · <span className="text-red-600 font-semibold">✗ {failed}</span></>}

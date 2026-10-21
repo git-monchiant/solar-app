@@ -4,6 +4,7 @@ import { OM_WORK_ROLES } from "@/lib/om/om-roles";
 import { fixDates, sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
 import { isCleaning } from "@/lib/om/entitlement";
+import { omErrorText } from "@/lib/om/api-error";
 
 // ลูกค้ารายคน — ดู · แก้ · ลบ (ตัดสิน hard/soft เองตามเงื่อนไขที่ผู้ใช้เคาะ 1 ก.ย.)
 
@@ -73,7 +74,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   const title = b.title !== undefined ? (String(b.title).trim() || null) : old.title;
   const first = b.first_name !== undefined ? String(b.first_name).trim() : old.first_name;
   const last = b.last_name !== undefined ? (String(b.last_name).trim() || null) : old.last_name;
-  if (!first) return NextResponse.json({ error: "ชื่อห้ามว่าง" }, { status: 400 });
+  if (!first) return NextResponse.json({ error: "กรุณาระบุชื่อ" }, { status: 400 });
   const full = [title, first, last].filter(Boolean).join(" ");
   const restore = b.restore === true;
 
@@ -98,7 +99,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     await tx.commit();
   } catch (e) {
     await tx.rollback();
-    return NextResponse.json({ error: e instanceof Error ? e.message : "บันทึกไม่สำเร็จ" }, { status: 500 });
+    return NextResponse.json({ error: omErrorText(e, "บันทึกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "PATCH /api/om/customers/[id]") }, { status: 500 });
   }
   return NextResponse.json({ ok: true });
 }
@@ -134,14 +135,14 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
         .query(`UPDATE om_customers SET is_active = 0, updated_at = SYSDATETIMEOFFSET() WHERE id = @id`);
       await new sql.Request(tx).input("c", sql.Int, id).input("u", sql.Int, gate.userId)
         .input("r", sql.NVarChar(300),
-          `ซ่อนแทนการลบ — ล้าง ${c.washes} · นัด ${c.bookings} · LINE ${c.line_links}`)
+          `ซ่อนแทนการลบ — ใช้สิทธิ์ ${c.washes} ครั้ง · ใบงาน ${c.bookings} ใบ · LINE ${c.line_links} บัญชี`)
         .query(`INSERT INTO om_customer_history (customer_id, [action], actor_user_id, reason)
                 VALUES (@c, 'soft_delete', @u, @r)`);
     } else {
       // ลบจริง — เก็บ log ไว้ก่อนลบ (history อ้าง customer_id ที่หายไปได้ ไม่มี FK)
       await new sql.Request(tx).input("c", sql.Int, id).input("u", sql.Int, gate.userId)
         .query(`INSERT INTO om_customer_history (customer_id, [action], actor_user_id, reason)
-                VALUES (@c, 'hard_delete', @u, N'ไม่มีประวัติผูก ลบถาวร')`);
+                VALUES (@c, 'hard_delete', @u, N'ไม่มีประวัติการใช้บริการ ลบถาวร')`);
       await new sql.Request(tx).input("id", sql.Int, id).query(`
         -- primary_customer_id เป็น pointer เก่าจากตอน import — ล้างก่อน ไม่งั้นชน FK
         UPDATE om_houses SET primary_customer_id = NULL WHERE primary_customer_id = @id;
@@ -152,7 +153,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
     await tx.commit();
   } catch (e) {
     await tx.rollback();
-    return NextResponse.json({ error: e instanceof Error ? e.message : "ลบไม่สำเร็จ" }, { status: 500 });
+    return NextResponse.json({ error: omErrorText(e, "ลบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "DELETE /api/om/customers/[id]") }, { status: 500 });
   }
   return NextResponse.json({ ok: true, mode: locked ? "soft" : "hard" });
 }

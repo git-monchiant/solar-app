@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAnyRole } from "@/lib/auth";
 import { sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
+import { omErrorText } from "@/lib/om/api-error";
 
 // ข้อในใบตรวจรับงาน — เพิ่ม · แก้ · ปิด · เรียงลำดับ
 // ★★ ด่านสำคัญ: ใบที่มีใบงานอ้างแล้ว (om_job_report.form_id) แก้เนื้อใบไม่ได้เด็ดขาด
@@ -22,12 +23,12 @@ async function usedCount(db: sql.ConnectionPool, formId: number) {
 }
 
 async function guard(db: sql.ConnectionPool, formId: number) {
-  if (!formId) return NextResponse.json({ error: "ต้องระบุใบ" }, { status: 400 });
+  if (!formId) return NextResponse.json({ error: "ไม่พบใบตรวจรับงาน" }, { status: 400 });
   const { used, exists_ } = await usedCount(db, formId);
-  if (!exists_) return NextResponse.json({ error: "ไม่พบใบนี้" }, { status: 404 });
+  if (!exists_) return NextResponse.json({ error: "ไม่พบใบตรวจรับงานนี้" }, { status: 404 });
   if (used > 0)
     return NextResponse.json({
-      error: `ใบนี้มีใบงานอ้างอยู่ ${used} ใบ จึงแก้ไม่ได้ — ให้กด "ออกเวอร์ชันใหม่" แล้วแก้ที่เวอร์ชันใหม่แทน`,
+      error: `ใบตรวจรับงานนี้มีใบงานใช้อยู่ ${used} ใบ จึงแก้ไขไม่ได้ — กรุณากด "ออกเวอร์ชันใหม่" แล้วแก้ไขที่เวอร์ชันใหม่แทน`,
     }, { status: 409 });
   return null;
 }
@@ -47,16 +48,16 @@ export async function POST(req: NextRequest) {
   const section = String(b.section ?? "");
   const kind = String(b.kind ?? "");
   const label = String(b.label_th ?? "").trim();
-  if (!CODE_RE.test(code)) return NextResponse.json({ error: "รหัสข้อใช้ได้เฉพาะ a-z A-Z 0-9 _ ไม่เกิน 40 ตัว" }, { status: 400 });
+  if (!CODE_RE.test(code)) return NextResponse.json({ error: "รหัสข้อใช้ได้เฉพาะตัวอักษรภาษาอังกฤษ ตัวเลข และ _ ไม่เกิน 40 ตัวอักษร" }, { status: 400 });
   if (!SECTIONS.includes(section)) return NextResponse.json({ error: "หมวดไม่ถูกต้อง" }, { status: 400 });
-  if (!KINDS.includes(kind)) return NextResponse.json({ error: "ชนิดข้อไม่ถูกต้อง" }, { status: 400 });
-  if (!label) return NextResponse.json({ error: "ต้องใส่ชื่อข้อ" }, { status: 400 });
+  if (!KINDS.includes(kind)) return NextResponse.json({ error: "ประเภทข้อไม่ถูกต้อง" }, { status: 400 });
+  if (!label) return NextResponse.json({ error: "กรุณาระบุชื่อข้อ" }, { status: 400 });
 
   // ★ ตัวพิมพ์เล็ก-ใหญ่ถือเป็นคนละ code (คอลัมน์เป็น BIN2) — เช็คซ้ำต้องเทียบแบบ BIN2 ด้วย
   const dup = await db.request().input("f", sql.Int, formId).input("c", sql.NVarChar(40), code)
     .query(`SELECT TOP 1 1 x FROM om_job_form_item
              WHERE form_id = @f AND code = @c COLLATE Latin1_General_BIN2`);
-  if (dup.recordset.length) return NextResponse.json({ error: `รหัส ${code} มีอยู่แล้วในใบนี้` }, { status: 409 });
+  if (dup.recordset.length) return NextResponse.json({ error: `รหัส ${code} มีอยู่แล้วในใบตรวจรับงานนี้` }, { status: 409 });
 
   const r = await db.request()
     .input("f", sql.Int, formId).input("c", sql.NVarChar(40), code)
@@ -100,12 +101,12 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ ok: true, reordered: ids.length });
     } catch (e) {
       await tx.rollback().catch(() => {});
-      return NextResponse.json({ error: e instanceof Error ? e.message : "เรียงลำดับไม่สำเร็จ" }, { status: 500 });
+      return NextResponse.json({ error: omErrorText(e, "เรียงลำดับไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "PATCH /api/om/job-forms/items") }, { status: 500 });
     }
   }
 
   const itemId = Number(b.item_id);
-  if (!itemId) return NextResponse.json({ error: "ต้องระบุข้อ" }, { status: 400 });
+  if (!itemId) return NextResponse.json({ error: "ไม่พบข้อที่ระบุ" }, { status: 400 });
   const set: string[] = [];
   if (typeof b.label_th === "string" && b.label_th.trim()) set.push("label_th = @l");
   if (Object.prototype.hasOwnProperty.call(b, "unit")) set.push("unit = @u");
@@ -133,7 +134,7 @@ export async function DELETE(req: NextRequest) {
   const db = await getOmDb();
   const blocked = await guard(db, formId);
   if (blocked) return blocked;
-  if (!itemId) return NextResponse.json({ error: "ต้องระบุข้อ" }, { status: 400 });
+  if (!itemId) return NextResponse.json({ error: "ไม่พบข้อที่ระบุ" }, { status: 400 });
 
   await db.request().input("id", sql.Int, itemId).input("f", sql.Int, formId)
     .query(`DELETE FROM om_job_form_item WHERE id = @id AND form_id = @f`);

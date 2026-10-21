@@ -22,7 +22,7 @@ export function cleanSlots(raw: unknown): { slots: string[] } | { error: string 
   if (raw == null || raw === "") return null;
   const list = Array.isArray(raw) ? raw.map(String) : parseSlots(String(raw));
   const slots = [...new Set(list)].sort();
-  if (!slots.length) return { error: "เลือกช่วงเวลาอย่างน้อย 1 ช่อง" };
+  if (!slots.length) return { error: "กรุณาเลือกช่วงเวลาอย่างน้อย 1 ช่วง" };
   const bad = slots.filter((s) => !SLOTS.includes(s));
   if (bad.length) return { error: `ช่วงเวลาไม่ถูกต้อง: ${bad.join(", ")}` };
   return { slots };
@@ -87,7 +87,7 @@ export async function teamClash(conn: sql.ConnectionPool | sql.Transaction, at: 
   });
   if (!hit.length) return null;
   return `ทีมมีนัดช่วงนี้แล้ว: ${hit.map((x: { kind: string; label: string | null; slot: string | null }) =>
-    `${x.kind} ${x.label ?? ""} ${x.slot ? formatSlotsRange(x.slot) : "ทั้งวัน"}`).join(", ")} — นัดทับเวลาไม่ได้ เลือกช่วงเวลาอื่น`;
+    `${x.kind} ${x.label ?? ""} ${x.slot ? formatSlotsRange(x.slot) : "ทั้งวัน"}`).join(", ")} — นัดซ้อนเวลาไม่ได้ กรุณาเลือกช่วงเวลาอื่น`;
 }
 
 /**
@@ -100,11 +100,11 @@ export async function omSlotsFor(conn: sql.ConnectionPool | sql.Transaction, sch
   Promise<{ at: string; slot: string | null } | { error: string }> {
   const s = typeof scheduledAt === "string" ? thaiLocal(scheduledAt.trim()) : "";
   const date = s.slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: "ต้องระบุวันนัด" };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: "กรุณาระบุวันนัด" };
   const picked = cleanSlots(timeSlot);
   if (picked && "error" in picked) return picked;
   if (picked) return { at: `${date}T${picked.slots[0]}`, slot: serializeSlots(picked.slots) };
   const hm = s.slice(11, 16);
-  if (!/^\d{2}:\d{2}$/.test(hm)) return { error: "ต้องระบุช่วงเวลา" };
+  if (!/^\d{2}:\d{2}$/.test(hm)) return { error: "กรุณาระบุช่วงเวลา" };
   return { at: `${date}T${hm}`, slot: serializeSlots(await slotsFromStart(conn, hm)) };
 }

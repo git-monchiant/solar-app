@@ -67,17 +67,18 @@ export function toThaiOffset(s: string | null | undefined): string | null {
 // ผลการโทร — ★ อยู่ที่ไฟล์นี้เพราะเป็นค่าคงที่ล้วน ฝั่ง client import ได้
 //   (booking-log.ts ดึง mssql เข้ามา ใช้ในไฟล์ "use client" ไม่ได้)
 export const CALL_OUTCOME: Record<string, { t: string; tone: string }> = {
-  agreed:       { t: "รับสาย · ตกลงนัด",   tone: "bg-emerald-600" },
-  postponed:    { t: "รับสาย · ขอเลื่อน",  tone: "bg-amber-500" },
+  // ★ 21 ต.ค. 69 แผน 20261021-01: ชื่อเดียวกับปุ่ม "ตกลงรับบริการ" ในขั้น 01 (เดิม "รับสาย · ตกลงนัด")
+  agreed:       { t: "ตกลงรับบริการ",      tone: "bg-emerald-600" },
+  postponed:    { t: "ลูกค้าขอเลื่อน",     tone: "bg-amber-500" },
   no_answer:    { t: "ไม่รับสาย",          tone: "bg-gray-500" },
   declined:     { t: "ปฏิเสธไม่รับบริการ", tone: "bg-red-500" },   // 15 ต.ค. 69 ผู้ใช้สั่ง — ชุดเดียวกับปุ่มในขั้น 01 (CALL_ROWS)
   wrong_number: { t: "ข้อมูลติดต่อไม่ถูกต้อง", tone: "bg-rose-500" },   // เดิม "เบอร์ผิด" — ชื่อตามหน้าต่าง Follow-up ฝั่งขาย
   // ★ 1 ต.ค. 69 ปุ่ม Follow-up แบบหน้า lead (OmFollowupModal) — ติดต่อแล้วยังไม่มีข้อสรุป · จดประวัติอย่างเดียว ไม่ย้ายแท็บ
   informed:     { t: "แจ้งรอบล้างแล้ว",      tone: "bg-emerald-500" },
-  busy:         { t: "ลูกค้าไม่สะดวกคุย",    tone: "bg-amber-500" },
-  other:        { t: "อื่นๆ",                tone: "bg-gray-400" },
+  busy:         { t: "ลูกค้าขอให้ติดต่อภายหลัง", tone: "bg-amber-500" },
+  other:        { t: "อื่น ๆ",               tone: "bg-gray-400" },
 };
 
 // ช่องทางติดต่อของบันทึกการติดตาม — ชุดเดียวกับ FOLLOW_UP_METHODS ของหน้า lead (ไม่มี SMS)
 //   ไม่มีค่า = โทร (ประวัติก่อนมีปุ่ม Follow-up บันทึกจากฟอร์มโทรอย่างเดียว)
-export const CONTACT_CHANNEL: Record<string, string> = { call: "โทร", visit: "เยี่ยม", line: "LINE", other: "อื่นๆ" };
+export const CONTACT_CHANNEL: Record<string, string> = { call: "โทร", visit: "ลงพื้นที่", line: "LINE", other: "อื่น ๆ" };

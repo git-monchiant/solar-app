@@ -76,7 +76,7 @@ export default function OmServicesPage() {
         title={activeItem?.label ?? "งานบริการ"}
         search={q}
         onSearchChange={setQ}
-        searchPlaceholder="ค้นบ้านเลขที่ · ชื่อลูกค้า · เบอร์โทร"
+        searchPlaceholder="ค้นหาบ้านเลขที่ · ชื่อลูกค้า · เบอร์โทร"
         tabs={TABS.map((t) => ({ key: t.k, label: t.t, count: counts[t.k] ?? 0 }))}
         activeTab={tab}
         onTabChange={setTab}

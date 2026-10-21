@@ -19,7 +19,7 @@ interface Detail {
 const ROLE: Record<string, string> = { owner: "เจ้าของ", resident: "ผู้อยู่อาศัย", contact: "ผู้ติดต่อ" };
 const ACT: Record<string, string> = {
   create: "สร้าง", update: "แก้ไข", soft_delete: "ซ่อน", restore: "กู้คืน", hard_delete: "ลบถาวร",
-  merge: "รวมคนซ้ำ", link_house: "ผูกบ้าน", unlink_house: "ถอดบ้าน", phone_add: "เพิ่มเบอร์", phone_del: "ลบเบอร์", lead_sync: "ดึงจากระบบขาย",
+  merge: "รวมรายชื่อซ้ำ", link_house: "เชื่อมโยงบ้าน", unlink_house: "ยกเลิกการเชื่อมโยงบ้าน", phone_add: "เพิ่มเบอร์", phone_del: "ลบเบอร์", lead_sync: "ดึงจากระบบขาย",
 };
 
 export default function OmCustomerModal({ customerId, canDelete = true, onClose, onChanged, onToast }: {
@@ -42,7 +42,7 @@ export default function OmCustomerModal({ customerId, canDelete = true, onClose,
   const load = async () => {
     // โหลดไม่ขึ้นต้องเด้ง toast แล้วปิด — แถบ error ใน modal ยังไม่ขึ้นตอนกำลังโหลด
     try { setSel(await apiFetch(`/api/om/customers/${customerId}`)); }
-    catch (e) { const m = e instanceof Error ? e.message : String(e); say(`เปิดข้อมูลลูกค้าไม่ได้: ${m}`); onClose(); }
+    catch (e) { const m = e instanceof Error ? e.message : String(e); say(`ไม่สามารถเปิดข้อมูลลูกค้าได้: ${m}`); onClose(); }
   };
   useEffect(() => { load(); }, [customerId]); // eslint-disable-line react-hooks/exhaustive-deps
   const reload = () => { onChanged?.(); load(); };
@@ -68,15 +68,15 @@ export default function OmCustomerModal({ customerId, canDelete = true, onClose,
   const del = async () => {
     if (!sel) return;
     // ★ เดิมกดแล้วลบ/ซ่อนทันทีไม่ถามก่อน — ลบถาวรย้อนไม่ได้ ต้องยืนยันด้วย dialog กลาง (กติกา ui-rules)
-    const name = sel.customer.full_name || "ลูกค้าคนนี้";
+    const name = sel.customer.full_name || "ลูกค้ารายนี้";
     const ok = await dialog.confirm(locked
-      ? { title: "ซ่อนลูกค้า", message: `ซ่อน "${name}"?\n\nมีประวัติผูกอยู่ ระบบจะซ่อนแทนการลบ — กู้คืนได้จากแท็บ "ที่ซ่อนไว้"`,
+      ? { title: "ซ่อนลูกค้า", message: `ต้องการซ่อน "${name}" หรือไม่\n\nลูกค้ารายนี้มีประวัติการใช้บริการ ระบบจะซ่อนแทนการลบ — กู้คืนได้จากแท็บ "ที่ซ่อนไว้"`,
           variant: "warning", confirmText: "ซ่อน" }
-      : { title: "ลบลูกค้าถาวร", message: `ลบ "${name}" ถาวร?\n\nไม่มีประวัติผูก ลบแล้วกู้คืนไม่ได้`,
+      : { title: "ลบลูกค้าถาวร", message: `ต้องการลบ "${name}" ถาวรหรือไม่\n\nลูกค้ารายนี้ไม่มีประวัติการใช้บริการ ลบแล้วกู้คืนไม่ได้`,
           variant: "danger", confirmText: "ลบถาวร" });
     if (!ok) return;
     const d = await call("DELETE", `/api/om/customers/${sel.customer.id}`);
-    if (d) { say(d.mode === "hard" ? "ลบถาวรแล้ว (ไม่มีประวัติผูก)" : "ซ่อนแล้ว (มีประวัติผูก) — กู้คืนได้"); onChanged?.(); onClose(); }
+    if (d) { say(d.mode === "hard" ? "ลบถาวรแล้ว" : "ซ่อนแล้ว — กู้คืนได้จากแท็บ \"ที่ซ่อนไว้\""); onChanged?.(); onClose(); }
   };
   const restore = async () => {
     if (!sel) return;
@@ -102,14 +102,14 @@ export default function OmCustomerModal({ customerId, canDelete = true, onClose,
             </svg>
           </span>
           <span className="truncate">{sel ? (sel.customer.full_name || "— ไม่มีชื่อ —") : "กำลังโหลด…"}</span>
-          {sel && <span className="text-xxs font-bold px-2 rounded-full bg-gray-100 text-gray-500 shrink-0">id {sel.customer.id}</span>}
+          {sel && <span className="text-xxs font-bold px-2 rounded-full bg-gray-100 text-gray-500 shrink-0">รหัส {sel.customer.id}</span>}
         </div>
       }
       footer={sel && (
         <div className="flex gap-2 flex-wrap">
           {canDelete && sel.customer.is_active && (
             <button type="button" style={{ minHeight: 0 }} disabled={busy} onClick={del}
-              title={locked ? "มีประวัติผูก → ระบบจะซ่อนแทน" : "ไม่มีประวัติ → ลบจริง"}
+              title={locked ? "มีประวัติการใช้บริการ ระบบจะซ่อนแทนการลบ" : "ไม่มีประวัติการใช้บริการ ลบได้ถาวร"}
               className="py-3 px-4 rounded-xl border border-red-200 text-sm font-semibold text-red-600 bg-white disabled:opacity-50 cursor-pointer">
               {locked ? "ซ่อนลูกค้า" : "ลบถาวร"}</button>
           )}
@@ -127,7 +127,7 @@ export default function OmCustomerModal({ customerId, canDelete = true, onClose,
             {err && <div className="mx-5 mt-4 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">{err}</div>}
             {!sel.customer.is_active && (
               <div className="mx-5 mt-3 border-l-3 border-amber-400 bg-amber-50 px-3 py-2 text-xs text-amber-800 font-semibold rounded-r-lg">
-                ถูกซ่อนอยู่ — ไม่โผล่ในค้นหา/LIFF
+                ซ่อนอยู่ — ไม่แสดงในผลค้นหาและหน้า LINE ของลูกค้า
                 <button type="button" style={{ minHeight: 0 }} onClick={restore}
                   className="ml-2 h-7 px-3 rounded-lg border border-amber-300 text-xs font-bold cursor-pointer">กู้คืน</button>
               </div>
@@ -138,7 +138,7 @@ export default function OmCustomerModal({ customerId, canDelete = true, onClose,
                   className="h-9 rounded-lg border border-gray-200 px-2 text-sm font-semibold outline-none focus:border-primary">
                   <option value="">ไม่ระบุ</option>{["นาย", "นาง", "นางสาว", "คุณ", "ดร."].map((t) => <option key={t}>{t}</option>)}
                 </select></label>
-              <label className="grid gap-1"><span className="text-xs font-bold text-gray-700">เลขบัตร ปชช.</span>
+              <label className="grid gap-1"><span className="text-xs font-bold text-gray-700">เลขบัตรประชาชน</span>
                 <input value={sel.customer.id_card ?? ""} onChange={(e) => upd({ id_card: e.target.value })}
                   className="h-9 rounded-lg border border-gray-200 px-3 text-sm font-semibold outline-none focus:border-primary" /></label>
               <label className="grid gap-1"><span className="text-xs font-bold text-gray-700">ชื่อ</span>
@@ -151,21 +151,21 @@ export default function OmCustomerModal({ customerId, canDelete = true, onClose,
 
             <SecHead t={`เบอร์โทร (${sel.phones.length})`}
               action={<AddPhone busy={busy} onAdd={async (p) => { if (await call("POST", `/api/om/customers/${sel.customer.id}/phones`, { phone: p }, "เพิ่มเบอร์แล้ว")) reload(); }} />} />
-            {sel.phones.length === 0 && <div className="px-5 py-2 text-xs font-semibold text-amber-600">⚠ ไม่มีเบอร์ — ยืนยันตัวตน LINE ไม่ได้</div>}
+            {sel.phones.length === 0 && <div className="px-5 py-2 text-xs font-semibold text-amber-600">⚠ ไม่มีเบอร์โทร — ลูกค้ายืนยันตัวตนผ่าน LINE ไม่ได้</div>}
             {sel.phones.map((p) => (
               <div key={p.id} className="flex items-center gap-2 px-5 py-2 border-b border-gray-100 text-sm">
                 <b>{p.phone}</b>
                 {p.is_primary ? <span className="text-xxs font-bold px-2 rounded-full bg-emerald-50 text-emerald-700">เบอร์หลัก</span>
                   : <button type="button" style={{ minHeight: 0 }} disabled={busy}
                       onClick={async () => { if (await call("PATCH", `/api/om/customers/${sel.customer.id}/phones`, { phone: p.phone }, "ตั้งเป็นเบอร์หลักแล้ว")) reload(); }}
-                      className="h-7 px-2.5 rounded-lg border border-gray-200 text-xxs font-bold text-gray-600 cursor-pointer">ตั้งเป็นหลัก</button>}
+                      className="h-7 px-2.5 rounded-lg border border-gray-200 text-xxs font-bold text-gray-600 cursor-pointer">ตั้งเป็นเบอร์หลัก</button>}
                 <button type="button" style={{ minHeight: 0 }} disabled={busy}
                   onClick={async () => { if (await call("DELETE", `/api/om/customers/${sel.customer.id}/phones`, { phone: p.phone }, "ลบเบอร์แล้ว")) reload(); }}
                   className="ml-auto h-7 px-2.5 rounded-lg border border-red-200 text-xxs font-bold text-red-600 cursor-pointer">ลบ</button>
               </div>
             ))}
 
-            <SecHead t={`บ้านที่ผูก (${sel.houses.length})`} />
+            <SecHead t={`บ้านที่เชื่อมโยง (${sel.houses.length})`} />
             {sel.houses.map((h) => (
               <div key={h.link_id} className="flex items-center gap-2 px-5 py-2 border-b border-gray-100 text-sm">
                 <div className="flex-1 min-w-0">
@@ -175,8 +175,8 @@ export default function OmCustomerModal({ customerId, canDelete = true, onClose,
                 <span className={`text-xxs font-bold px-2 rounded-full ${h.role === "owner" ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
                   {ROLE[h.role] ?? h.role}</span>
                 <button type="button" style={{ minHeight: 0 }} disabled={busy}
-                  onClick={async () => { if (await call("DELETE", `/api/om/customers/${sel.customer.id}/houses`, { link_id: h.link_id }, "ถอดแล้ว (ประวัติยังอยู่)")) reload(); }}
-                  className="h-7 px-2.5 rounded-lg border border-red-200 text-xxs font-bold text-red-600 cursor-pointer">ถอด</button>
+                  onClick={async () => { if (await call("DELETE", `/api/om/customers/${sel.customer.id}/houses`, { link_id: h.link_id }, "ยกเลิกการเชื่อมโยงแล้ว (ประวัติยังอยู่)")) reload(); }}
+                  className="h-7 px-2.5 rounded-lg border border-red-200 text-xxs font-bold text-red-600 cursor-pointer">ยกเลิกการเชื่อมโยง</button>
               </div>
             ))}
 

@@ -6,6 +6,7 @@ import { expireOmGrantsIfDue } from "@/lib/om/entitlement-expiry";
 import { OM_FOLLOW_DROP_SQL, OM_FOLLOW_SCOPE_SQL } from "@/lib/om/follow-sql";
 import { getSettings } from "@/lib/om/settings";
 import { TODAY_TABS } from "@/lib/om/service-view";
+import { omErrorText } from "@/lib/om/api-error";
 
 // Today ของ O&M (/om/today · แผน docs/plan/20260928-01) — อยู่ในการ์ด O&M เท่านั้น ไม่ปน /today ฝั่งขาย
 // ★ ต่อท้าย OM_FOLLOW_SCOPE_SQL ก้อนเดียวกับหน้างานบริการ/ภาพรวม (กติกาใน follow-sql.ts)
@@ -74,6 +75,6 @@ export async function GET(req: NextRequest) {
     for (const x of rs[0]) counts[String(x.today_tab)] = Number(x.n);
     return NextResponse.json({ counts, items: fixDates(rs[1]), tab });
   } catch (e) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : "อ่านงานวันนี้ไม่สำเร็จ" }, { status: 500 });
+    return NextResponse.json({ error: omErrorText(e, "โหลดงานวันนี้ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "GET /api/om/today") }, { status: 500 });
   }
 }

@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
   if (b.team_id && b.user_id) {
     const dup = (await db.request().input("t", sql.Int, Number(b.team_id)).input("u", sql.Int, Number(b.user_id))
       .query(`SELECT TOP 1 id FROM om_team_members WHERE team_id = @t AND user_id = @u AND is_current = 1`)).recordset[0];
-    if (dup) return NextResponse.json({ error: "คนนี้อยู่ในทีมนี้แล้ว" }, { status: 409 });
+    if (dup) return NextResponse.json({ error: "ผู้ใช้นี้อยู่ในทีมแล้ว" }, { status: 409 });
     const r = await db.request().input("t", sql.Int, Number(b.team_id)).input("u", sql.Int, Number(b.user_id))
       .input("r", sql.NVarChar(20), typeof b.role === "string" && b.role.trim() ? b.role.trim() : "member")
       .query(`INSERT INTO om_team_members (team_id, user_id, role, is_current) OUTPUT INSERTED.id VALUES (@t, @u, @r, 1)`);
@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
   }
 
   const name = typeof b.name === "string" ? b.name.trim() : "";
-  if (!name) return NextResponse.json({ error: "ต้องระบุชื่อทีม" }, { status: 400 });
+  if (!name) return NextResponse.json({ error: "กรุณาระบุชื่อทีม" }, { status: 400 });
   const r = await db.request().input("n", sql.NVarChar(100), name)
     .input("c", sql.NVarChar(20), typeof b.color === "string" && b.color.trim() ? b.color.trim() : "#6b7280")
     .input("ct", sql.Int, b.center_id ? Number(b.center_id) : 1)
@@ -74,7 +74,7 @@ export async function PATCH(req: NextRequest) {
   }
 
   const id = Number(b.team_id);
-  if (!id) return NextResponse.json({ error: "ต้องระบุ team_id" }, { status: 400 });
+  if (!id) return NextResponse.json({ error: "กรุณาระบุทีม" }, { status: 400 });
   const set: string[] = [];
   if (typeof b.name === "string" && b.name.trim()) set.push("name = @n");
   if (typeof b.color === "string" && b.color.trim()) set.push("color = @c");

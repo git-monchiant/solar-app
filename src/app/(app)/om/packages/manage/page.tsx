@@ -170,7 +170,7 @@ export default function ManageOmPackagesPage() {
       load();
     } catch (e) {
       console.error(e);
-      setSaveError(e instanceof Error && e.message ? e.message : "บันทึก Package O&M ไม่สำเร็จ กรุณาลองอีกครั้งหรือติดต่อผู้ดูแลระบบ");
+      setSaveError(e instanceof Error && e.message ? e.message : "บันทึกแพ็กเกจ O&M ไม่สำเร็จ กรุณาลองอีกครั้งหรือติดต่อผู้ดูแลระบบ");
     } finally {
       setSaving(false);
     }
@@ -192,7 +192,7 @@ export default function ManageOmPackagesPage() {
 
   return (
     <div>
-      <Header title="จัดการ Package O&M" subtitle="O&M PACKAGE MANAGEMENT" />
+      <Header title="จัดการแพ็กเกจ O&M" subtitle="O&M PACKAGE MANAGEMENT" />
 
       <div className="p-4 md:p-6 space-y-4">
         {/* Toolbar */}
@@ -200,8 +200,8 @@ export default function ManageOmPackagesPage() {
           <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา..." className="h-8 px-4 rounded-lg border border-gray-200 text-sm flex-1 min-w-[200px] focus:outline-none focus:border-primary" />
           <Dropdown className="w-36" value={filter} onChange={v => { if (v) setFilter(v as typeof filter); }} options={[
             { value: "all", label: "ทั้งหมด" },
-            { value: "active", label: "Active" },
-            { value: "inactive", label: "Inactive" },
+            { value: "active", label: "เปิดใช้งาน" },
+            { value: "inactive", label: "ปิดใช้งาน" },
           ]} />
           <Dropdown className="w-40" value={filterPlan} onChange={v => { if (v) setFilterPlan(v as typeof filterPlan); }} options={[
             { value: "all", label: "ทุกเงื่อนไข" },
@@ -209,14 +209,14 @@ export default function ManageOmPackagesPage() {
             { value: "contract", label: "สัญญา" },
           ]} />
           {canEdit && (
-            <button type="button" onClick={() => { setSaveError(""); setEditing({ ...empty }); }} className="h-8 px-5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary-dark transition-colors">+ เพิ่ม Package O&amp;M</button>
+            <button type="button" onClick={() => { setSaveError(""); setEditing({ ...empty }); }} className="h-8 px-5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary-dark transition-colors">+ เพิ่มแพ็กเกจ O&amp;M</button>
           )}
         </div>
 
         {/* Cards */}
         <div className="space-y-5">
           {grouped.length === 0 ? (
-            <div className="rounded-xl bg-white border border-gray-300 px-5 py-10 text-center text-sm text-gray-400">ไม่พบ Package O&amp;M ตามเงื่อนไขที่เลือก</div>
+            <div className="rounded-xl bg-white border border-gray-300 px-5 py-10 text-center text-sm text-gray-400">ไม่พบแพ็กเกจ O&amp;M ตามเงื่อนไขที่เลือก</div>
           ) : grouped.map(group => (
             <section key={group.key} className="space-y-3">
               <div className="flex items-baseline gap-2 px-1">
@@ -272,8 +272,8 @@ export default function ManageOmPackagesPage() {
                       {pkg.start_date && (
                         <div className="text-sm text-gray-400">
                           {fmtDate(pkg.start_date)} — {fmtDate(pkg.expire_date)}
-                          {pkg.start_date > todayStr() && <span className="ml-2 text-blue-600 font-semibold">ยังไม่เริ่ม</span>}
-                          {pkg.expire_date && pkg.expire_date < todayStr() && <span className="ml-2 text-red-600 font-semibold">หมดอายุ</span>}
+                          {pkg.start_date > todayStr() && <span className="ml-2 text-blue-600 font-semibold">รอเริ่มใช้</span>}
+                          {pkg.expire_date && pkg.expire_date < todayStr() && <span className="ml-2 text-red-600 font-semibold">สิ้นสุดแล้ว</span>}
                         </div>
                       )}
                     </div>
@@ -281,7 +281,7 @@ export default function ManageOmPackagesPage() {
                     {/* Right: status + edit */}
                     <div className="flex flex-col items-end gap-2 shrink-0">
                       <button type="button" onClick={() => toggleActive(pkg)} disabled={!canEdit} className={`text-xs font-bold uppercase px-3 py-1.5 rounded-full ${!canEdit ? "cursor-default " : ""}${pkg.is_active ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
-                        {pkg.is_active ? "ACTIVE" : "INACTIVE"}
+                        {pkg.is_active ? "เปิดใช้งาน" : "ปิดใช้งาน"}
                       </button>
                       {canEdit ? (
                         <button type="button" onClick={() => setEditing({ ...pkg })} className="text-sm text-primary font-semibold hover:underline">แก้ไข</button>
@@ -305,13 +305,13 @@ export default function ManageOmPackagesPage() {
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <h2 className="text-lg font-bold text-gray-900 truncate">
-                    {!editing.id ? "เพิ่ม Package O&M ใหม่" : viewOnly ? "รายละเอียด Package O&M" : "แก้ไข Package O&M"}
+                    {!editing.id ? "เพิ่มแพ็กเกจ O&M ใหม่" : viewOnly ? "รายละเอียดแพ็กเกจ O&M" : "แก้ไขแพ็กเกจ O&M"}
                   </h2>
                   {viewOnly && (
                     <span className="shrink-0 rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-xxs font-bold text-gray-500">อ่านอย่างเดียว</span>
                   )}
                 </div>
-                <p className="text-xs text-gray-400 mt-0.5">{editing.id ? `รหัส #${editing.id} · ${omTierLabel(editing)}` : "กรอกรายละเอียดแพ็คเกจบริการใหม่"}</p>
+                <p className="text-xs text-gray-400 mt-0.5">{editing.id ? `รหัส ${editing.id} · ${omTierLabel(editing)}` : "กรอกรายละเอียดแพ็กเกจบริการใหม่"}</p>
               </div>
               <button type="button" onClick={() => setEditing(null)} className="w-9 h-9 shrink-0 rounded-full hover:bg-gray-100 flex items-center justify-center transition-colors">
                 <XIcon className="w-5 h-5 text-gray-500" strokeWidth={2} />
@@ -321,7 +321,7 @@ export default function ManageOmPackagesPage() {
             <fieldset disabled={viewOnly} className="min-w-0 p-4 md:p-6 space-y-4 bg-slate-50/50">
               {/* ── ขนาดระบบ ─────────────────────────────── */}
               <section className="rounded-xl border border-gray-200 bg-white p-4">
-                <div className="text-xs font-bold text-gray-800 mb-3">ขนาดติดตั้ง</div>
+                <div className="text-xs font-bold text-gray-800 mb-3">ขนาดระบบ</div>
                 <div className="grid gap-3 grid-cols-2 md:grid-cols-3">
                   <div>
                     <label className={labelCls}>ตั้งแต่ (kW) <span className="text-red-500">*</span></label>
@@ -370,7 +370,7 @@ export default function ManageOmPackagesPage() {
                         <input type="number" value={editing.contract_months ?? ""} onChange={e => setEditing({ ...editing, contract_months: numOrNull(e.target.value) })} placeholder="12" className={`text-right ${fieldCls}`} />
                       </div>
                       <div className="md:col-span-4">
-                        <label className={labelCls}>เข้าบริการ (ครั้ง) <span className="text-red-500">*</span></label>
+                        <label className={labelCls}>ให้บริการ (ครั้ง) <span className="text-red-500">*</span></label>
                         <input type="number" value={editing.visits ?? ""} onChange={e => setEditing({ ...editing, visits: numOrNull(e.target.value) })} placeholder="2" className={`text-right ${fieldCls}`} />
                       </div>
                     </>
@@ -382,7 +382,7 @@ export default function ManageOmPackagesPage() {
                       placeholder={"บรรทัดละ 1 ข้อ เช่น\nงานล้างทำความสะอาดแผงโซลาร์เซลล์ (Solar Panel Cleaning) จำนวน 2 ครั้ง ภายในระยะเวลา 12 เดือน"}
                       className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm outline-none transition-colors hover:border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/10 disabled:bg-gray-50 disabled:text-gray-600" />
                     <p className="mt-1 text-xs text-gray-400">
-                      บรรทัดละ 1 ข้อ — เป็นรายละเอียดตั้งต้นใต้แพ็กเกจในใบเสนอราคา · แก้จำนวนครั้ง/อายุสัญญาแล้ว แก้ตัวเลขในข้อความด้วย
+                      บรรทัดละ 1 ข้อ — เป็นรายละเอียดตั้งต้นใต้แพ็กเกจในใบเสนอราคา · หากแก้จำนวนครั้งหรือระยะสัญญา กรุณาแก้ตัวเลขในข้อความให้ตรงกัน
                     </p>
                   </div>
                 </div>
@@ -392,7 +392,7 @@ export default function ManageOmPackagesPage() {
               <section className="rounded-xl border border-gray-200 bg-white p-4">
                 <div className="flex items-start justify-between gap-3 mb-3">
                   <div className="text-xs font-bold text-gray-800"
-                    title="ระบบสลับ Active ตามวันที่ · ช่วงที่ Active และช่วงที่ผ่านมาแล้วแก้ไขไม่ได้">
+                    title="ระบบเปลี่ยนช่วงราคาที่ใช้ตามวันที่ให้อัตโนมัติ · ช่วงที่ใช้อยู่และช่วงที่สิ้นสุดแล้วแก้ไขไม่ได้">
                     ค่าบริการ &amp; ช่วงเวลาใช้งาน
                   </div>
                   {!viewOnly && (
@@ -427,13 +427,13 @@ export default function ManageOmPackagesPage() {
                         <div className="col-span-12 md:col-span-3">
                           {p.is_active ? (
                             <span className="inline-flex h-6 w-full max-w-[124px] items-center justify-center rounded-full border border-green-300 bg-green-100 text-xxs font-bold text-green-700"
-                              title="ช่วงราคาที่ใช้อยู่วันนี้">Active</span>
+                              title="ช่วงราคาที่ใช้อยู่วันนี้">ใช้อยู่</span>
                           ) : upcoming ? (
                             <span className="inline-flex h-6 w-full max-w-[124px] items-center justify-center rounded-full border border-amber-200 bg-amber-50 text-xxs font-bold text-amber-600 whitespace-nowrap"
-                              title={`ระบบจะเปลี่ยนมาใช้ช่วงนี้เองวันที่ ${fmtPicker(p.start_date)}`}>Active อัตโนมัติ</span>
+                              title={`ระบบจะเริ่มใช้ช่วงนี้อัตโนมัติวันที่ ${fmtPicker(p.start_date)}`}>รอเริ่มใช้</span>
                           ) : (
                             <span className="inline-flex h-6 w-full max-w-[124px] items-center justify-center rounded-full border border-transparent text-xxs font-semibold text-gray-300"
-                              title="ช่วงที่ผ่านมาแล้ว">Inactive</span>
+                              title="ช่วงที่ผ่านมาแล้ว">สิ้นสุดแล้ว</span>
                           )}
                         </div>
 
@@ -490,7 +490,7 @@ export default function ManageOmPackagesPage() {
               {viewOnly ? (
                 <>
                   <span className={`text-xs font-bold uppercase px-3 py-1.5 rounded-full ${editing.is_active ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
-                    {editing.is_active ? "ACTIVE" : "INACTIVE"}
+                    {editing.is_active ? "เปิดใช้งาน" : "ปิดใช้งาน"}
                   </span>
                   <div className="ml-auto">
                     <button type="button" onClick={() => setEditing(null)} className="h-9 px-6 rounded-lg border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors">ปิด</button>

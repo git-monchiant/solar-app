@@ -47,7 +47,7 @@ function BundlePdfButton({ ids, title }: { ids: number[]; title: string }) {
     try {
       const qs = new URLSearchParams({ ids: ids.join(","), title: `ใบบริการ O&M · ${title}` });
       const r = await fetch(`/api/om/jobs/docs?${qs}`, { headers: getUserContextHeaders() });
-      if (!r.ok) throw new Error((await r.json().catch(() => null))?.error ?? `สร้าง PDF รวมไม่สำเร็จ (${r.status})`);
+      if (!r.ok) throw new Error((await r.json().catch(() => null))?.error ?? "สร้าง PDF รวมไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
       const skipped = Number(r.headers.get("X-Om-Docs-Skipped") ?? 0);
       const url = URL.createObjectURL(await r.blob());
       const a = document.createElement("a");
@@ -108,12 +108,12 @@ const BASE: SheetCol<Row>[] = [
 const COLS: Record<BucketKind, SheetCol<Row>[]> = {
   tab: [...BASE,
     { label: "แท็บ", wch: 14, value: (r) => BUCKET_LABEL[r.bucket ?? ""] ?? r.bucket ?? "" },
-    { label: "สิทธิ์เหลือ", wch: 10, value: (r) => r.balance ?? "" },
+    { label: "สิทธิ์คงเหลือ", wch: 10, value: (r) => r.balance ?? "" },
     { label: "ล้างล่าสุด", wch: 12, value: (r) => thDate(r.last_wash) || "ยังไม่เคยล้าง" },
     { label: "ใบงาน", wch: 8, value: (r) => r.booking_id ?? "" }],
   house: [...BASE,
     { label: "รอบล้าง", wch: 12, value: (r) => (r.due ? "ถึงรอบ" : "ยังไม่ถึงรอบ") },
-    { label: "สิทธิ์เหลือ", wch: 10, value: (r) => r.balance ?? "" },
+    { label: "สิทธิ์คงเหลือ", wch: 10, value: (r) => r.balance ?? "" },
     { label: "ล้างล่าสุด", wch: 12, value: (r) => thDate(r.last_wash) || "ยังไม่เคยล้าง" }],
   quota: [...BASE,
     { label: "ให้ไว้", wch: 8, value: (r) => r.granted ?? 0 },
@@ -193,7 +193,7 @@ export default function OmDashBucketModal({ spec, onClose }: { spec: BucketSpec 
             {!!rows?.length && (
               <button type="button" onClick={() => downloadSheet(COLS[spec.kind], rows, "O&M", spec.title)}
                 className="cursor-pointer inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-white border border-gray-200 text-xs font-semibold text-gray-700 hover:border-gray-300 transition-colors"
-                title={`Export ${rows.length} rows to Excel`}>
+                title={`ดาวน์โหลด Excel (${rows.length} รายการ)`}>
                 <DownloadIcon className="w-3.5 h-3.5 text-gray-400" strokeWidth={2} />
                 <span>Excel</span>
               </button>
@@ -227,9 +227,9 @@ export default function OmDashBucketModal({ spec, onClose }: { spec: BucketSpec 
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-semibold text-gray-900 truncate flex items-baseline gap-2">
-                    <span className="truncate">{r.customer_name || "ไม่มีชื่อในฐาน"}</span>
+                    <span className="truncate">{r.customer_name || "ไม่มีชื่อ"}</span>
                     {spec.kind === "washed" && r.service_date && <span className="text-xs font-normal text-gray-400 shrink-0">ล้าง {thDate(r.service_date)}</span>}
-                    {spec.kind === "value" && r.at && <span className="text-xs font-normal text-gray-400 shrink-0">รับใบ {thDate(r.at)}</span>}
+                    {spec.kind === "value" && r.at && <span className="text-xs font-normal text-gray-400 shrink-0">รับใบเสนอราคา {thDate(r.at)}</span>}
                   </div>
                   {/* คอลัมน์กว้างคงที่ ให้แต่ละแถวอ่านเป็นตารางเล็ก ๆ แบบ Dashboard I */}
                   <div className="text-xs text-gray-500 flex items-baseline gap-3 font-mono tabular-nums whitespace-nowrap">
@@ -247,13 +247,13 @@ export default function OmDashBucketModal({ spec, onClose }: { spec: BucketSpec 
                   <div className="shrink-0 w-28 text-right font-mono tabular-nums leading-tight">
                     <div className="text-xs font-semibold text-gray-800">{fmtBaht(r.total ?? 0)}</div>
                     {(r.outstanding ?? 0) > 0
-                      ? <div className="text-xxs text-amber-700">ค้าง {fmtBaht(r.outstanding ?? 0)}</div>
-                      : <div className="text-xxs text-emerald-600">ครบ</div>}
+                      ? <div className="text-xxs text-amber-700">ค้างรับ {fmtBaht(r.outstanding ?? 0)}</div>
+                      : <div className="text-xxs text-emerald-600">ชำระครบ</div>}
                   </div>
                 )}
                 {spec.kind === "quota" && (
                   <div className="shrink-0 text-right font-mono tabular-nums text-xs leading-tight">
-                    <div className="font-semibold text-gray-800">เหลือ {n(r.left)}</div>
+                    <div className="font-semibold text-gray-800">คงเหลือ {n(r.left)}</div>
                     <div className="text-xxs text-gray-400">ให้ {n(r.granted)} · ใช้ {n(r.used)}</div>
                   </div>
                 )}
@@ -285,7 +285,7 @@ export default function OmDashBucketModal({ spec, onClose }: { spec: BucketSpec 
           )}
         </div>
         <div className="px-4 py-2 border-t border-gray-100 text-xxs text-gray-400 text-center">
-          กดแถวเพื่อเปิด{spec.kind === "tab" || spec.kind === "value" ? "หน้างานบริการ" : "หน้าบ้าน / ระบบติดตั้ง"}ในแท็บใหม่
+          กดที่แถวเพื่อเปิด{spec.kind === "tab" || spec.kind === "value" ? "หน้างานบริการ" : "หน้าบ้าน / ระบบติดตั้ง"}ในแท็บใหม่
         </div>
       </div>
     </div>

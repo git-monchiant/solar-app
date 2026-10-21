@@ -5,6 +5,7 @@ import { getOmDb } from "@/lib/om/line";
 import { logBooking } from "@/lib/om/booking-log";
 import { getQuotationActor } from "@/lib/quotation";
 import { OM_QUOTE_EDITABLE, canIssueOmQuotation, parseOmQuoteInput, readOmQuotes, writeOmQuoteBody } from "@/lib/om/om-quotation";
+import { omErrorText } from "@/lib/om/api-error";
 
 // ใบเสนอราคา O&M 1 ใบ — อ่าน / แก้ / ลบฉบับร่าง (แผน docs/plan/20260924-02 เฟส 2 · ลบร่าง 20261002-02)
 // ★ รับเฉพาะใบที่ om_booking_id ไม่ว่าง — ใบของฝั่งขายต้องแก้ผ่าน /api/quotations เท่านั้น
@@ -27,7 +28,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   const actor = await getQuotationActor(gate.userId);
   if (!actor) return NextResponse.json({ error: "ไม่พบผู้ใช้" }, { status: 401 });
   if (!canIssueOmQuotation(getEffectiveRolesFromReq(req, actor.roles)))
-    return NextResponse.json({ error: "ใบเสนอราคา O&M แก้ได้เฉพาะ Sale" }, { status: 403 });
+    return NextResponse.json({ error: "ใบเสนอราคา O&M แก้ไขได้เฉพาะฝ่ายขาย" }, { status: 403 });
 
   const id = Number((await params).id);
   const body = await req.json().catch(() => ({}));
@@ -45,7 +46,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     if (!q) { await tx.rollback(); return NextResponse.json({ error: "ไม่พบใบเสนอราคา O&M" }, { status: 404 }); }
     if (!OM_QUOTE_EDITABLE.includes(q.status)) {
       await tx.rollback();
-      return NextResponse.json({ error: "ใบนี้ส่งอนุมัติไปแล้ว แก้ไม่ได้ — รอผลหรือให้ผู้อนุมัติส่งกลับมาแก้" }, { status: 409 });
+      return NextResponse.json({ error: "ใบเสนอราคานี้ส่งอนุมัติแล้ว จึงแก้ไขไม่ได้ — กรุณารอผล หรือให้ผู้อนุมัติส่งกลับมาแก้ไข" }, { status: 409 });
     }
     const { total } = await writeOmQuoteBody(tx, id, input, gate.userId);
     await logBooking(tx, {
@@ -56,8 +57,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     await tx.commit();
   } catch (e) {
     try { await tx.rollback(); } catch {}
-    console.error("PATCH /api/om/quotations/[id]", e);
-    return NextResponse.json({ error: e instanceof Error ? e.message : "แก้ใบเสนอราคาไม่สำเร็จ" }, { status: 500 });
+    return NextResponse.json({ error: omErrorText(e, "แก้ไขใบเสนอราคาไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "PATCH /api/om/quotations/[id]") }, { status: 500 });
   }
   return NextResponse.json(await readQuote(id));
 }
@@ -74,7 +74,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
   const actor = await getQuotationActor(gate.userId);
   if (!actor) return NextResponse.json({ error: "ไม่พบผู้ใช้" }, { status: 401 });
   if (!canIssueOmQuotation(getEffectiveRolesFromReq(req, actor.roles)))
-    return NextResponse.json({ error: "ลบใบเสนอราคา O&M ได้เฉพาะ Sale" }, { status: 403 });
+    return NextResponse.json({ error: "ลบใบเสนอราคา O&M ได้เฉพาะฝ่ายขาย" }, { status: 403 });
 
   const id = Number((await params).id);
   const db = await getOmDb();
@@ -102,7 +102,6 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     return NextResponse.json({ ok: true });
   } catch (e) {
     try { await tx.rollback(); } catch {}
-    console.error("DELETE /api/om/quotations/[id]", e);
-    return NextResponse.json({ error: e instanceof Error ? e.message : "ลบใบเสนอราคาไม่สำเร็จ" }, { status: 500 });
+    return NextResponse.json({ error: omErrorText(e, "ลบใบเสนอราคาไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "DELETE /api/om/quotations/[id]") }, { status: 500 });
   }
 }

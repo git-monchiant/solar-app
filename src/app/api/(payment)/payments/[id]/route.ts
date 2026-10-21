@@ -277,7 +277,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       await logLeadActivity(db, {
         leadId: pay.lead_id,
         activityType: failedStatus === "bounced" ? "payment_cheque_bounced" : "payment_cheque_cancelled",
-        title: `${failedStatus === "bounced" ? "เช็คเด้ง" : "ยกเลิกเช็ค"} ${paymentStepLabel(pay.slip_field, pay.step_no)} ${fmtBaht(Number(pay.amount || 0))}`,
+        title: `${failedStatus === "bounced" ? "เช็คคืน" : "ยกเลิกเช็ค"} ${paymentStepLabel(pay.slip_field, pay.step_no)} ${fmtBaht(Number(pay.amount || 0))}`,
         note: statusNote,
         userId: gate.userId,
       });

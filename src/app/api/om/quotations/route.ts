@@ -9,6 +9,7 @@ import {
   OM_MAX_OPTIONS, OM_PAYMENT_TERMS, canIssueOmQuotation, ensureOmLead, nextOmQuotationDocNo,
   parseOmQuoteInput, readOmQuotes, writeOmQuoteBody,
 } from "@/lib/om/om-quotation";
+import { omErrorText } from "@/lib/om/api-error";
 
 // ออกใบเสนอราคางานบริการ O&M (แผน docs/plan/20260924-02 เฟส 2)
 //
@@ -26,7 +27,7 @@ export async function GET(req: NextRequest) {
   const gate = await requireAuth(req);
   if (gate.error) return gate.error;
   const bookingId = Number(req.nextUrl.searchParams.get("booking_id"));
-  if (!bookingId) return NextResponse.json({ error: "ต้องระบุใบงาน" }, { status: 400 });
+  if (!bookingId) return NextResponse.json({ error: "ไม่พบใบงานที่ระบุ" }, { status: 400 });
   const db = await getOmDb();
   const [quotes, job] = await Promise.all([
     readOmQuotes(db, { bookingId }),
@@ -41,16 +42,16 @@ export async function POST(req: NextRequest) {
   const actor = await getQuotationActor(gate.userId);
   if (!actor) return NextResponse.json({ error: "ไม่พบผู้ใช้" }, { status: 401 });
   if (!canIssueOmQuotation(getEffectiveRolesFromReq(req, actor.roles)))
-    return NextResponse.json({ error: "ใบเสนอราคา O&M ออกได้เฉพาะ Sale" }, { status: 403 });
+    return NextResponse.json({ error: "ใบเสนอราคา O&M ออกได้เฉพาะฝ่ายขาย" }, { status: 403 });
 
   const body = await req.json().catch(() => ({}));
   const houseId = Number(body.house_id);
-  if (!houseId) return NextResponse.json({ error: "ต้องระบุบ้าน" }, { status: 400 });
+  if (!houseId) return NextResponse.json({ error: "กรุณาเลือกบ้าน" }, { status: 400 });
   const input = parseOmQuoteInput(body);
   if (typeof input === "string") return NextResponse.json({ error: input }, { status: 400 });
   const optionNo = body.option_no == null ? 1 : Number(body.option_no);
   if (!Number.isInteger(optionNo) || optionNo < 1 || optionNo > OM_MAX_OPTIONS)
-    return NextResponse.json({ error: `ชุดใบเสนอราคาต้องเป็น 1–${OM_MAX_OPTIONS}` }, { status: 400 });
+    return NextResponse.json({ error: `ชุดใบเสนอราคาต้องอยู่ระหว่าง 1–${OM_MAX_OPTIONS}` }, { status: 400 });
 
   const db = await getOmDb();
   const tx = new sql.Transaction(db);
@@ -80,12 +81,12 @@ export async function POST(req: NextRequest) {
                  WHERE om_booking_id = @b AND option_no = @o AND status <> 'cancelled'`)).recordset[0];
       if (has) {
         await tx.rollback();
-        return NextResponse.json({ error: `ชุด ${optionNo} มีใบเสนอราคา ${has.doc_no} แล้ว — แก้ที่ใบเดิม` }, { status: 409 });
+        return NextResponse.json({ error: `ชุด ${optionNo} มีใบเสนอราคา ${has.doc_no} แล้ว — กรุณาแก้ไขที่ใบเดิม` }, { status: 409 });
       }
     } else {
       await tx.rollback();
       return NextResponse.json(
-        { error: `บ้านนี้มีงานค้างอยู่ (${statusLabel(cur.status)}) — ออกใบเสนอราคาได้เมื่อจบงานเดิมแล้ว` },
+        { error: `บ้านนี้มีใบงานที่ยังไม่ปิด (ใบงานเลขที่ ${cur.id} · ${statusLabel(cur.status)}) — กรุณาปิดใบงานนั้นก่อนออกใบเสนอราคา` },
         { status: 409 });
     }
 
@@ -111,7 +112,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ id: quotationId, doc_no: docNo, booking_id: bookingId, lead_id: leadId });
   } catch (e) {
     try { await tx.rollback(); } catch {}
-    console.error("POST /api/om/quotations", e);
-    return NextResponse.json({ error: e instanceof Error ? e.message : "ออกใบเสนอราคาไม่สำเร็จ" }, { status: 500 });
+    return NextResponse.json({ error: omErrorText(e, "ออกใบเสนอราคาไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "POST /api/om/quotations") }, { status: 500 });
   }
 }

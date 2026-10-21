@@ -10,6 +10,7 @@ import { serializeSlots } from "@/lib/time-slots";
 import { notifyOmUser, resolveOmNotifications } from "@/lib/om/notifications";
 import { getSettings } from "@/lib/om/settings";
 import { OM_BOOKING_PAID_SQL } from "@/lib/om/om-quotation";
+import { omErrorText } from "@/lib/om/api-error";
 
 // งานบริการรายชิ้น — ดูรายละเอียด + ประวัติ · เปลี่ยนสถานะ/วันนัด/ทีม/ลำดับคิว
 // ★ ทุกการเปลี่ยนต้องลง om_booking_history ในทรานแซกชันเดียวกัน (booking-log.ts)
@@ -50,7 +51,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     WHERE bh.booking_id = @id ORDER BY bh.id DESC;`);
   const rs = r.recordsets as sql.IRecordSet<Record<string, unknown>>[];
   const booking = rs[0][0];
-  if (!booking) return NextResponse.json({ error: "ไม่พบงานนี้" }, { status: 404 });
+  if (!booking) return NextResponse.json({ error: "ไม่พบใบงานนี้" }, { status: 404 });
   return NextResponse.json({
     booking: fixDates([booking])[0],
     customers: rs[1],
@@ -75,7 +76,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     JOIN om_houses h ON h.id = b.house_id
     LEFT JOIN om_service_type st ON st.id = b.service_type_id
     WHERE b.id = @id`)).recordset[0];
-  if (!cur) return NextResponse.json({ error: "ไม่พบงานนี้" }, { status: 404 });
+  if (!cur) return NextResponse.json({ error: "ไม่พบใบงานนี้" }, { status: 404 });
 
   const set: string[] = [];
   const from: Record<string, unknown> = {};
@@ -91,7 +92,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   const has = (k: string) => Object.prototype.hasOwnProperty.call(b, k);
   const reopening = !!newStatus && !FINISHED.includes(newStatus);
   if (FINISHED.includes(String(cur.status)) && !reopening && ["team_id", "queue_index", "scheduled_at", "time_slot"].some(has))
-    return NextResponse.json({ error: `ใบงาน #${id} ${statusLabel(String(cur.status))}แล้ว — แก้ทีม คิว หรือวันนัดไม่ได้` }, { status: 400 });
+    return NextResponse.json({ error: `ใบงานเลขที่ ${id} อยู่ในสถานะ "${statusLabel(String(cur.status))}" — แก้ไขทีม คิว หรือวันนัดไม่ได้` }, { status: 400 });
   // 2) (เลิกแล้ว 1 ต.ค. 69) เดิมเริ่มงานต้องจ่ายทีมก่อน — ผู้ใช้เคาะเลิกใช้ทีม A/B/C
   //    ทีมสำรวจกับทีมล้างเป็นชุดเดียวกัน ไม่มีขั้นจ่ายทีมแล้ว (แผน 20261001-01 เฟส 4)
   //    ถ้ายังกันไว้ ใบงานใหม่ (ไม่มีทีม) จะกด "ช่างถึงหน้างานแล้ว" และปิดงานจากใบตรวจไม่ได้
@@ -100,12 +101,12 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     const rep = (await db.request().input("id", sql.Int, id)
       .query(`SELECT TOP 1 id FROM om_job_report WHERE booking_id = @id`)).recordset[0];
     if (!rep)
-      return NextResponse.json({ error: "ยังไม่มีใบตรวจรับงาน — กรอกใบตรวจแล้วกดปิดงานท้ายใบ" }, { status: 400 });
+      return NextResponse.json({ error: "ยังไม่มีใบตรวจรับงาน — กรุณากรอกใบตรวจรับงาน แล้วกดปิดงานท้ายใบ" }, { status: 400 });
   }
 
   if (newStatus && newStatus !== cur.status) {
     if (!canMove(String(cur.status), newStatus))
-      return NextResponse.json({ error: `เปลี่ยนจาก ${cur.status} ไป ${newStatus} ไม่ได้` }, { status: 400 });
+      return NextResponse.json({ error: `เปลี่ยนสถานะจาก "${statusLabel(String(cur.status))}" เป็น "${statusLabel(newStatus)}" ไม่ได้` }, { status: 400 });
     // ★ แผน 20261014-03: ขั้นชำระเงิน → นัดหมาย ต้องรับเงินแล้ว (กติกาเดียวกับ /api/om/follow "เก็บค่าบริการก่อนนัด")
     //   เดิม PATCH ตรวจแค่ลำดับสถานะ ใครล็อกอินก็ย้ายใบที่ยังไม่จ่ายไปนัดแล้วได้
     if (cur.status === "payment" && ["pending", "confirmed"].includes(newStatus)) {
@@ -113,7 +114,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
         .query(`SELECT CASE WHEN ${OM_BOOKING_PAID_SQL("bk")} THEN 1 ELSE 0 END paid FROM om_bookings bk WHERE bk.id = @id`))
         .recordset[0]?.paid;
       if (!paid)
-        return NextResponse.json({ error: "ยังไม่ได้รับเงินค่าบริการ — นัดได้หลัง Account ยืนยันรับเงินแล้ว" }, { status: 409 });
+        return NextResponse.json({ error: "ยังไม่ได้รับเงินค่าบริการ — นัดได้หลังฝ่ายบัญชียืนยันรับเงินแล้ว" }, { status: 409 });
     }
     set.push("status = @st");
     from.status = cur.status; to.status = newStatus;
@@ -220,8 +221,8 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
             .input("d", sql.Date, appt && appt < today ? appt : today)
             .input("t", sql.Int, cur.service_type_id)
             .input("n", sql.NVarChar(300), left > 0
-              ? "ตัดสิทธิ์อัตโนมัติเมื่อปิดงาน"
-              : "ตัดสิทธิ์อัตโนมัติเมื่อปิดงาน · ★ ไม่มีสิทธิ์คงเหลือ ยอดติดลบ")
+              ? "หักสิทธิ์อัตโนมัติเมื่อปิดงาน"
+              : "หักสิทธิ์อัตโนมัติเมื่อปิดงาน (สิทธิ์คงเหลือไม่พอ ยอดติดลบ)")
             .input("u", sql.Int, gate.userId ?? null)
             // ★ แผน 20261015-04: จด "ครั้งที่ / คงเหลือหลังตัด" ไว้กับแถวนี้ ให้ใบบริการ PDF อ่าน
             //   ใบสร้างใหม่ทุกครั้งที่เปิด — คิดยอดตอนเปิดใบ เลขในใบเก่าจะเปลี่ยนตามการล้าง/ซื้อเพิ่มครั้งหลัง ๆ
@@ -236,7 +237,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     // ย้อนออกจาก closed → คืนสิทธิ์ (ยกเลิกใบตัดสิทธิ์ที่ผูกกับงานนี้)
     if (cur.status === "closed" && newStatus && newStatus !== "closed")
       await new sql.Request(tx).input("b", sql.Int, id)
-        .query(`UPDATE om_redemptions SET status = 'void', note = ISNULL(note, N'') + N' · ยกเลิกเพราะย้อนสถานะงาน'
+        .query(`UPDATE om_redemptions SET status = 'void', note = ISNULL(note, N'') + N' · ยกเลิกเนื่องจากย้อนสถานะใบงาน'
                 WHERE booking_id = @b AND status <> 'void'`);
 
     await logBooking(tx, { bookingId: id, action, actorUserId: gate.userId ?? null,
@@ -259,7 +260,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
           recipientUserId: newOwner,
           type: "om_owner_assigned",
           eventKey: `om_owner_assigned:${id}`,
-          title: "มีงาน O&M ถูกมอบหมายให้คุณ",
+          title: "คุณได้รับมอบหมายงาน O&M",
           message: `บ้าน ${cur.house_number ?? "-"} · ${cur.service_type ?? "งานบริการ"}`,
           houseId: cur.house_id,
           bookingId: id,
@@ -272,6 +273,6 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     return NextResponse.json({ ok: true, id, status: newStatus || cur.status });
   } catch (e) {
     await tx.rollback();
-    return NextResponse.json({ error: e instanceof Error ? e.message : "บันทึกไม่สำเร็จ" }, { status: 500 });
+    return NextResponse.json({ error: omErrorText(e, "บันทึกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "PATCH /api/om/bookings/[id]") }, { status: 500 });
   }
 }

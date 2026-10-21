@@ -88,7 +88,7 @@ export async function matchLead(db: sql.ConnectionPool, lead: LeadInput): Promis
 
   if (!all.length) {
     return { lead_id: lead.id, tier: "unknown", best: null, candidates: [],
-      reason: hk ? "หาบ้านเลขที่นี้ในทะเบียน REM ไม่เจอ" : "ไม่มีบ้านเลขที่ และหาจากเลขบัตร/เบอร์ไม่เจอ" };
+      reason: hk ? "ไม่พบบ้านเลขที่นี้ใน REM" : "ไม่มีบ้านเลขที่ และไม่พบจากเลขบัตร/เบอร์โทร" };
   }
 
   // มีทั้งสองทาง → ตรวจว่าชี้สัญญาใบเดียวกันไหม
@@ -98,7 +98,7 @@ export async function matchLead(db: sql.ConnectionPool, lead: LeadInput): Promis
       reason: `โครงการ+บ้านเลขที่ และ${ident[0].via === "citizen_id" ? "เลขบัตร" : "เบอร์"} ชี้สัญญาใบเดียวกัน` };
     // ชี้คนละใบ — ส่วนใหญ่คือคนมีบ้านหลายหลัง แต่ตัดสินเองไม่ได้
     return { lead_id: lead.id, tier: "unknown", best: A[0], candidates: all,
-      reason: `โครงการ+บ้านเลขที่ชี้ ${A[0].house_number} แต่${ident[0].via === "citizen_id" ? "เลขบัตร" : "เบอร์"}ชี้ ${ident[0].project_id} ${ident[0].house_number} — น่าจะมีบ้านหลายหลัง` };
+      reason: `โครงการ+บ้านเลขที่ชี้ ${A[0].house_number} แต่${ident[0].via === "citizen_id" ? "เลขบัตร" : "เบอร์"}ชี้ ${ident[0].project_id} ${ident[0].house_number} — อาจมีบ้านหลายหลัง` };
   }
 
   // เจอจากโครงการ+บ้านเลขที่อย่างเดียว → ใช้ชื่อเจ้าของช่วยยืนยัน
@@ -111,11 +111,11 @@ export async function matchLead(db: sql.ConnectionPool, lead: LeadInput): Promis
     const nameHit = owners.some((o) => normName(o) === ln || (ln.length >= 4 && (normName(o).includes(ln) || ln.includes(normName(o)))));
     const famHit = Boolean(sn) && owners.some((o) => surname(o) === sn);
     if (nameHit) return { lead_id: lead.id, tier: "confident", best: a, candidates: all, reason: "โครงการ+บ้านเลขที่ตรง และชื่อตรงกับเจ้าของ" };
-    if (!a.transferred) return { lead_id: lead.id, tier: "likely", best: a, candidates: all, reason: "เจอ unit ในทะเบียน แต่ยังไม่โอน — ยังไม่มีสัญญาให้ยืนยัน" };
+    if (!a.transferred) return { lead_id: lead.id, tier: "likely", best: a, candidates: all, reason: "พบยูนิตใน REM แต่ยังไม่โอน — ยังไม่มีสัญญาให้ยืนยัน" };
     if (famHit) return { lead_id: lead.id, tier: "likely", best: a, candidates: all, reason: `นามสกุลตรงกับเจ้าของ (${a.owner_names}) แต่ชื่อไม่ตรง` };
     if (hasIdentityKey) return { lead_id: lead.id, tier: "unknown", best: a, candidates: all,
-      reason: `บ้านตรงแต่เจ้าของคนละคน (REM ว่า ${a.owner_names}) และเลขบัตร/เบอร์ก็ไม่ตรงกับสัญญาไหนเลย` };
-    return { lead_id: lead.id, tier: "likely", best: a, candidates: all, reason: `โครงการ+บ้านเลขที่ตรง แต่ไม่มีเลขบัตร/เบอร์ให้ยืนยัน (REM ว่าเจ้าของคือ ${a.owner_names})` };
+      reason: `บ้านตรงแต่เจ้าของคนละคน (REM ระบุว่า ${a.owner_names}) และเลขบัตร/เบอร์โทรไม่ตรงกับสัญญาใด` };
+    return { lead_id: lead.id, tier: "likely", best: a, candidates: all, reason: `โครงการ+บ้านเลขที่ตรง แต่ไม่มีเลขบัตร/เบอร์ให้ยืนยัน (REM ระบุว่าเจ้าของคือ ${a.owner_names})` };
   }
 
   // เจอจากตัวคนอย่างเดียว — ไม่มีบ้านเลขที่/โครงการให้ยัน
@@ -125,9 +125,9 @@ export async function matchLead(db: sql.ConnectionPool, lead: LeadInput): Promis
     const viaTxt = c.via === "citizen_id" ? "เลขบัตร" : "เบอร์";
     return { lead_id: lead.id, tier: c.via === "citizen_id" ? "likely" : "unknown", best: c, candidates: all,
       reason: c.via === "citizen_id"
-        ? `${viaTxt}ตรงกับเจ้าของสัญญาเดียว (${c.project_id} ${c.house_number}) แต่ฝั่งขายไม่ได้ระบุโครงการ/บ้านเลขที่ให้ยัน`
-        : `${viaTxt}ตรงกับสัญญาเดียว (${c.project_id} ${c.house_number}) — เบอร์อย่างเดียวอ่อนเกินกว่าจะเชื่อ` };
+        ? `${viaTxt}ตรงกับเจ้าของสัญญาเดียว (${c.project_id} ${c.house_number}) แต่ฝ่ายขายไม่ได้ระบุโครงการ/บ้านเลขที่ให้ยืนยัน`
+        : `${viaTxt}ตรงกับสัญญาเดียว (${c.project_id} ${c.house_number}) — เบอร์โทรอย่างเดียวไม่เพียงพอ` };
   }
   return { lead_id: lead.id, tier: "unknown", best: uniq[0] ?? null, candidates: all,
-    reason: `เจอ ${uniq.length} สัญญาที่ผูกกับคนนี้ — เลือกเองไม่ได้ว่าติดตั้งที่หลังไหน` };
+    reason: `พบ ${uniq.length} สัญญาของลูกค้ารายนี้ — ระบบระบุไม่ได้ว่าติดตั้งที่หลังใด` };
 }

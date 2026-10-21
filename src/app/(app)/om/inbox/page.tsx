@@ -51,7 +51,7 @@ const mediaSrc = (m: ChatMessage): string | null => {
 function MediaBubble({ src, kind }: { src: string; kind: string }) {
   const [dead, setDead] = useState(false);
   if (dead) {
-    return <div className="px-3 py-2 text-xs italic opacity-70">ไฟล์หมดอายุแล้ว (เก็บ 24 ชม.)</div>;
+    return <div className="px-3 py-2 text-xs italic opacity-70">ไฟล์หมดอายุแล้ว (เก็บไว้ 24 ชั่วโมง)</div>;
   }
   return kind === "image" ? (
     <a href={src} target="_blank" rel="noreferrer">
@@ -69,6 +69,11 @@ const IDENTITY: Record<Conversation["identity_status"], { label: string; cls: st
   lead: { label: "Lead ขาย", cls: "bg-blue-50 text-blue-700 border-blue-200" },
   unknown: { label: "ไม่ทราบตัวตน", cls: "bg-gray-100 text-gray-500 border-gray-200" },
 };
+// ★ 21 ต.ค. 69 แผน 20261021-01: ชนิดข้อความ LINE ที่ไม่มีตัวอักษร — เดิมขึ้นรหัสดิบ (sticker / image)
+const MSG_TYPE: Record<string, string> = {
+  sticker: "สติกเกอร์", image: "รูปภาพ", video: "วิดีโอ", audio: "ข้อความเสียง", file: "ไฟล์", location: "ตำแหน่งที่ตั้ง",
+};
+const msgTypeLabel = (t: string) => `[${MSG_TYPE[t] ?? t}]`;
 
 const fmtTime = (d: string | null) =>
   d ? formatThaiDate(d, { year: false, time: true, timeZone: "Asia/Bangkok" }) : "";
@@ -156,13 +161,13 @@ export default function OmInboxPage() {
 
   return (
     <div className="flex flex-col h-[calc(100dvh-0px)]">
-      <Header title="แชต LINE" subtitle={unreadTotal > 0 ? `ยังไม่อ่าน ${unreadTotal}` : "O&M inbox"} />
+      <Header title="แชต LINE" subtitle={unreadTotal > 0 ? `ยังไม่อ่าน ${unreadTotal}` : "O&M · ข้อความ LINE"} />
 
       <div className="flex flex-1 min-h-0">
         {/* รายชื่อห้องแชต — mobile: ซ่อนเมื่อเปิดแชตอยู่ */}
         <div className={`w-full md:w-80 md:border-r border-gray-200 bg-white flex-col min-h-0 ${active ? "hidden md:flex" : "flex"}`}>
           <div className="flex gap-1.5 p-3 border-b border-gray-100 overflow-x-auto">
-            {([["all", "ทั้งหมด"], ["verified", "ลูกค้า O&M"], ["matched", "รอยืนยัน"], ["lead", "Lead"], ["unknown", "ไม่ทราบ"]] as const).map(([k, label]) => (
+            {([["all", "ทั้งหมด"], ["verified", "ลูกค้า O&M"], ["matched", "รอยืนยัน"], ["lead", "Lead ขาย"], ["unknown", "ไม่ทราบตัวตน"]] as const).map(([k, label]) => (
               <button
                 key={k}
                 type="button"
@@ -207,8 +212,8 @@ export default function OmInboxPage() {
                         </span>
                       </div>
                       <div className="text-xs text-gray-500 truncate">
-                        {c.last_direction === "out" ? "คุณ: " : ""}
-                        {c.last_type === "follow" ? "เพิ่มเพื่อนแล้ว" : c.last_text || c.last_type || "—"}
+                        {c.last_direction === "out" ? "เจ้าหน้าที่: " : ""}
+                        {c.last_type === "follow" ? "เพิ่มเพื่อนแล้ว" : c.last_text || (c.last_type ? msgTypeLabel(c.last_type) : "—")}
                       </div>
                     </div>
                     <div className="flex flex-col items-end gap-1 shrink-0">
@@ -248,7 +253,7 @@ export default function OmInboxPage() {
                     )}
                   </div>
                   <div className="text-xs text-gray-500 truncate">
-                    {active.house_number ? `บ้าน ${active.house_number} · ${active.project_name || "—"}` : "ยังไม่ผูกบ้าน"}
+                    {active.house_number ? `บ้าน ${active.house_number} · ${active.project_name || "—"}` : "ยังไม่ได้เชื่อมโยงบ้าน"}
                     {active.phone ? ` · ${active.phone}` : ""}
                   </div>
                 </div>
@@ -277,7 +282,7 @@ export default function OmInboxPage() {
                           {mediaSrc(m) ? (
                             <MediaBubble src={mediaSrc(m)!} kind={m.message_type} />
                           ) : (
-                            m.text || <span className="italic opacity-70">[{m.message_type}]</span>
+                            m.text || <span className="italic opacity-70">{msgTypeLabel(m.message_type)}</span>
                           )}
                           <div className={`text-xxs mt-0.5 ${mediaSrc(m) ? "px-2 pb-1" : ""} ${m.direction === "out" ? "text-blue-200" : "text-gray-400"}`}>
                             {fmtTime(m.created_at)}

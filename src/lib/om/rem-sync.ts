@@ -67,8 +67,8 @@ export async function syncProject(db: sql.ConnectionPool, projectId: string): Pr
     SELECT (SELECT COUNT(*) FROM om_rem_units WHERE project_id=@p) u,
            (SELECT COUNT(*) FROM om_rem_transfers WHERE project_id=@p) t`);
   const { u: hadU, t: hadT } = had.recordset[0] as { u: number; t: number };
-  if (!units.length && hadU > 0) return { projectId, units: 0, transfers: 0, owners: 0, promotions: 0, skipped: `REM ตอบ unit ว่าง ทั้งที่เคยมี ${hadU} — ไม่เขียนทับ` };
-  if (!transfers.length && hadT > 0) return { projectId, units: 0, transfers: 0, owners: 0, promotions: 0, skipped: `REM ตอบสัญญาว่าง ทั้งที่เคยมี ${hadT} — ไม่เขียนทับ` };
+  if (!units.length && hadU > 0) return { projectId, units: 0, transfers: 0, owners: 0, promotions: 0, skipped: `REM ไม่ส่งข้อมูลยูนิตกลับมา ทั้งที่เคยมี ${hadU} รายการ — ไม่เขียนทับ` };
+  if (!transfers.length && hadT > 0) return { projectId, units: 0, transfers: 0, owners: 0, promotions: 0, skipped: `REM ไม่ส่งข้อมูลสัญญากลับมา ทั้งที่เคยมี ${hadT} รายการ — ไม่เขียนทับ` };
 
   const tx = new sql.Transaction(db);
   await tx.begin();

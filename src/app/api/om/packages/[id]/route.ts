@@ -11,7 +11,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const gate = await requireAnyRole(req, PACKAGE_EDIT_ROLES);
   if (gate.error) return gate.error;
   const id = parseInt((await params).id);
-  if (!Number.isFinite(id)) return NextResponse.json({ error: "id ไม่ถูกต้อง" }, { status: 400 });
+  if (!Number.isFinite(id)) return NextResponse.json({ error: "ไม่พบแพ็กเกจที่ระบุ" }, { status: 400 });
   const body = await req.json().catch(() => ({}));
   const db = await getOmDb();
   const request = db.request().input("id", sql.Int, id).input("u", sql.Int, gate.userId);
@@ -38,6 +38,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             contract_months = @contract_months, visits = @visits, price = @price, scope = @scope, is_active = @is_active`;
   }
   const r = await request.query(`UPDATE om_packages SET ${sets}, updated_by = @u, updated_at = SYSDATETIMEOFFSET() WHERE id = @id`);
-  if (r.rowsAffected[0] === 0) return NextResponse.json({ error: "ไม่พบแพ็คเกจ" }, { status: 404 });
+  if (r.rowsAffected[0] === 0) return NextResponse.json({ error: "ไม่พบแพ็กเกจ" }, { status: 404 });
   return NextResponse.json({ ok: true });
 }

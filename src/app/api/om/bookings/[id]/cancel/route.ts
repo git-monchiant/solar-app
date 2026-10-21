@@ -8,6 +8,7 @@ import { logBooking } from "@/lib/om/booking-log";
 import { resolveOmNotifications } from "@/lib/om/notifications";
 import { OM_PAY_LIVE_SQL, canIssueOmQuotation } from "@/lib/om/om-quotation";
 import { getQuotationActor } from "@/lib/quotation";
+import { omErrorText } from "@/lib/om/api-error";
 
 // ลูกค้าไม่เอา — ยกเลิกใบงานก่อนนัด พร้อมใบเสนอราคาของใบงาน (แผน docs/plan/20260924-02 · ทางออก "ไม่เอา (ปฏิเสธราคา)")
 //
@@ -29,7 +30,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   const id = Number((await ctx.params).id);
   const b = await req.json().catch(() => ({}));
   const reason = typeof b.reason === "string" ? b.reason.trim().slice(0, 300) : "";
-  if (!reason) return NextResponse.json({ error: "ใส่เหตุผลที่ลูกค้าไม่เอาด้วย" }, { status: 400 });
+  if (!reason) return NextResponse.json({ error: "กรุณาระบุเหตุผลที่ลูกค้าปฏิเสธบริการ" }, { status: 400 });
 
   const db = await getOmDb();
   const tx = new sql.Transaction(db);
@@ -46,7 +47,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     // ใบงานทั่วไปขั้นติดตามไม่ต้องใช้ปุ่มนี้ (บันทึกโทร "ปฏิเสธ ไม่เอา" ได้อยู่แล้ว)
     const allowed = isRepair ? ["follow", "quote", "payment"] : ["quote", "payment"];
     if (!allowed.includes(job.status))
-      return fail(`ยกเลิกได้เฉพาะใบงานที่ยังไม่นัด (ตอนนี้: ${statusLabel(job.status)})`);
+      return fail(`ยกเลิกได้เฉพาะใบงานที่ยังไม่นัด (สถานะปัจจุบัน: ${statusLabel(job.status)})`);
 
     const quotes = (await new sql.Request(tx).input("id", sql.Int, id).query(`
       SELECT id, doc_no, status FROM quotations WHERE om_booking_id = @id`)).recordset as
@@ -55,14 +56,14 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       // ใบเสนอราคาเป็นของ Sale — คนที่ออก/ส่งอนุมัติใบได้ ถึงยกเลิกใบได้ (ชุดเดียวกับ POST /api/om/quotations)
       const actor = await getQuotationActor(gate.userId);
       if (!actor || !canIssueOmQuotation(getEffectiveRolesFromReq(req, actor.roles)))
-        return fail("ยกเลิกใบเสนอราคา O&M ได้เฉพาะ Sale", 403);
+        return fail("ยกเลิกใบเสนอราคา O&M ได้เฉพาะฝ่ายขาย", 403);
       const pay = (await new sql.Request(tx).input("id", sql.Int, id).query(`
         SELECT TOP 1 p.id, p.confirmed_at FROM payments p
           JOIN quotations q ON q.lead_id = p.lead_id AND p.slip_field = CONCAT(N'om_quote_', q.id)
          WHERE q.om_booking_id = @id AND ${OM_PAY_LIVE_SQL("p")}
          ORDER BY CASE WHEN p.confirmed_at IS NOT NULL THEN 0 ELSE 1 END`)).recordset[0];
-      if (pay?.confirmed_at) return fail("รับเงินค่าบริการแล้ว — ยกเลิกไม่ได้ ต้องคืนเงินผ่าน Account ก่อน");
-      if (pay) return fail("มีสลิปรอ Account ตรวจอยู่ — ให้ Account ปฏิเสธสลิปก่อนแล้วค่อยยกเลิก");
+      if (pay?.confirmed_at) return fail("รับเงินค่าบริการแล้ว — ยกเลิกไม่ได้ กรุณาคืนเงินผ่านฝ่ายบัญชีก่อน");
+      if (pay) return fail("มีสลิปที่รอฝ่ายบัญชีตรวจสอบ — กรุณาให้ฝ่ายบัญชีปฏิเสธสลิปก่อนยกเลิก");
 
       await new sql.Request(tx).input("id", sql.Int, id).input("u", sql.Int, gate.userId).query(`
         UPDATE quotations SET status = 'cancelled', updated_by = @u, updated_at = GETDATE()
@@ -88,6 +89,6 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     return NextResponse.json({ ok: true, id, cancelled_quotations: docs });
   } catch (e) {
     await tx.rollback().catch(() => {});
-    return NextResponse.json({ error: e instanceof Error ? e.message : "ยกเลิกไม่สำเร็จ" }, { status: 500 });
+    return NextResponse.json({ error: omErrorText(e, "ยกเลิกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "POST /api/om/bookings/[id]/cancel") }, { status: 500 });
   }
 }

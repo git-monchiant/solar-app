@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
+import { omErrorText } from "@/lib/om/api-error";
 
 // รวมลูกค้าซ้ำ — [id] คือตัวหลักที่เก็บไว้ · body { loser_id } คือคนที่ถูกยุบ
 // ย้ายเบอร์/การผูกบ้านที่ไม่ซ้ำมาหาตัวหลัก แล้วซ่อนตัวที่ยุบ (ไม่ลบ — ย้อนดูได้)
@@ -10,13 +11,14 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   if (gate.error) return gate.error;
   const keepId = Number((await ctx.params).id);
   const loseId = Number((await req.json().catch(() => ({}))).loser_id);
-  if (!loseId || loseId === keepId) return NextResponse.json({ error: "ต้องระบุคนที่จะยุบ (ไม่ใช่คนเดียวกัน)" }, { status: 400 });
+  if (!loseId || loseId === keepId) return NextResponse.json({ error: "กรุณาเลือกลูกค้าที่จะรวม (ต้องไม่ใช่รายชื่อเดียวกัน)" }, { status: 400 });
 
   const db = await getOmDb();
   const chk = await db.request().input("k", sql.Int, keepId).input("l", sql.Int, loseId).query(`
     SELECT (SELECT COUNT(*) FROM om_customers WHERE id = @k AND is_active = 1) keep_ok,
            (SELECT COUNT(*) FROM om_customers WHERE id = @l) lose_ok,
-           (SELECT full_name FROM om_customers WHERE id = @l) lose_name`);
+           (SELECT full_name FROM om_customers WHERE id = @l) lose_name,
+           (SELECT full_name FROM om_customers WHERE id = @k) keep_name`);
   const c = chk.recordset[0];
   if (!c.keep_ok || !c.lose_ok) return NextResponse.json({ error: "ไม่พบลูกค้า" }, { status: 404 });
 
@@ -45,13 +47,14 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     // ซ่อนตัวยุบ + จดว่ารวมไปที่ไหน
     await new sql.Request(tx).input("k", sql.Int, keepId).input("l", sql.Int, loseId)
       .query(`UPDATE om_customers SET is_active = 0,
-                note = CONCAT(ISNULL(note, ''), N' | รวมเข้ากับลูกค้า id ', @k),
+                note = CONCAT(ISNULL(note, ''), N' | รวมข้อมูลเข้ากับลูกค้ารหัส ', @k),
                 updated_at = SYSDATETIMEOFFSET()
               WHERE id = @l`);
     // log ทั้งสองฝั่ง
+    // ★ 21 ต.ค. 69 แผน 20261021-01: ข้อความขึ้นในประวัติหน้าลูกค้า — ใช้ชื่อลูกค้า ไม่ใช้ id
     for (const [cid, msg] of [
-      [keepId, `รวมลูกค้า id ${loseId} ("${c.lose_name}") เข้ามา`],
-      [loseId, `ถูกรวมเข้ากับลูกค้า id ${keepId} — ซ่อนแถวนี้`],
+      [keepId, `รวมข้อมูลลูกค้า "${c.lose_name ?? "-"}" เข้ามา`],
+      [loseId, `รวมข้อมูลเข้ากับลูกค้า "${c.keep_name ?? "-"}" แล้ว (ซ่อนรายชื่อนี้)`],
     ] as [number, string][]) {
       await new sql.Request(tx).input("c", sql.Int, cid).input("u", sql.Int, gate.userId)
         .input("r", sql.NVarChar(300), msg)
@@ -66,6 +69,6 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     });
   } catch (e) {
     await tx.rollback();
-    return NextResponse.json({ error: e instanceof Error ? e.message : "รวมไม่สำเร็จ" }, { status: 500 });
+    return NextResponse.json({ error: omErrorText(e, "รวมข้อมูลลูกค้าไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "POST /api/om/customers/[id]/merge") }, { status: 500 });
   }
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAnyRole } from "@/lib/auth";
 import { sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
+import { omErrorText } from "@/lib/om/api-error";
 
 // ค่าที่ขัดกัน — ไฟล์ต้นทางให้ค่าหนึ่ง ระบบมีอีกค่าหนึ่ง
 // ★ ระบบไม่เขียนทับเอง เก็บไว้ใน om_field_sources (confidence='probable') ให้คนตัดสิน
@@ -66,9 +67,9 @@ export async function POST(req: NextRequest) {
   const b = await req.json().catch(() => ({}));
   const ids = Array.isArray(b.ids) ? b.ids.map(Number).filter((n: number) => Number.isInteger(n) && n > 0) : [];
   const action = b.action === "apply" ? "apply" : b.action === "keep" ? "keep" : "";
-  if (!ids.length) return NextResponse.json({ error: "ต้องเลือกอย่างน้อย 1 รายการ" }, { status: 400 });
-  if (!action) return NextResponse.json({ error: "action ต้องเป็น keep หรือ apply" }, { status: 400 });
-  if (ids.length > 1000) return NextResponse.json({ error: "ครั้งละไม่เกิน 1,000 รายการ" }, { status: 400 });
+  if (!ids.length) return NextResponse.json({ error: "กรุณาเลือกอย่างน้อย 1 รายการ" }, { status: 400 });
+  if (!action) return NextResponse.json({ error: "ข้อมูลไม่ครบหรือไม่ถูกต้อง" }, { status: 400 });
+  if (ids.length > 1000) return NextResponse.json({ error: "เลือกได้ครั้งละไม่เกิน 1,000 รายการ" }, { status: 400 });
 
   const db = await getOmDb();
   const tx = new sql.Transaction(db);
@@ -110,7 +111,7 @@ export async function POST(req: NextRequest) {
           .query(`INSERT INTO om_field_sources (house_id, installation_id, table_name, column_name, new_value, old_value,
                     source_kind, source_ref, match_method, confidence, actor_user_id)
                   VALUES (@h, @i, 'om_installations', @c, @nv, @ov, 'manual',
-                    N'แอดมินเลือกใช้ค่าจากไฟล์ต้นทาง', N'ตัดสินค่าขัดกันจากหน้าตั้งค่า', 'confirmed', @u)`);
+                    N'ผู้ดูแลระบบเลือกใช้ค่าจากไฟล์ต้นทาง', N'ตรวจสอบข้อมูลไม่ตรงกันจากหน้าตั้งค่า', 'confirmed', @u)`);
         applied++;
       } else kept++;
 
@@ -122,7 +123,7 @@ export async function POST(req: NextRequest) {
     await tx.commit();
   } catch (e) {
     await tx.rollback();
-    return NextResponse.json({ error: e instanceof Error ? e.message : "บันทึกไม่สำเร็จ" }, { status: 500 });
+    return NextResponse.json({ error: omErrorText(e, "บันทึกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "POST /api/om/conflicts") }, { status: 500 });
   }
   return NextResponse.json({ ok: true, applied, kept, skipped });
 }

@@ -10,16 +10,16 @@ export async function POST(req: NextRequest) {
   const form = await req.formData().catch(() => null);
   const file = form?.get("file");
   if (!(file instanceof File)) {
-    return NextResponse.json({ error: "ต้องแนบไฟล์ (field: file)" }, { status: 400 });
+    return NextResponse.json({ error: "กรุณาแนบไฟล์" }, { status: 400 });
   }
 
   const kind = mediaKindOf(file.type);
   if (!kind) {
-    return NextResponse.json({ error: `ชนิดไฟล์ไม่รองรับ (${file.type}) — รูป JPEG/PNG หรือวิดีโอ MP4 เท่านั้น` }, { status: 400 });
+    return NextResponse.json({ error: "ไม่รองรับไฟล์ประเภทนี้ — ส่งได้เฉพาะรูป JPEG/PNG หรือวิดีโอ MP4" }, { status: 400 });
   }
   if (file.size > MEDIA_RULES[kind].maxBytes) {
     const mb = Math.round(MEDIA_RULES[kind].maxBytes / 1024 / 1024);
-    return NextResponse.json({ error: `ไฟล์ใหญ่เกิน ${mb}MB` }, { status: 400 });
+    return NextResponse.json({ error: `ไฟล์มีขนาดเกิน ${mb} MB` }, { status: 400 });
   }
 
   const buf = Buffer.from(await file.arrayBuffer());

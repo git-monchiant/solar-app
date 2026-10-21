@@ -4,6 +4,7 @@ import { OM_WORK_ROLES } from "@/lib/om/om-roles";
 import { sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
 import { logBooking } from "@/lib/om/booking-log";
+import { omErrorText } from "@/lib/om/api-error";
 
 // POST { text, booking_id? } — บันทึกโน้ตลงไทม์ไลน์ของบ้าน (ปุ่ม Note ในหน้ารายละเอียดงานบริการ)
 // ★ 28 ก.ย. 69 แผน 20260928-04 ข้อ 7 — แบบ Note ของหน้า lead ฝั่งขาย
@@ -18,8 +19,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   const b = await req.json().catch(() => ({}));
   const text = typeof b.text === "string" ? b.text.trim() : "";
   if (!houseId) return NextResponse.json({ error: "ไม่พบบ้านหลังนี้" }, { status: 404 });
-  if (!text) return NextResponse.json({ error: "ต้องพิมพ์โน้ตก่อนบันทึก" }, { status: 400 });
-  if (text.length > MAX) return NextResponse.json({ error: `โน้ตยาวเกิน ${MAX} ตัวอักษร` }, { status: 400 });
+  if (!text) return NextResponse.json({ error: "กรุณาพิมพ์หมายเหตุก่อนบันทึก" }, { status: 400 });
+  if (text.length > MAX) return NextResponse.json({ error: `หมายเหตุยาวเกิน ${MAX} ตัวอักษร` }, { status: 400 });
 
   const db = await getOmDb();
   const house = (await db.request().input("id", sql.Int, houseId)
@@ -43,6 +44,6 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     return NextResponse.json({ ok: true });
   } catch (e) {
     await tx.rollback().catch(() => {});
-    return NextResponse.json({ error: e instanceof Error ? e.message : "บันทึกโน้ตไม่สำเร็จ" }, { status: 500 });
+    return NextResponse.json({ error: omErrorText(e, "บันทึกหมายเหตุไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "POST /api/om/houses/[id]/note") }, { status: 500 });
   }
 }

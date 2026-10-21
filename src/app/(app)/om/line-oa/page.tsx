@@ -182,7 +182,7 @@ export default function OmLineOaPage() {
     await load();
   };
   const addFaq = async () => {
-    if (!newFaq.question.trim() || !newFaq.answer.trim()) { setMsg("ต้องกรอกทั้งคำถามและคำตอบ"); return; }
+    if (!newFaq.question.trim() || !newFaq.answer.trim()) { setMsg("กรุณากรอกทั้งคำถามและคำตอบ"); return; }
     setBusy(true);
     try {
       await apiFetch("/api/om/faq", { method: "POST", body: JSON.stringify(newFaq) });
@@ -208,7 +208,7 @@ export default function OmLineOaPage() {
     } catch (e) { setMsg(e instanceof Error ? e.message : "แก้หมวดไม่สำเร็จ"); }
   };
   const delCat = async (c: FaqCat) => {
-    if (!(await dialog.confirm({ title: "ลบหมวด FAQ", message: `ลบหมวด "${c.name}"?`, variant: "danger", confirmText: "ลบ" }))) return;
+    if (!(await dialog.confirm({ title: "ลบหมวด FAQ", message: `ต้องการลบหมวด "${c.name}" หรือไม่`, variant: "danger", confirmText: "ลบ" }))) return;
     try {
       await apiFetch(`/api/om/faq/categories?name=${encodeURIComponent(c.name)}`, { method: "DELETE" });
       await load();
@@ -232,7 +232,7 @@ export default function OmLineOaPage() {
   const saveFaq = async (q: Faq) => {
     const e = faqEdits[q.id];
     if (!e) return;
-    if (!e.question.trim() || !e.answer.trim()) { setMsg("คำถามและคำตอบห้ามว่าง"); return; }
+    if (!e.question.trim() || !e.answer.trim()) { setMsg("กรุณากรอกทั้งคำถามและคำตอบ"); return; }
     setBusy(true);
     try {
       await patchFaq(q.id, { category: e.category.trim(), question: e.question.trim(), answer: e.answer.trim() });
@@ -244,7 +244,7 @@ export default function OmLineOaPage() {
     setFaqEdits((prev) => { const n = { ...prev }; delete n[id]; return n; });
 
   const delFaq = async (id: number) => {
-    if (!(await dialog.confirm({ title: "ลบคำถาม FAQ", message: "ลบคำถามนี้?", variant: "danger", confirmText: "ลบ" }))) return;
+    if (!(await dialog.confirm({ title: "ลบคำถาม FAQ", message: "ต้องการลบคำถามนี้หรือไม่", variant: "danger", confirmText: "ลบ" }))) return;
     await apiFetch(`/api/om/faq?id=${id}`, { method: "DELETE" });
     await load();
   };
@@ -344,7 +344,7 @@ export default function OmLineOaPage() {
                     ))}
                   </div>
                   <p className="mt-2.5 text-xs text-gray-400 leading-relaxed">
-                    แก้ชื่อหมวดแล้วคลิกที่อื่น = เปลี่ยนให้ทุกคำถามในหมวดนั้นด้วย · ลบได้เฉพาะหมวดที่ไม่มีคำถามใช้อยู่
+                    แก้ชื่อหมวดแล้วคลิกที่อื่น ระบบจะเปลี่ยนชื่อหมวดให้ทุกคำถามในหมวดนั้น · ลบได้เฉพาะหมวดที่ไม่มีคำถามอยู่
                   </p>
                 </div>
               </div>
@@ -441,7 +441,7 @@ export default function OmLineOaPage() {
                 );
               })}
               <div className="px-5 py-3 border-t border-gray-100 text-xs text-gray-400">
-                แก้แล้วต้องกด "บันทึก" ถึงจะมีผล · เรียงตามลำดับหมวดก่อน แล้วค่อยลำดับในหมวด (↑↓ เลื่อนได้ในหมวดตัวเอง) · อยากย้ายหมวดให้เปลี่ยนที่ dropdown
+                การแก้ไขมีผลเมื่อกด “บันทึก” · เรียงตามลำดับหมวดก่อน แล้วจึงเรียงตามลำดับในหมวด (↑↓ เลื่อนได้ภายในหมวดเดียวกัน) · หากต้องการย้ายหมวด ให้เลือกหมวดใหม่จากรายการ
               </div>
             </div>
           </div>
@@ -483,7 +483,7 @@ export default function OmLineOaPage() {
           <div className="space-y-4">
             {/* สถิติขึ้นก่อน — ตอบคำถามแรกของแอดมิน: เผยแพร่แล้วถึงใครบ้าง */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <Stat n={status.stats.total} t="LINE user ทั้งหมด" />
+              <Stat n={status.stats.total} t="ผู้ใช้ LINE ทั้งหมด" />
               <Stat n={status.stats.following} t="ยังเป็นเพื่อน" />
               <Stat n={status.stats.verified} t="ยืนยันตัวตนแล้ว" />
               <Stat n={status.stats.reachable} t="จะได้รับเมนู O&M" hi />
@@ -495,7 +495,7 @@ export default function OmLineOaPage() {
                 <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2.5 text-sm">
                   <Row k="สถานะ" v={status.enabled
                     ? <Pill c="bg-emerald-50 text-emerald-700 border-emerald-200">เชื่อมต่อแล้ว</Pill>
-                    : <Pill c="bg-amber-50 text-amber-700 border-amber-200">ยังไม่ได้ต่อ channel (โหมดจำลอง)</Pill>} />
+                    : <Pill c="bg-amber-50 text-amber-700 border-amber-200">ยังไม่ได้เชื่อมต่อ Channel (โหมดจำลอง)</Pill>} />
                   <Row k="OA" v={status.bot?.displayName
                     ? <span className="font-semibold">{status.bot.displayName} <span className="font-mono text-xs text-gray-500">{status.bot.basicId}</span></span>
                     : <span className="text-gray-400">—</span>} />
@@ -509,8 +509,8 @@ export default function OmLineOaPage() {
               </div>
 
               <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-800 leading-relaxed">
-                โมดูลนี้<b>ไม่ตั้ง default rich menu ของ OA</b> — เมนู O&M ผูกรายคนเฉพาะลูกค้าที่ยืนยันตัวตนแล้ว
-                ผู้ใช้อื่นยังเห็นเมนูเดิมที่ทีมขายตั้งไว้ ไม่กระทบกัน
+                โมดูลนี้<b>ไม่ได้ตั้งเมนูหลัก (default rich menu) ของ OA</b> — เมนู O&M กำหนดให้รายบุคคล เฉพาะลูกค้าที่ยืนยันตัวตนแล้ว
+                ผู้ใช้อื่นยังเห็นเมนูเดิมที่ฝ่ายขายตั้งไว้ ไม่กระทบกัน
               </div>
             </div>
           </div>
@@ -584,7 +584,7 @@ export default function OmLineOaPage() {
                     <div className="p-5 grid gap-3 md:grid-cols-2">
                       <label className="grid gap-1">
                         <span className="text-xs font-bold text-gray-500">LIFF ID</span>
-                        <input defaultValue={a.liff_id || ""} placeholder="ยังไม่ได้ขอจากทีม"
+                        <input defaultValue={a.liff_id || ""} placeholder="ยังไม่ได้รับ LIFF ID"
                           onBlur={(e) => e.target.value !== (a.liff_id || "") && patchApp(a.id, { liff_id: e.target.value })}
                           className="h-9 rounded-lg border border-gray-200 px-3 text-sm font-mono outline-none focus:border-primary" />
                       </label>
@@ -608,7 +608,7 @@ export default function OmLineOaPage() {
                           className="h-9 rounded-lg border border-gray-200 px-3 text-sm font-semibold outline-none focus:border-primary">
                           <option value="full">full — เต็มจอ</option>
                           <option value="tall">tall — สูง 75%</option>
-                          <option value="compact">compact — เตี้ย</option>
+                          <option value="compact">compact — ขนาดเล็ก</option>
                         </select>
                       </label>
                       <label className="flex items-end gap-2 pb-1.5">
@@ -630,10 +630,7 @@ export default function OmLineOaPage() {
                   {/* ตั้งค่าเฉพาะของหน้านั้น */}
                   {selApp === "faq" ? FaqSettings() : (
                     <div className="rounded-xl border border-gray-200 bg-white p-8 text-center">
-                      <div className="text-sm font-bold text-gray-700">ยังไม่มีตั้งค่าเฉพาะของหน้านี้</div>
-                      <p className="mt-1.5 text-xs text-gray-400 leading-relaxed">
-                        จะเพิ่มเมื่อสร้างหน้านั้นจริง — เช่น จองบริการ (ช่วงเวลาที่จองได้) · ยืนยันตัวตน (อายุ OTP) · ร้านค้า (โซนที่เปิดขาย)
-                      </p>
+                      <div className="text-sm font-bold text-gray-700">หน้านี้ยังไม่มีการตั้งค่าเฉพาะ</div>
                     </div>
                   )}
                 </div>
@@ -702,8 +699,8 @@ export default function OmLineOaPage() {
                     <input type="file" accept="image/*" onChange={(e) => setImgFile(e.target.files?.[0] || null)}
                       className="text-xs file:mr-2 file:px-3 file:py-1.5 file:rounded-lg file:border file:border-gray-200 file:bg-white file:text-xs file:font-bold file:text-gray-600 file:cursor-pointer" />
                     <p className="mt-1.5 text-xs text-gray-400">
-                      {imgFile ? `เลือกแล้ว: ${imgFile.name}` : "ไม่เลือก = ใช้รูปเดิมจากเวอร์ชันล่าสุด"} ·
-                      อัปขนาดไหนก็ได้ ระบบย่อเป็น {tmpl.size.width}×{tmpl.size.height} และบีบ ≤1MB ให้เอง
+                      {imgFile ? `เลือกแล้ว: ${imgFile.name}` : "หากไม่เลือก ระบบจะใช้รูปเดิมจากเวอร์ชันล่าสุด"} ·
+                      ระบบจะปรับขนาดรูปเป็น {tmpl.size.width}×{tmpl.size.height} และลดขนาดไฟล์ไม่เกิน 1MB ให้อัตโนมัติ
                     </p>
                   </div>
                 </div>
@@ -757,7 +754,7 @@ export default function OmLineOaPage() {
                     );
                   })}
                   <div className="px-5 py-3 border-t border-gray-100 text-xs text-gray-400">
-                    LINE แก้เมนูที่สร้างแล้วไม่ได้ — ทุกการแก้จึงเป็นเวอร์ชันใหม่ · ย้อนกลับได้ (โควตา 1,000 เมนู/OA)
+                    LINE ไม่อนุญาตให้แก้เมนูที่สร้างแล้ว การแก้ไขทุกครั้งจึงเป็นเวอร์ชันใหม่ · ย้อนกลับได้ (สูงสุด 1,000 เมนูต่อ OA)
                   </div>
                 </div>
 
@@ -823,8 +820,8 @@ export default function OmLineOaPage() {
                   <div className="text-4xl">🚧</div>
                   <div className="mt-3 font-bold text-gray-900">ยังไม่ได้สร้างหน้านี้</div>
                   <p className="mt-1.5 text-xs text-gray-500 leading-relaxed">
-                    ทะเบียนชี้ไปที่ <span className="font-mono">{preview.endpoint_path}</span> แต่ยังไม่มีหน้าในระบบ<br />
-                    ปุ่มในเมนูที่ชี้มาที่นี่จะยังกดใช้ไม่ได้
+                    ลิงก์ที่ตั้งไว้ชี้ไปที่ <span className="font-mono">{preview.endpoint_path}</span> แต่ยังไม่มีหน้านี้ในระบบ<br />
+                    ปุ่มในเมนูที่ลิงก์มาหน้านี้จะยังใช้งานไม่ได้
                   </p>
                 </div>
               ) : (
@@ -835,7 +832,7 @@ export default function OmLineOaPage() {
                       className="w-full h-[600px] border-0" />
                   </div>
                   <p className="mt-2.5 text-center text-xs text-gray-400 leading-relaxed">
-                    พรีวิวนี้เปิดหน้าจริงในโหมดจำลอง (นอก LINE) — ข้อมูลที่เห็นคือของบัญชีทดสอบที่ตั้งใน .env.local
+                    พรีวิวนี้เปิดหน้าจริงในโหมดจำลอง (นอก LINE) โดยใช้ข้อมูลบัญชีทดสอบ
                   </p>
                 </div>
               )}

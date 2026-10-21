@@ -341,7 +341,7 @@ export default function PendingApprovalReport() {
               const chequeFailed = i.cheque_status === "bounced" || i.cheque_status === "cancelled";
               const chequeOverdue = isChequeOverdue(i);
               const statusBadge = i.cheque_status === "bounced" ? (
-                <span className="ml-1.5 inline-flex items-center rounded border border-red-200 bg-red-50 px-1.5 py-0.5 text-[10px] font-bold text-red-700">เช็คเด้ง</span>
+                <span className="ml-1.5 inline-flex items-center rounded border border-red-200 bg-red-50 px-1.5 py-0.5 text-[10px] font-bold text-red-700">เช็คคืน</span>
               ) : i.cheque_status === "cancelled" ? (
                 <span className="ml-1.5 inline-flex items-center rounded border border-gray-300 bg-gray-100 px-1.5 py-0.5 text-[10px] font-bold text-gray-600">ยกเลิกเช็ค</span>
               ) : chequeOverdue ? (

@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
   if (gate.error) return gate.error;
 
   const lineUserId = req.nextUrl.searchParams.get("line_user_id") || "";
-  if (!lineUserId) return NextResponse.json({ error: "line_user_id required" }, { status: 400 });
+  if (!lineUserId) return NextResponse.json({ error: "ข้อมูลไม่ครบหรือไม่ถูกต้อง" }, { status: 400 });
 
   const db = await getOmDb();
   const r = await db.request()
@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
 
   const { line_user_id: lineUserId, text, media_token: mediaToken } = await req.json().catch(() => ({}));
   if (!lineUserId || (typeof text !== "string" || !text.trim()) === !mediaToken) {
-    return NextResponse.json({ error: "ต้องมี line_user_id + อย่างใดอย่างหนึ่ง: text หรือ media_token" }, { status: 400 });
+    return NextResponse.json({ error: "กรุณาพิมพ์ข้อความหรือแนบไฟล์อย่างใดอย่างหนึ่ง" }, { status: 400 });
   }
 
   const db = await getOmDb();
@@ -65,7 +65,9 @@ export async function POST(req: NextRequest) {
 
   const push = await pushLineMessage(lineUserId, [lineMessage]);
   if (OM_LINE.enabled && !push.ok) {
-    return NextResponse.json({ error: `ส่งไป LINE ไม่สำเร็จ (${push.status}): ${push.body}` }, { status: 502 });
+    // ★ 21 ต.ค. 69 แผน 20261021-01: รายละเอียดจาก LINE (รหัส + JSON) log ฝั่งเซิร์ฟเวอร์ ไม่ส่งถึงหน้าจอ
+    console.error("POST /api/om/line/messages push failed:", push.status, push.body);
+    return NextResponse.json({ error: "ส่งข้อความทาง LINE ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง" }, { status: 502 });
   }
 
   await db.request()

@@ -58,6 +58,6 @@ export async function resolveServiceType(db: sql.ConnectionPool, wanted: unknown
   const id = Number(wanted);
   const hit = rows.find((t) => t.id === id);
   if (!hit) throw new Error("ไม่พบประเภทงานนี้");
-  if (!hit.active) throw new Error(`ประเภทงาน "${hit.label_th}" ปิดใช้อยู่`);
+  if (!hit.active) throw new Error(`ประเภทงาน "${hit.label_th}" ปิดใช้งานอยู่`);
   return hit;
 }

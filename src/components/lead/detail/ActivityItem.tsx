@@ -69,7 +69,7 @@ const TYPE_LABELS: Record<string, string> = {
   payment_undone: "ยกเลิกการชำระเงิน",
   payment_cheque_received: "รับเช็ค",
   payment_cheque_deposited: "นำฝากเช็ค",
-  payment_cheque_bounced: "เช็คเด้ง",
+  payment_cheque_bounced: "เช็คคืน",
   payment_cheque_cancelled: "ยกเลิกเช็ค",
   slip_unsubmitted: "ยกเลิกส่งสลิป",
   line: "LINE",

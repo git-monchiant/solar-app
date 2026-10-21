@@ -74,18 +74,20 @@ export async function logBooking(tx: Transaction, a: LogArgs): Promise<void> {
 
 const LABEL: Record<BookingAction, string> = {
   create: "สร้างนัด", confirm: "ยืนยันนัด", reschedule: "เลื่อนนัด",
-  assign_team: "จ่ายทีมช่าง", assign_owner: "เปลี่ยนเจ้าของงาน",
+  // ★ 21 ต.ค. 69 แผน 20261021-01: ป้ายตาม glossary (มอบหมายทีม · ฝ่ายบัญชี · เช็คคืน · หมายเหตุ · ฉบับแก้ไข)
+  //   แสดงตอนอ่านประวัติ (actionLabel) — แถวเก่าในฐานเก็บแค่รหัส action จึงเปลี่ยนตามทั้งหมด
+  assign_team: "มอบหมายทีมช่าง", assign_owner: "เปลี่ยนเจ้าของงาน",
   reorder: "สลับลำดับคิว", start: "เริ่มงาน",
   check: "ตรวจงานเสร็จ รอปิด", done: "ปิดงาน", cancel: "ยกเลิกนัด", no_show: "ลูกค้าไม่อยู่บ้าน",
   call: "บันทึกการโทร",
   quote: "ออกใบเสนอราคา", quote_edit: "แก้ใบเสนอราคา", quote_delete: "ลบใบเสนอราคาฉบับร่าง",
   quote_submit: "ส่งใบเสนอราคาขออนุมัติ", quote_approve: "อนุมัติใบเสนอราคา",
-  quote_return: "ส่งใบเสนอราคากลับแก้", quote_revise: "สร้าง Revision ใบเสนอราคา",
+  quote_return: "ส่งใบเสนอราคากลับให้แก้ไข", quote_revise: "สร้างฉบับแก้ไขใบเสนอราคา",
   quote_send: "ส่งใบเสนอราคาให้ลูกค้า", paid: "ยืนยันรับเงินแล้ว",
-  pay_submit: "แนบสลิปค่าบริการ รอ Account ยืนยัน", pay_reject: "Account ปฏิเสธสลิป",
-  pay_cheque: "Account รับเช็คแล้ว รอเงินเข้า", pay_cheque_bounced: "เช็คเด้ง รอชำระใหม่",
+  pay_submit: "แนบสลิปค่าบริการ รอฝ่ายบัญชียืนยัน", pay_reject: "ฝ่ายบัญชีปฏิเสธสลิป",
+  pay_cheque: "ฝ่ายบัญชีรับเช็คแล้ว รอยืนยันรับเงิน", pay_cheque_bounced: "เช็คคืน รอชำระใหม่",
   repair_open: "เปิดใบงานซ่อม",
-  note: "บันทึกโน้ต",
+  note: "บันทึกหมายเหตุ",
   device: "แก้ไข Serial อุปกรณ์",
 };
 
@@ -103,7 +105,7 @@ export function historyLabel(action: string, toJson: string | null | undefined):
   // บันทึกการติดตามทางอื่นที่ไม่ใช่โทร (ปุ่ม Follow-up · 1 ต.ค. 69) — ไม่เรียกว่า "บันทึกการโทร"
   if (action === "call") {
     const ch = /"channel"\s*:\s*"(visit|line|other)"/.exec(toJson ?? "")?.[1];
-    if (ch) return `บันทึกการติดตาม · ${{ visit: "เยี่ยม", line: "LINE", other: "อื่นๆ" }[ch]}`;
+    if (ch) return `บันทึกการติดตาม · ${{ visit: "ลงพื้นที่", line: "LINE", other: "อื่น ๆ" }[ch]}`;
   }
   // ใบเสนอราคา 3 ชุด (แผน 20261002-02): /send = ลูกค้าเลือกชุดนั้น · ประวัติเก่าไม่มี option_no คงป้าย "ส่งให้ลูกค้า"
   // แผน 20261002-10: ปุ่มขั้น 02 = ส่งให้ทีมขาย (handoff) · เลือก/เปลี่ยนชุดย้ายไปขั้นชำระเงิน (มี option_no)

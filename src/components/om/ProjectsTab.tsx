@@ -63,7 +63,7 @@ export default function ProjectsTab() {
     { k: "", t: "ทั้งหมด", n: stats?.total },
     { k: "used", t: "ให้บริการอยู่", n: stats?.used },
     { k: "mismatch", t: "ชื่อไม่ตรงกัน", n: stats?.name_mismatch },
-    { k: "norem", t: "REM ยิงไม่ได้", n: stats?.no_rem },
+    { k: "norem", t: "ดึงข้อมูล REM ไม่ได้", n: stats?.no_rem },
   ];
 
   return (
@@ -117,8 +117,8 @@ export default function ProjectsTab() {
                     <b className={p.om_houses ? "text-primary-dark" : "text-gray-400"}>{p.om_houses.toLocaleString()}</b>
                   </td>
                   <td className="px-3 py-2 border-b border-gray-100 whitespace-nowrap">
-                    {p.rem_units ? <>{p.rem_units.toLocaleString()} หน่วย · {p.rem_transfers.toLocaleString()} สัญญา</>
-                      : <span className="text-red-600 font-bold">ยิงไม่ได้</span>}
+                    {p.rem_units ? <>{p.rem_units.toLocaleString()} ยูนิต · {p.rem_transfers.toLocaleString()} สัญญา</>
+                      : <span className="text-red-600 font-bold">ดึงข้อมูลไม่ได้</span>}
                   </td>
                   <td className="px-3 py-2 border-b border-gray-100 whitespace-nowrap text-gray-500">{p.rem_synced_at ?? "—"}</td>
                   <td className="px-3 py-2 border-b border-gray-100 whitespace-nowrap text-right">
@@ -150,7 +150,7 @@ export default function ProjectsTab() {
 
       <p className="text-xs text-gray-400 px-1">
         ★ ชื่อโครงการยึดตามทะเบียน REM · แก้ชื่อที่นี่แล้วบ้านทุกหลังในรหัสนั้นเปลี่ยนตามทันที ·
-        &quot;บ้านใช้ชื่อหลายแบบ&quot; ที่ยังเหลือคือโครงการที่ REM ยิงไม่ได้ ไม่มีต้นทางให้ยึด
+        &quot;บ้านใช้ชื่อหลายแบบ&quot; ที่ยังเหลือคือโครงการที่ดึงข้อมูลจาก REM ไม่ได้ จึงไม่มีชื่อต้นทางให้อ้างอิง
       </p>
 
       {toast && (

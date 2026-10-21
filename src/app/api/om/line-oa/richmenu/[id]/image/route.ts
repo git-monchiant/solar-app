@@ -31,16 +31,16 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   if (!cur.recordset[0]) return NextResponse.json({ error: "ไม่พบเวอร์ชัน" }, { status: 404 });
   if (cur.recordset[0].status !== "draft") {
     return NextResponse.json(
-      { error: "เวอร์ชันที่เผยแพร่แล้วเปลี่ยนรูปไม่ได้ (ข้อจำกัดของ LINE) — สร้างเวอร์ชันใหม่แทน" },
+      { error: "เวอร์ชันที่เผยแพร่แล้วเปลี่ยนรูปไม่ได้ (ข้อจำกัดของ LINE) — กรุณาสร้างเวอร์ชันใหม่แทน" },
       { status: 409 },
     );
   }
 
   const form = await req.formData().catch(() => null);
   const file = form?.get("file");
-  if (!(file instanceof File)) return NextResponse.json({ error: "ต้องแนบไฟล์ (field: file)" }, { status: 400 });
+  if (!(file instanceof File)) return NextResponse.json({ error: "กรุณาแนบไฟล์" }, { status: 400 });
   if (!file.type.startsWith("image/")) {
-    return NextResponse.json({ error: "ต้องเป็นไฟล์รูปภาพ" }, { status: 400 });
+    return NextResponse.json({ error: "กรุณาแนบไฟล์รูปภาพ" }, { status: 400 });
   }
 
   // ขนาดของเมนูมาจาก layout ที่บันทึกไว้ (เทมเพลตใหญ่ 2500x1686 / เล็ก 2500x843)
@@ -66,6 +66,6 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     dimensions: `${img.width}×${img.height}`,
     note: img.originalBytes === img.buf.length
       ? undefined
-      : `ปรับรูปให้ ${img.width}×${img.height} · บีบจาก ${Math.round(img.originalBytes / 1024)}KB เหลือ ${Math.round(img.buf.length / 1024)}KB`,
+      : `ปรับรูปเป็น ${img.width}×${img.height} · ลดขนาดไฟล์จาก ${Math.round(img.originalBytes / 1024)}KB เหลือ ${Math.round(img.buf.length / 1024)}KB`,
   });
 }

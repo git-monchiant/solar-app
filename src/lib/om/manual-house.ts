@@ -113,17 +113,17 @@ export function parseManualHouseInput(b: Record<string, unknown>): ManualHouseIn
   const customerId = Number(b.customer_id) > 0 ? Number(b.customer_id) : null;
   const firstName = txt(b.first_name, 120);
   const phone = normPhone(b.phone), idCard = normIdCard(b.id_card);
-  if (!customerId && !firstName) return "ต้องระบุชื่อลูกค้า";
-  if (!customerId && !phone) return "ต้องระบุเบอร์โทร";
-  if (phone && !/^0\d{9}$/.test(phone)) return "เบอร์ต้องเป็น 10 หลักขึ้นต้นด้วย 0";
-  if (phone && isPlaceholderPhone(phone)) return "เบอร์นี้ไม่ใช่เบอร์จริง (เลขซ้ำ/เรียงกัน) — ใส่เบอร์ที่ติดต่อลูกค้าได้";
+  if (!customerId && !firstName) return "กรุณาระบุชื่อลูกค้า";
+  if (!customerId && !phone) return "กรุณาระบุเบอร์โทร";
+  if (phone && !/^0\d{9}$/.test(phone)) return "กรุณากรอกเบอร์โทร 10 หลัก ขึ้นต้นด้วย 0";
+  if (phone && isPlaceholderPhone(phone)) return "เบอร์โทรไม่ถูกต้อง (เลขซ้ำหรือเรียงกัน) — กรุณาระบุเบอร์ที่ติดต่อลูกค้าได้จริง";
   if (idCard && !/^\d{13}$/.test(idCard)) return "เลขบัตรประชาชนต้องมี 13 หลัก";
 
   const projectId = txt(b.project_id, 20);
   const houseNumber = normHouseNumber(b.house_number).slice(0, 50);
   const address = txt(b.address, 500);
-  if (!houseNumber) return "ต้องระบุบ้านเลขที่";
-  if (!projectId && !address) return "บ้านนอกโครงการต้องระบุที่อยู่ — ช่างต้องไปถูกบ้าน";
+  if (!houseNumber) return "กรุณาระบุบ้านเลขที่";
+  if (!projectId && !address) return "กรุณาระบุที่อยู่สำหรับบ้านนอกโครงการ";
 
   // พิกัด: ต้องมาคู่กัน · เก็บเป็นข้อความแบบคอลัมน์เดิม (NVARCHAR(40) ค่าจาก REM)
   const la = String(b.latitude ?? "").trim(), lo = String(b.longitude ?? "").trim();
@@ -131,14 +131,14 @@ export function parseManualHouseInput(b: Record<string, unknown>): ManualHouseIn
   if (la || lo) {
     const y = Number(la), x = Number(lo);
     if (!la || !lo || !Number.isFinite(y) || !Number.isFinite(x) || Math.abs(y) > 90 || Math.abs(x) > 180) {
-      return "พิกัดไม่ถูกต้อง — วางแบบ 13.7563, 100.5018";
+      return "พิกัดไม่ถูกต้อง — รูปแบบที่ถูกต้อง เช่น 13.7563, 100.5018";
     }
     latitude = String(y); longitude = String(x);
   }
 
   const d = String(b.install_date ?? "").trim();
   if (d && (!/^\d{4}-\d{2}-\d{2}$/.test(d) || Number.isNaN(Date.parse(d)))) return "วันติดตั้งไม่ถูกต้อง";
-  if (d && d > todayBangkok()) return "วันติดตั้งต้องไม่เป็นวันล่วงหน้า";
+  if (d && d > todayBangkok()) return "วันติดตั้งต้องไม่เป็นวันในอนาคต";
   const spec = {
     install_date: d || null,
     inverter_brand: txt(b.inverter_brand, 100),
@@ -203,12 +203,12 @@ export async function createManualHouse(db: sql.ConnectionPool, x: ManualHouseIn
     if (x.reuseHouseId
       ? !(houseHit?.house_id === x.reuseHouseId && houseHit.house_state === "dormant")
       : houseHit) {
-      return stop(409, x.reuseHouseId ? "บ้านหลังนี้เปลี่ยนสถานะไปแล้ว — ตรวจข้อมูลอีกครั้ง" : "บ้านหลังนี้มีในทะเบียนแล้ว", conflicts);
+      return stop(409, x.reuseHouseId ? "บ้านหลังนี้เปลี่ยนสถานะไปแล้ว — กรุณาตรวจสอบข้อมูลอีกครั้ง" : "บ้านหลังนี้มีในระบบแล้ว", conflicts);
     }
     // คนที่ชน (เบอร์/เลขบัตร) ที่ไม่ใช่ลูกค้าที่เลือกไว้ — ไม่เลือกใครเลย = ต้องให้ผู้ใช้ตัดสินก่อน ห้ามสร้างคนซ้ำ
     const others = conflicts.filter((c) => c.kind !== "house" && c.customer_id !== x.customerId);
     if (!x.customerId && others.length) {
-      return stop(409, "เบอร์ / เลขบัตรนี้มีลูกค้าอยู่แล้ว — เลือกใช้ลูกค้าคนเดิม", conflicts);
+      return stop(409, "เบอร์โทรหรือเลขบัตรนี้มีในระบบแล้ว — กรุณาเลือกใช้ลูกค้ารายเดิม", conflicts);
     }
 
     // ── ลูกค้าเดิมที่เลือก — ยังใช้งานอยู่ไหม
@@ -277,7 +277,7 @@ export async function createManualHouse(db: sql.ConnectionPool, x: ManualHouseIn
           .query(`UPDATE om_customers SET id_card = ISNULL(id_card, @cid), updated_at = SYSDATETIMEOFFSET() WHERE id = @c`);
       }
       await rq().input("c", sql.Int, customerId).input("u", sql.Int, actorUserId)
-        .input("r", sql.NVarChar(300), `ผูกบ้าน id ${houseId} (owner) · ${SOURCE_REF}`)
+        .input("r", sql.NVarChar(300), `เชื่อมโยงบ้านเลขที่ ${x.houseNumber} (เจ้าของ) · ${SOURCE_REF}`)
         .query(`INSERT INTO om_customer_history (customer_id, [action], actor_user_id, reason)
                 VALUES (@c, 'link_house', @u, @r)`);
     }

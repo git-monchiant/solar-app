@@ -3,6 +3,7 @@ import { requireAuth } from "@/lib/auth";
 import { sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
 import { resolveServiceType } from "@/lib/om/entitlement";
+import { omErrorText } from "@/lib/om/api-error";
 
 // แก้สิทธิ์รายบ้าน — เดิมมีแต่ล้างแผง ตั้งแต่ 9 ก.ย. 69 ระบุประเภทงานได้ (เผื่อขายแพ็คตรวจเช็ก) — ข้อมูล import cutoff แค่ มิ.ย. 69
 // ปรับสิทธิ์ซื้อเพิ่ม/ต่อสัญญา/หมดอายุได้เอง · ★ การล้างไม่บันทึกที่นี่แล้ว (15 ต.ค. 69 — ผ่านการปิดงานในงานบริการเท่านั้น)
@@ -65,7 +66,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   const b = await req.json().catch(() => ({}));
 
   if (b.kind === "redemption")
-    return NextResponse.json({ error: "บันทึกการล้างที่นี่ไม่ได้แล้ว — ปิดงานในงานบริการ ระบบตัดสิทธิ์ให้เอง" }, { status: 400 });
+    return NextResponse.json({ error: "บันทึกการล้างแผงที่หน้านี้ไม่ได้ — กรุณาปิดงานในงานบริการ ระบบจะหักสิทธิ์ให้อัตโนมัติ" }, { status: 400 });
 
   const db = await getOmDb();
   const instId = await pickInstallation(db, houseId, b.installation_id ? Number(b.installation_id) : undefined);
@@ -76,8 +77,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   try {
     if (b.kind === "grant") {
       const qty = Number(b.qty);
-      if (!Number.isInteger(qty) || qty === 0) throw new Error("จำนวนต้องเป็นจำนวนเต็มและไม่เท่ากับ 0");
-      if (Math.abs(qty) > 99) throw new Error("จำนวนต้องอยู่ระหว่าง -99 ถึง 99");
+      if (!Number.isInteger(qty) || qty === 0) throw new Error("กรุณาระบุจำนวนเป็นจำนวนเต็มที่ไม่เท่ากับ 0");
+      if (Math.abs(qty) > 99) throw new Error("กรุณาระบุจำนวนระหว่าง -99 ถึง 99");
       const source = String(b.source ?? "manual_adjust");
       if (!GRANT_SOURCES.includes(source)) throw new Error("ประเภทสิทธิ์ไม่ถูกต้อง");
       const reason = b.reason ? String(b.reason).slice(0, 300) : null;
@@ -98,10 +99,10 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       return NextResponse.json({ ok: true, id });
     }
 
-    throw new Error("kind ต้องเป็น grant");
+    throw new Error("ข้อมูลไม่ครบหรือไม่ถูกต้อง");
   } catch (e) {
     await tx.rollback();
-    return NextResponse.json({ error: e instanceof Error ? e.message : "บันทึกไม่สำเร็จ" }, { status: 400 });
+    return NextResponse.json({ error: omErrorText(e, "บันทึกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "POST /api/om/houses/[id]/entitlements") }, { status: 400 });
   }
 }
 
@@ -111,5 +112,5 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 export async function DELETE(req: NextRequest) {
   const gate = await requireAuth(req);
   if (gate.error) return gate.error;
-  return NextResponse.json({ error: "ลบรายการไม่ได้ — ถ้าบันทึกผิด ให้เพิ่ม/ลดสิทธิ์กลับพร้อมระบุเหตุผล" }, { status: 405 });
+  return NextResponse.json({ error: "ลบรายการไม่ได้ — หากบันทึกผิด กรุณาเพิ่มหรือลดสิทธิ์กลับพร้อมระบุเหตุผล" }, { status: 405 });
 }

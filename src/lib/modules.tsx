@@ -205,7 +205,7 @@ export const MODULES: AppModule[] = [
   {
     key: "om", label: "O&M", emoji: "🛠️", tint: "bg-orange-50",
     group: "operation",
-    desc: "ลูกค้า · บ้าน · งานบริการ · ปฏิทิน · เช็คลิสต์ · แชต LINE",
+    desc: "ลูกค้า · บ้าน · งานบริการ · ปฏิทิน · แชต LINE",
     // ชุดเดียวกับที่หน้างาน/API ใช้ตัดสินว่าใครทำงาน O&M ได้ (Account เปิดหน้างานจากคิวรับเงินได้ แต่อ่านอย่างเดียว · แผน 20261014-06)
     roles: [...OM_WORK_ROLES],
     // จอแรกของโมดูล = งานบริการ (2100–2600) — เท่ากับ badge การ์ดพอดี แบบเดียวกับ Warranty/Quotation
@@ -268,14 +268,14 @@ export const MODULES: AppModule[] = [
   },
   {
     // 📋 ไม่ใช่ 🧰 — 🧰 เป็น emoji รุ่นใหม่ ฟอนต์ Windows บางเครื่องไม่มี ขึ้นเป็นกล่องเปล่า
-    key: "om_package", label: "Package O&M", emoji: "📋", tint: "bg-orange-50",
+    key: "om_package", label: "แพ็กเกจ O&M", emoji: "📋", tint: "bg-orange-50",
     group: "setup",
-    desc: "แพ็คเกจบริการ O&M · สัญญา",
+    desc: "แพ็กเกจบริการ O&M · สัญญา",
     roles: ["admin"],
     // เมนูชุดเดียวกับการ์ด Package — แคตตาล็อก (ดูราคา) + จัดการ (แก้ราคา/เงื่อนไข)
     menu: [
       { label: "แคตตาล็อก", href: "/om/packages", icon: <I d={D.sun} /> },
-      { label: "จัดการ Package O&M", href: "/om/packages/manage", icon: <I d={D.archive} />, roles: ["admin"] },
+      { label: "จัดการแพ็กเกจ O&M", href: "/om/packages/manage", icon: <I d={D.archive} />, roles: ["admin"] },
     ],
   },
   {
@@ -468,7 +468,7 @@ const ACCOUNT_BAR: ModuleMenuItem[] = [
 export const OM_BAR: ModuleMenuItem[] = [
   { label: "งานบริการ", href: "/om/services", icon: <I d={D.wrench} />, steps: OM_ACTIVE_STEPS },
   { label: "ปฏิทิน", href: "/calendar?team=om", icon: <I d={D.calendar} /> },
-  { label: "เช็คลิสต์", href: "/om/field", icon: <I d={D.clipboardCheck} />, steps: OM_FIELD_STEPS, subs: OM_FIELD_SUBS },
+  { label: "ใบตรวจรับงาน", href: "/om/field", icon: <I d={D.clipboardCheck} />, steps: OM_FIELD_STEPS, subs: OM_FIELD_SUBS },
   { label: "แชต", href: "/om/inbox", icon: <LineIcon className="w-6 h-6" /> },
 ];
 

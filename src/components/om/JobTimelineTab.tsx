@@ -27,8 +27,8 @@ export type Row = {
 };
 
 const DETAIL_LABEL: Record<DetailKey, string> = {
-  call: "บันทึกการโทร", appoint: "ประวัติแก้ไขนัด", team: "ประวัติจ่ายทีม", quote: "ประวัติแก้ใบเสนอราคา",
-  report: "บันทึกใบตรวจ",
+  call: "บันทึกการโทร", appoint: "ประวัติแก้ไขนัด", team: "ประวัติการมอบหมายทีม", quote: "ประวัติแก้ไขใบเสนอราคา",
+  report: "บันทึกใบตรวจรับงาน",
 };
 // สีจุดของแต่ละขั้น — ชุดเดียวกับป้ายแท็บงานบริการ (TONE ใน service-view)
 const STAGE_DOT: Record<StageKey, string> = {
@@ -58,7 +58,7 @@ function toRow(h: HistoryRow, teamName: (id: unknown) => string): { stage: Stage
       const on = str(to.contact_date) ? `ติดต่อ ${thD(str(to.contact_date))} · ` : "";
       // ลูกค้าไม่เอา ตอนขั้นเสนอราคา/ชำระเงิน — /cancel จดเป็นการโทร + ยกเลิกทั้งใบ ⇒ เป็นทางออกของใบงาน
       if (oc === "declined" && to.status === "cancelled")
-        return { stage: "closed", row: { ...base, label: "ลูกค้าไม่เอา — ยกเลิกใบงาน", tone: "bad", sub: withReason(by) } };
+        return { stage: "closed", row: { ...base, label: "ลูกค้าปฏิเสธบริการ — ยกเลิกใบงาน", tone: "bad", sub: withReason(by) } };
       if (oc === "agreed")
         return { stage: "follow", row: { ...base, outcome: oc, label: `โทร · ${t}`, sub: withReason(to.scheduled_at ? `นัด ${thAppt(str(to.scheduled_at), str(to.time_slot) || null)}` : by) } };
       const next = h.next_action_date ?? str(to.next_date);
@@ -71,7 +71,7 @@ function toRow(h: HistoryRow, teamName: (id: unknown) => string): { stage: Stage
         : null;
     case "repair_open":
       return { stage: "follow", row: { ...base,
-        label: `เปิดใบงานซ่อมจากใบงาน #${str(to.from_booking) ?? "-"} · ${to.in_warranty ? "ในประกัน" : "นอกประกัน"}`,
+        label: `เปิดใบงานซ่อมจากใบงานเลขที่ ${str(to.from_booking) ?? "-"} · ${to.in_warranty ? "ในประกัน" : "นอกประกัน"}`,
         sub: h.reason ? `อาการ: ${h.reason}` : by } };
     case "quote":
       // ชุด N (แผน 20261002-02) — ประวัติเก่าก่อนมีหลายชุดไม่มี option_no
@@ -82,13 +82,13 @@ function toRow(h: HistoryRow, teamName: (id: unknown) => string): { stage: Stage
       return { stage: "quote", row: { ...base, detail: "quote", label: `แก้ใบเสนอราคา ${str(to.doc_no) ?? ""}`.trim(),
         sub: withReason(from.total !== undefined ? `${money(from.total)} → ${money(to.total)}` : null) } };
     case "quote_revise":
-      return { stage: "quote", row: { ...base, detail: "quote", label: h.action_label ?? "สร้าง Revision ใบเสนอราคา", sub: withReason(null) } };
+      return { stage: "quote", row: { ...base, detail: "quote", label: h.action_label ?? "สร้างฉบับแก้ไขใบเสนอราคา", sub: withReason(null) } };
     case "quote_submit":
       return { stage: "quote", row: { ...base, label: "ส่งใบเสนอราคาขออนุมัติ", tone: "pending", sub: withReason(by) } };
     case "quote_approve":
       return { stage: "quote", row: { ...base, label: h.action_label ?? "อนุมัติใบเสนอราคา", sub: withReason(by) } };
     case "quote_return":
-      return { stage: "quote", row: { ...base, label: "ส่งใบเสนอราคากลับแก้", tone: "bad", sub: withReason(by) } };
+      return { stage: "quote", row: { ...base, label: "ส่งใบเสนอราคากลับให้แก้ไข", tone: "bad", sub: withReason(by) } };
     case "quote_send":
       // ตั้งแต่มี 3 ชุด (แผน 20261002-02) ทางนี้ = ลูกค้าเลือกชุดนั้น · ประวัติเก่าไม่มี option_no คงป้ายเดิม
       // แผน 20261002-10: handoff = ปุ่มขั้น 02 "ส่งใบเสนอราคาให้ทีมขาย" · เปลี่ยนชุดที่ขั้นชำระเงิน = อยู่ขั้นชำระเงิน
@@ -102,32 +102,32 @@ function toRow(h: HistoryRow, teamName: (id: unknown) => string): { stage: Stage
       return { stage: "payment", row: { ...base, tone: "pending",
         label: to.method === "cheque" ? `แนบภาพเช็ค ${money(to.amount)}`.trim()
           : `แนบสลิป ${money(Number(to.amount ?? 0) + Number(to.cc_fee ?? 0))}`.trim(),
-        sub: withReason(to.method === "cheque" ? "รอ Account ยืนยันรับเช็ค"
-          : to.cc_fee ? `บัตรเครดิต +${str(to.cc_pct)}% · รอ Account ยืนยันรับเงิน` : "รอ Account ยืนยันรับเงิน") } };
+        sub: withReason(to.method === "cheque" ? "รอฝ่ายบัญชียืนยันรับเช็ค"
+          : to.cc_fee ? `บัตรเครดิต +${str(to.cc_pct)}% · รอฝ่ายบัญชียืนยันรับเงิน` : "รอฝ่ายบัญชียืนยันรับเงิน") } };
     case "pay_cheque":
-      return { stage: "payment", row: { ...base, label: `รับเช็ค ${money(to.amount)}`.trim(), tone: "pending", sub: withReason("รอ Account ยืนยันเงินเข้า") } };
+      return { stage: "payment", row: { ...base, label: `รับเช็ค ${money(to.amount)}`.trim(), tone: "pending", sub: withReason("รอฝ่ายบัญชียืนยันรับเงิน") } };
     case "pay_reject":
-      return { stage: "payment", row: { ...base, label: "Account ปฏิเสธสลิป", tone: "bad", sub: withReason(null) } };
+      return { stage: "payment", row: { ...base, label: "ฝ่ายบัญชีปฏิเสธสลิป", tone: "bad", sub: withReason(null) } };
     case "pay_cheque_bounced":
       // แผน 20261014-03 — ใบงานที่ยังไม่ถึงหน้างานถูกดึงกลับขั้นชำระเงิน
-      return { stage: "payment", row: { ...base, label: `เช็คเด้ง ${money(from.amount)}`.trim(), tone: "bad",
-        sub: withReason(to.status === "payment" && from.status !== "payment" ? "ใบงานกลับขั้นชำระเงิน รอแนบหลักฐานใหม่" : "รอแนบหลักฐานชำระใหม่") } };
+      return { stage: "payment", row: { ...base, label: `เช็คคืน ${money(from.amount)}`.trim(), tone: "bad",
+        sub: withReason(to.status === "payment" && from.status !== "payment" ? "ใบงานกลับไปขั้นชำระเงิน · รอแนบหลักฐานการชำระเงินใหม่" : "รอแนบหลักฐานการชำระเงินใหม่") } };
     case "paid":
       return { stage: "payment", row: { ...base, label: `ยืนยันรับเงิน ${money(to.amount)}`.trim(), tone: "paid",
-        sub: to.grant_qty ? `เติมสิทธิ์ +${str(to.grant_qty)} ครั้ง` : by } };
+        sub: to.grant_qty ? `เพิ่มสิทธิ์ +${str(to.grant_qty)} ครั้ง` : by } };
     case "confirm":
       return { stage: "appoint", row: { ...base, label: "ลูกค้ายืนยันนัด", sub: by } };
     case "reschedule": {
       const extra = [
         to.status === "pending" && from.status === "confirmed" ? "กลับเป็นรอยืนยัน" : null,
-        "team_id" in to && to.team_id === null && from.team_id ? "ปลดทีม" : null,
+        "team_id" in to && to.team_id === null && from.team_id ? "ยกเลิกการมอบหมายทีม" : null,
       ].filter(Boolean).join(" · ");
       const moved = from.scheduled_at || to.scheduled_at
         ? `เลื่อนนัด ${thAppt(str(from.scheduled_at), str(from.time_slot) || null)} → ${thAppt(str(to.scheduled_at), str(to.time_slot) || null)}` : (h.action_label ?? "เลื่อนนัด");
       return { stage: "appoint", row: { ...base, detail: "appoint", label: moved, sub: withReason(extra || by) } };
     }
     case "assign_team":
-      return { stage: "appoint", row: { ...base, label: to.team_id ? `จ่าย${teamLabel(teamName(to.team_id))}` : "ถอนทีมช่าง", sub: by } };
+      return { stage: "appoint", row: { ...base, label: to.team_id ? `มอบหมาย${teamLabel(teamName(to.team_id))}` : "ยกเลิกการมอบหมายทีมช่าง", sub: by } };
     case "start":
       return { stage: "progress", row: { ...base, label: "ช่างเริ่มงาน", sub: by } };
     case "check":
@@ -135,7 +135,7 @@ function toRow(h: HistoryRow, teamName: (id: unknown) => string): { stage: Stage
       //   ที่เหลือคือการกดบันทึกใบตรวจ (บันทึกร่าง/ปิดงาน) — พับเป็นประวัติ ไม่งั้นใบที่บันทึกร่างหลายรอบรกทั้งขั้น
       if (to.status) return { stage: "progress", row: { ...base, label: "ตรวจงานเสร็จ รอปิด", sub: by } };
       return { stage: "progress", row: { ...base, detail: "report",
-        label: `บันทึกใบตรวจ${to.result === "pass" ? " · ผลตรวจผ่าน" : to.result === "fail" ? " · ผลตรวจไม่ผ่าน" : " (ร่าง)"}`,
+        label: `บันทึกใบตรวจรับงาน${to.result === "pass" ? " · ผลตรวจผ่าน" : to.result === "fail" ? " · ผลตรวจไม่ผ่าน" : " (ร่าง)"}`,
         sub: [Number(to.fail) > 0 ? `ไม่ผ่าน ${str(to.fail)} ข้อ` : null, to.repair ? `พบงานซ่อม: ${str(to.repair)}` : null, by]
           .filter(Boolean).join(" · ") || null } };
     case "done":
@@ -249,14 +249,15 @@ function groupHistory(bookings: BookingSummary[], history: HistoryRow[], teams: 
           .filter(Boolean).join(" · ") || null });
     }
     // จ่ายทีมหลายรอบ (ลากจัดคิว) — ครั้งล่าสุดเป็นรายการหลัก ที่เหลือพับเป็นประวัติ
-    const teamRows = appoint.filter((r) => !r.detail && /^จ่ายทีม|^ถอนทีม/.test(r.label));
+    // ★ 21 ต.ค. 69 แผน 20261021-01: ตามป้ายใหม่ใน toRow (เดิม "จ่ายทีม…" / "ถอนทีม…")
+    const teamRows = appoint.filter((r) => !r.detail && /^มอบหมายทีม|^ยกเลิกการมอบหมายทีม/.test(r.label));
     teamRows.slice(0, -1).forEach((r) => { r.detail = "team"; });
     if (appoint.length) g.stages.set("appoint", appoint);
     // ปิดงาน — ผลตรวจ + ตัดสิทธิ์ จากใบตรวจ/ใบตัดสิทธิ์ของใบนั้น
     const done = (g.stages.get("closed") ?? []).find((r) => r.label === "ปิดงาน");
     if (done) done.sub = [
       b.result === "pass" ? "ผลตรวจ ผ่าน" : b.result === "fail" ? "ผลตรวจ ไม่ผ่าน" : null,
-      b.redeemed > 0 ? `ตัดสิทธิ์ ${b.redeemed} ครั้ง` : b.consumes_quota === 0 ? "ไม่ตัดสิทธิ์" : null,
+      b.redeemed > 0 ? `หักสิทธิ์ ${b.redeemed} ครั้ง` : b.consumes_quota === 0 ? "ไม่หักสิทธิ์" : null,
       done.sub,
     ].filter(Boolean).join(" · ") || null;
   }
@@ -312,8 +313,8 @@ export default function JobTimelineTab({ bookings, history, teams }: {
           <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25" />
         </svg>
       </div>
-      <div className="text-sm font-semibold text-gray-700">ยังไม่มี milestone</div>
-      <div className="text-xs text-gray-400 mt-1">บันทึกการโทรครั้งแรกหรือเปิดใบงานแล้วจะขึ้นที่นี่</div>
+      <div className="text-sm font-semibold text-gray-700">ยังไม่มีเหตุการณ์</div>
+      <div className="text-xs text-gray-400 mt-1">เหตุการณ์จะแสดงที่นี่เมื่อบันทึกการโทรครั้งแรกหรือเปิดใบงาน</div>
     </div>
   );
 
@@ -342,11 +343,11 @@ export default function JobTimelineTab({ bookings, history, teams }: {
                 </svg>
                 <span className="min-w-0">
                   <span className="flex items-center gap-2 flex-wrap">
-                    <b className="text-sm text-gray-900">{b ? `ใบงาน #${b.id}` : "รอบใหม่ — ยังไม่มีใบงาน"}</b>
+                    <b className="text-sm text-gray-900">{b ? `ใบงานเลขที่ ${b.id}` : "รอบใหม่ — ยังไม่มีใบงาน"}</b>
                     {b?.service_type && <span className="text-sm text-gray-600">· {b.service_type}</span>}
                     {b?.parent_booking_id && (
                       <span className={`text-xxs font-bold px-2 py-0.5 rounded-full ${b.in_warranty ? "bg-emerald-50 text-emerald-700" : "bg-pink-50 text-pink-700"}`}>
-                        ใบงานซ่อมจาก #{b.parent_booking_id} · {b.in_warranty ? "ในประกัน" : "นอกประกัน"}
+                        ใบงานซ่อมจากใบงานเลขที่ {b.parent_booking_id} · {b.in_warranty ? "ในประกัน" : "นอกประกัน"}
                       </span>
                     )}
                   </span>
@@ -356,7 +357,7 @@ export default function JobTimelineTab({ bookings, history, teams }: {
                       b.job_no ? `ใบบริการ ${b.job_no}` : null,
                       b.rescheduled_count > 0 ? `เลื่อนนัด ${b.rescheduled_count} ครั้ง` : null,
                       days !== null ? `ใช้เวลา ${days === 0 ? "ไม่ถึง 1 วัน" : `${days} วัน`}` : null,
-                    ].filter(Boolean).join(" · ") : "บันทึกการโทรหลังใบงานล่าสุด — ตกลงนัดเมื่อไรจะเปิดใบงานใหม่"}
+                    ].filter(Boolean).join(" · ") : "บันทึกการโทรหลังใบงานล่าสุด — ระบบจะเปิดใบงานใหม่เมื่อลูกค้าตกลงรับบริการ"}
                   </span>
                 </span>
               </button>

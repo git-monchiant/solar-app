@@ -81,7 +81,7 @@ export default function JobFormsTab() {
       <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
         <div className="px-4 py-2.5 flex items-center gap-2 flex-wrap border-b border-gray-100">
           <b className="text-base font-bold">ใบตรวจรับงาน {forms.length} ใบ</b>
-          <span className="text-xs text-gray-500">ช่างกรอกใบนี้ตอนปิดงานหน้างาน</span>
+          <span className="text-xs text-gray-500">ช่างกรอกใบนี้ที่หน้างานก่อนปิดงาน</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[820px] border-collapse text-xs">
@@ -96,7 +96,7 @@ export default function JobFormsTab() {
                   <td className="px-3 py-2 border-b border-gray-100 font-semibold">{f.label_th}</td>
                   <td className="px-3 py-2 border-b border-gray-100 whitespace-nowrap">
                     {f.service_type_id === null
-                      ? <span className="text-xxs font-bold px-2 py-0.5 rounded-full bg-sky-50 text-sky-700">ใบกลาง · ทุกชนิดงาน</span>
+                      ? <span className="text-xxs font-bold px-2 py-0.5 rounded-full bg-sky-50 text-sky-700">ใบกลาง · ทุกประเภทงาน</span>
                       : f.service_label}
                   </td>
                   <td className="px-3 py-2 border-b border-gray-100 whitespace-nowrap tabular-nums">v{f.version}</td>
@@ -104,11 +104,11 @@ export default function JobFormsTab() {
                   <td className="px-3 py-2 border-b border-gray-100 whitespace-nowrap">
                     {f.used > 0
                       ? <span className="font-bold text-amber-700">{f.used} ใบ · ล็อกแล้ว</span>
-                      : <span className="text-gray-400">ยังไม่มี · แก้ได้</span>}
+                      : <span className="text-gray-400">ยังไม่มี · แก้ไขได้</span>}
                   </td>
                   <td className="px-3 py-2 border-b border-gray-100 whitespace-nowrap">
                     <span className={`text-xs font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full text-white ${f.is_active ? "bg-emerald-600" : "bg-gray-400"}`}>
-                      {f.is_active ? "ใช้อยู่" : "ปิดอยู่"}
+                      {f.is_active ? "เปิดใช้งาน" : "ปิดใช้งาน"}
                     </span>
                   </td>
                   <td className="px-3 py-2 border-b border-gray-100 whitespace-nowrap text-right">
@@ -135,8 +135,8 @@ export default function JobFormsTab() {
 
       {/* ── ลำดับการเลือกใบ — อธิบายกติกาให้คนอ่านเข้าใจ ── */}
       <div className="rounded-xl border border-sky-200 bg-sky-50/60 px-4 py-2.5 text-xs text-sky-900">
-        <b>ระบบเลือกใบให้ช่างตามลำดับนี้</b> — ① ใบที่ใบงานนั้นเคยผูกไว้แล้ว → ② ใบที่ใช้อยู่ของชนิดงานนั้น → ③ ใบกลาง
-        {forms.every((f) => f.service_type_id === null) && " · ตอนนี้ยังไม่มีใบเฉพาะชนิดงาน ทุกงานจึงตกมาที่ใบกลาง"}
+        <b>ระบบเลือกใบให้ช่างตามลำดับนี้</b> — ① ใบที่ใบงานนั้นเคยใช้ไว้แล้ว · ② ใบที่เปิดใช้งานของประเภทงานนั้น · ③ ใบกลาง
+        {forms.every((f) => f.service_type_id === null) && " · ขณะนี้ยังไม่มีใบเฉพาะประเภทงาน ทุกงานจึงใช้ใบกลาง"}
       </div>
 
       {/* ── ข้อในใบที่เลือก ── */}
@@ -144,7 +144,7 @@ export default function JobFormsTab() {
         <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
           <div className="px-4 py-2.5 flex items-center gap-2 flex-wrap border-b border-gray-100">
             <b className="text-base font-bold">{form.label_th} <span className="text-gray-400 font-normal">v{form.version}</span></b>
-            <span className="text-xs text-gray-500">{mine.filter((i) => i.is_active).length} ข้อที่เปิดใช้</span>
+            <span className="text-xs text-gray-500">เปิดใช้งาน {mine.filter((i) => i.is_active).length} ข้อ</span>
             {!locked && (
               <button type="button" style={{ minHeight: 0 }} className={`${BTN_MAIN} ml-auto`} onClick={() => setAdding((v) => !v)}>
                 {adding ? "ปิดช่องเพิ่มข้อ" : "+ เพิ่มข้อ"}
@@ -154,16 +154,16 @@ export default function JobFormsTab() {
 
           {locked && (
             <div className="mx-4 mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-900">
-              <b>ใบนี้ล็อกแล้ว</b> — มีใบงานอ้างอยู่ {form.used} ใบ แก้หัวข้อไม่ได้
-              เพราะคำตอบของใบงานเก่าผูกกับรหัสข้อ ถ้าแก้ความหมายทับ ใบเก่าจะอ่านผิดโดยไม่มีใครรู้ ·
-              ต้องการแก้ให้กด <b>ออกเวอร์ชันใหม่</b> แล้วแก้ที่เวอร์ชันใหม่
+              <b>ใบนี้ล็อกแล้ว</b> — มีใบงานอ้างอิงอยู่ {form.used} ใบ จึงแก้ไขหัวข้อไม่ได้
+              เนื่องจากคำตอบของใบงานเดิมอ้างอิงรหัสข้อ หากแก้ความหมาย ข้อมูลเดิมจะแสดงคลาดเคลื่อน ·
+              หากต้องการแก้ไข กด <b>ออกเวอร์ชันใหม่</b> แล้วแก้ไขที่เวอร์ชันใหม่
             </div>
           )}
 
           {adding && !locked && (
             <div className="mx-4 mt-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 flex flex-wrap gap-2 items-end">
               <label className="flex flex-col gap-1">
-                <span className="text-xxs font-bold text-gray-500">รหัสข้อ (แก้ทีหลังไม่ได้)</span>
+                <span className="text-xxs font-bold text-gray-500">รหัสข้อ (แก้ไขภายหลังไม่ได้)</span>
                 <input value={draft.code} onChange={(e) => setDraft({ ...draft, code: e.target.value })} placeholder="เช่น panel"
                   className="h-9 w-40 rounded-lg border border-gray-200 px-3 text-sm outline-none focus:border-primary" />
               </label>
@@ -175,12 +175,12 @@ export default function JobFormsTab() {
                 </select>
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-xxs font-bold text-gray-500">ชนิดคำตอบ</span>
+                <span className="text-xxs font-bold text-gray-500">ประเภทคำตอบ</span>
                 <select value={draft.kind} onChange={(e) => setDraft({ ...draft, kind: e.target.value })}
                   className="h-9 rounded-lg border border-gray-200 px-2 text-sm outline-none cursor-pointer">
                   {Object.entries(KIND_TH).map(([k, t]) => (
                     <option key={k} value={k} disabled={!KIND_READY.includes(k)}>
-                      {t}{KIND_READY.includes(k) ? "" : " — ยังไม่เปิดใช้"}
+                      {t}{KIND_READY.includes(k) ? "" : " — ยังไม่เปิดใช้งาน"}
                     </option>
                   ))}
                 </select>
@@ -232,14 +232,14 @@ export default function JobFormsTab() {
                                 method: "PATCH",
                                 body: JSON.stringify({ form_id: sel, item_id: it.id, required: !it.required }),
                               }, it.required ? "เปลี่ยนเป็นไม่บังคับแล้ว" : "เปลี่ยนเป็นบังคับแล้ว")}>
-                              {it.required ? "ทำเป็นไม่บังคับ" : "ทำเป็นบังคับ"}
+                              {it.required ? "ตั้งเป็นไม่บังคับ" : "ตั้งเป็นบังคับ"}
                             </button>
                             <button type="button" style={{ minHeight: 0 }} className={BTN} disabled={busy}
                               onClick={() => call("/api/om/job-forms/items", {
                                 method: "PATCH",
                                 body: JSON.stringify({ form_id: sel, item_id: it.id, is_active: !it.is_active }),
-                              }, it.is_active ? "ปิดข้อแล้ว" : "เปิดข้อคืนแล้ว")}>
-                              {it.is_active ? "ปิดข้อ" : "คืนข้อ"}
+                              }, it.is_active ? "ปิดข้อแล้ว" : "เปิดใช้ข้อนี้อีกครั้งแล้ว")}>
+                              {it.is_active ? "ปิดข้อ" : "เปิดใช้ข้อนี้อีกครั้ง"}
                             </button>
                           </span>
                         )}
@@ -249,16 +249,16 @@ export default function JobFormsTab() {
                 </div>
               );
             })}
-            {!mine.length && <div className="px-4 py-8 text-center text-sm text-gray-400">ใบนี้ยังไม่มีข้อตรวจ</div>}
+            {!mine.length && <div className="px-4 py-8 text-center text-sm text-gray-400">ใบนี้ยังไม่มีรายการตรวจ</div>}
           </div>
         </div>
       )}
 
       <p className="text-xs text-gray-400 px-1">
-        ★ ปิดข้อแทนการลบ เพื่อให้ใบงานเก่าที่กรอกข้อนั้นไว้ยังอ่านความหมายออก ·
-        รหัสข้อคือคีย์ที่ใช้เก็บคำตอบ <b>ตัวพิมพ์เล็ก-ใหญ่ถือเป็นคนละรหัส</b> (v_dc ≠ V_DC) ·
-        ชนิด &quot;ข้อความ&quot; และ &quot;รูป&quot; ยังไม่เปิดใช้ เพราะหน้าช่างยังไม่มีที่เก็บคำตอบสองชนิดนี้
-        {types.length > 0 && ` · ชนิดงานที่เปิดใช้: ${types.map((t) => t.label_th).join(" · ")}`}
+        ★ ใช้การปิดข้อแทนการลบ เพื่อให้ใบงานเดิมที่กรอกข้อนั้นไว้ยังแสดงผลได้ถูกต้อง ·
+        รหัสข้อใช้เป็นคีย์เก็บคำตอบ <b>ตัวพิมพ์เล็ก-ใหญ่ถือเป็นคนละรหัส</b> (v_dc ≠ V_DC) ·
+        ประเภท &quot;ข้อความ&quot; และ &quot;รูป&quot; ยังไม่เปิดใช้งาน เนื่องจากหน้าช่างยังไม่รองรับการเก็บคำตอบสองประเภทนี้
+        {types.length > 0 && ` · ประเภทงานที่เปิดใช้งาน: ${types.map((t) => t.label_th).join(" · ")}`}
       </p>
 
       {toast && (

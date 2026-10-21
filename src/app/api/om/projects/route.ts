@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAnyRole } from "@/lib/auth";
 import { sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
+import { omErrorText } from "@/lib/om/api-error";
 
 // ทะเบียนโครงการของโมดูล O&M
 // ★ ปัญหาที่หน้านี้ต้องแก้ได้: om_houses.project_name เก็บชื่อไม่ตรงกันภายในรหัสเดียวกัน 58 รหัส
@@ -50,7 +51,7 @@ export async function PATCH(req: NextRequest) {
   if (gate.error) return gate.error;
   const b = await req.json().catch(() => ({}));
   const pid = typeof b.project_id === "string" ? b.project_id.trim() : "";
-  if (!pid) return NextResponse.json({ error: "ต้องระบุ project_id" }, { status: 400 });
+  if (!pid) return NextResponse.json({ error: "กรุณาระบุโครงการ" }, { status: 400 });
 
   const db = await getOmDb();
   const cur = (await db.request().input("p", sql.NVarChar(20), pid)
@@ -58,7 +59,7 @@ export async function PATCH(req: NextRequest) {
   if (!cur) return NextResponse.json({ error: "ไม่พบโครงการนี้" }, { status: 404 });
 
   const name = typeof b.name_th === "string" ? b.name_th.trim() : null;
-  if (name !== null && !name) return NextResponse.json({ error: "ชื่อโครงการว่างไม่ได้" }, { status: 400 });
+  if (name !== null && !name) return NextResponse.json({ error: "กรุณาระบุชื่อโครงการ" }, { status: 400 });
 
   const tx = new sql.Transaction(db);
   await tx.begin();
@@ -80,7 +81,7 @@ export async function PATCH(req: NextRequest) {
     await tx.commit();
   } catch (e) {
     await tx.rollback();
-    return NextResponse.json({ error: e instanceof Error ? e.message : "บันทึกไม่สำเร็จ" }, { status: 500 });
+    return NextResponse.json({ error: omErrorText(e, "บันทึกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "PATCH /api/om/projects") }, { status: 500 });
   }
   return NextResponse.json({ ok: true, project_id: pid, name_th: name ?? cur.name_th, housesRenamed });
 }

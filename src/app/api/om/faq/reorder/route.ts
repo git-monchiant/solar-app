@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
+import { omErrorText } from "@/lib/om/api-error";
 
 // POST { id, direction: "up" | "down" } — สลับลำดับกับข้อที่อยู่ติดกัน "ในหมวดเดียวกัน"
 // ★ ใช้วิธีสลับค่า sort_order สองแถว (ไม่ใช่ตั้งเป็น เพื่อนบ้าน±1 แบบเดิม)
@@ -13,7 +14,7 @@ export async function POST(req: NextRequest) {
 
   const { id, direction } = await req.json().catch(() => ({}));
   if (!id || !["up", "down"].includes(direction)) {
-    return NextResponse.json({ error: "ต้องระบุ id และ direction (up/down)" }, { status: 400 });
+    return NextResponse.json({ error: "ข้อมูลไม่ครบหรือไม่ถูกต้อง" }, { status: 400 });
   }
 
   const db = await getOmDb();
@@ -46,7 +47,7 @@ export async function POST(req: NextRequest) {
     await tx.commit();
   } catch (e) {
     await tx.rollback().catch(() => {});
-    return NextResponse.json({ error: e instanceof Error ? e.message : "สลับลำดับไม่สำเร็จ" }, { status: 500 });
+    return NextResponse.json({ error: omErrorText(e, "สลับลำดับไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "POST /api/om/faq/reorder") }, { status: 500 });
   }
   return NextResponse.json({ ok: true, moved: true });
 }

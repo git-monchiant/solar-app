@@ -46,12 +46,12 @@ export function gridLayout(cells: RichMenuAction[], cols = 3, rows = 2): RichMen
 }
 
 export function validateLayout(layout: RichMenuLayout): string | null {
-  if (!layout?.areas?.length) return "ต้องมีอย่างน้อย 1 ช่อง";
-  if (layout.areas.length > MAX_AREAS) return `ช่องกดเกิน ${MAX_AREAS} ช่อง`;
+  if (!layout?.areas?.length) return "กรุณากำหนดช่องกดอย่างน้อย 1 ช่อง";
+  if (layout.areas.length > MAX_AREAS) return `กำหนดช่องกดได้ไม่เกิน ${MAX_AREAS} ช่อง`;
   for (const a of layout.areas) {
     if (!a.action) return "มีช่องที่ยังไม่ได้กำหนดการทำงาน";
-    if (a.action.type === "uri" && !a.action.uri) return "ช่องเปิดลิงก์ยังไม่ได้ใส่ URL";
-    if (a.action.type === "message" && !a.action.text) return "ช่องส่งข้อความยังไม่ได้ใส่ข้อความ";
+    if (a.action.type === "uri" && !a.action.uri) return "ช่องเปิดลิงก์ยังไม่ได้ระบุ URL";
+    if (a.action.type === "message" && !a.action.text) return "ช่องส่งข้อความยังไม่ได้ระบุข้อความ";
   }
   return null;
 }
@@ -174,7 +174,7 @@ export async function deployVersion(versionId: number, userId: number | null): P
   try {
     if (!simulated) {
       if (!richMenuId) {
-        if (!v.image_blob) throw new Error("ยังไม่ได้อัปโหลดรูปพื้นเมนู");
+        if (!v.image_blob) throw new Error("กรุณาอัปโหลดรูปพื้นหลังเมนูก่อนเผยแพร่");
         richMenuId = await createOnLine({
           name: v.name, chatBarText: v.chat_bar_text, layout,
           image: v.image_blob as Buffer, imageMime: v.image_mime || "image/png",
@@ -203,8 +203,8 @@ export async function deployVersion(versionId: number, userId: number | null): P
     return {
       ok: true, simulated, richMenuId, linked,
       message: simulated
-        ? `บันทึกเป็นเวอร์ชันใช้งานแล้ว (โหมดจำลอง — ยังไม่ได้ต่อ LINE channel) · ผู้ใช้ที่จะได้เมนูนี้ ${linked} คน`
-        : `เผยแพร่แล้ว · ผูกเมนูให้ลูกค้าที่ยืนยันตัวตน ${linked} คน (มีผลทันที)`,
+        ? `บันทึกเป็นเวอร์ชันใช้งานแล้ว (โหมดจำลอง — ยังไม่ได้เชื่อมต่อ LINE) · ผู้ใช้ที่จะได้เมนูนี้ ${linked} คน`
+        : `เผยแพร่แล้ว · ตั้งเมนูนี้ให้ลูกค้าที่ยืนยันตัวตนแล้ว ${linked} คน (มีผลทันที)`,
     };
   } catch (e) {
     await db.request().input("id", sql.Int, versionId)

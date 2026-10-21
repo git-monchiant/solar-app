@@ -7,7 +7,7 @@ import { getOmDb } from "@/lib/om/line";
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
   if (!/^[0-9a-f]{40}$/.test(token)) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json({ error: "ไม่พบไฟล์" }, { status: 404 });
   }
 
   // นโยบายผู้ใช้ (26 ส.ค.): media เก็บ 24 ชม. — เกินนั้นลิงก์ตาย ลูกค้าต้องโหลดภายใน 24 ชม.
@@ -18,8 +18,8 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ token: str
                    CASE WHEN created_at < DATEADD(hour, -24, SYSDATETIMEOFFSET()) THEN 1 ELSE 0 END AS expired
             FROM om_line_media WHERE token = @token`);
   const row = r.recordset[0];
-  if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (row.expired) return NextResponse.json({ error: "หมดอายุ (เก็บ 24 ชม.)" }, { status: 410 });
+  if (!row) return NextResponse.json({ error: "ไม่พบไฟล์" }, { status: 404 });
+  if (row.expired) return NextResponse.json({ error: "ไฟล์หมดอายุแล้ว (เก็บไว้ 24 ชั่วโมง)" }, { status: 410 });
 
   return new NextResponse(new Uint8Array(row.bytes as Buffer), {
     headers: {

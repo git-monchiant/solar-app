@@ -8,6 +8,7 @@ import { notifyAccountingRole } from "@/lib/accounting-notifications";
 import {
   OM_PAY_LIVE_SQL, OM_PAY_STEP_NO, OM_REPAY_AFTER_BOUNCE, OM_SLIP_PREFIX, canIssueOmQuotation, omSlipField,
 } from "@/lib/om/om-quotation";
+import { omErrorText } from "@/lib/om/api-error";
 
 // ค่าบริการงาน O&M — Sale แนบสลิปของลูกค้า แล้วเข้าคิว Account (แผน docs/plan/20260924-02 เฟส 4)
 //
@@ -31,7 +32,7 @@ export async function GET(req: NextRequest) {
   const gate = await requireAuth(req);
   if (gate.error) return gate.error;
   const qid = Number(req.nextUrl.searchParams.get("quotation_id"));
-  if (!qid) return NextResponse.json({ error: "ต้องระบุใบเสนอราคา" }, { status: 400 });
+  if (!qid) return NextResponse.json({ error: "ไม่พบใบเสนอราคาที่ระบุ" }, { status: 400 });
   const db = await getOmDb();
   const slots = Array.from({ length: MAX_FILES }, (_, i) => `DATALENGTH(p.slip_data${i ? `_${i + 1}` : ""}) b${i + 1}`).join(", ");
   const r = await db.request().input("q", sql.Int, qid).input("sf", sql.NVarChar(50), omSlipField(qid)).query(`
@@ -66,7 +67,7 @@ export async function POST(req: NextRequest) {
   const actor = await getQuotationActor(gate.userId);
   if (!actor) return NextResponse.json({ error: "ไม่พบผู้ใช้" }, { status: 401 });
   if (!canIssueOmQuotation(getEffectiveRolesFromReq(req, actor.roles)))
-    return NextResponse.json({ error: "แนบสลิปค่าบริการ O&M ได้เฉพาะ Sale" }, { status: 403 });
+    return NextResponse.json({ error: "แนบสลิปค่าบริการ O&M ได้เฉพาะฝ่ายขาย" }, { status: 403 });
 
   const form = await req.formData();
   const qid = Number(form.get("quotation_id"));
@@ -74,16 +75,16 @@ export async function POST(req: NextRequest) {
   const method = String(form.get("method") || "transfer");
   const note = String(form.get("note") || "").trim().slice(0, 150) || null;
   const files = form.getAll("files").filter((f): f is File => f instanceof File && f.size > 0);
-  if (!qid) return NextResponse.json({ error: "ต้องระบุใบเสนอราคา" }, { status: 400 });
-  if (!METHODS.includes(method)) return NextResponse.json({ error: "วิธีชำระไม่ถูกต้อง" }, { status: 400 });
+  if (!qid) return NextResponse.json({ error: "ไม่พบใบเสนอราคาที่ระบุ" }, { status: 400 });
+  if (!METHODS.includes(method)) return NextResponse.json({ error: "วิธีชำระเงินไม่ถูกต้อง" }, { status: 400 });
   const cc = form.get("cc") === "1";
   const ccPct = cc ? Number(form.get("cc_pct")) : 0;
   if (cc && !CC_RATES.includes(ccPct)) return NextResponse.json({ error: "ค่าธรรมเนียมบัตรเครดิตไม่ถูกต้อง" }, { status: 400 });
-  if (cc && method === "cheque") return NextResponse.json({ error: "เลือกได้อย่างเดียว — เช็ค หรือ บัตรเครดิต" }, { status: 400 });
-  if (method === "other" && !note) return NextResponse.json({ error: "กรอกรายละเอียดการชำระ (ชำระโดย)" }, { status: 400 });
-  if (files.length === 0) return NextResponse.json({ error: "แนบสลิปหรือรูปหลักฐานการรับเงินอย่างน้อย 1 รูป" }, { status: 400 });
+  if (cc && method === "cheque") return NextResponse.json({ error: "กรุณาเลือกอย่างใดอย่างหนึ่ง — เช็ค หรือ บัตรเครดิต" }, { status: 400 });
+  if (method === "other" && !note) return NextResponse.json({ error: "กรุณากรอกรายละเอียดการชำระเงิน (ชำระโดย)" }, { status: 400 });
+  if (files.length === 0) return NextResponse.json({ error: "กรุณาแนบสลิปหรือหลักฐานการชำระเงินอย่างน้อย 1 รูป" }, { status: 400 });
   if (files.length > MAX_FILES) return NextResponse.json({ error: `แนบได้ไม่เกิน ${MAX_FILES} รูป` }, { status: 400 });
-  if (files.some((f) => f.size > MAX_BYTES)) return NextResponse.json({ error: "ไฟล์ใหญ่เกิน 6 MB" }, { status: 400 });
+  if (files.some((f) => f.size > MAX_BYTES)) return NextResponse.json({ error: "ไฟล์มีขนาดเกิน 6 MB" }, { status: 400 });
   if (files.some((f) => !/^image\/|^application\/pdf$/.test(f.type))) return NextResponse.json({ error: "แนบได้เฉพาะรูปหรือ PDF" }, { status: 400 });
 
   const db = await getOmDb();
@@ -108,7 +109,7 @@ export async function POST(req: NextRequest) {
     // ★ เช็คเด้งหลังงานเดินไปแล้ว (เข้างาน/ปิดงาน · แผน 20261014-03) — ใบงานคงสถานะ แต่ต้องเก็บเงินใหม่ได้
     //   ใบที่ยังไม่ถึงหน้างาน (รอยืนยันนัด/นัดแล้ว) ถูกดึงกลับขั้นชำระเงินตอนกดเช็คเด้งอยู่แล้ว
     const repay = OM_REPAY_AFTER_BOUNCE.includes(q.job_status) && !!q.bounced;
-    if (q.job_status !== "payment" && !repay) return fail("ใบงานยังไม่อยู่ขั้นชำระเงิน — ส่งใบเสนอราคาให้ลูกค้าก่อน");
+    if (q.job_status !== "payment" && !repay) return fail("ใบงานยังไม่อยู่ขั้นชำระเงิน — กรุณาส่งใบเสนอราคาให้ลูกค้าก่อน");
     // เงินก้อนเดียวเต็มจำนวน — กันยอดพิมพ์ผิดแบบเดียวกับที่ฝั่งขายเคยเจอ (lead 686)
     if (Math.round(amount * 100) !== Math.round(Number(q.total) * 100))
       return fail(`ยอดไม่ตรงกับใบเสนอราคา — ต้องเป็น ${Number(q.total).toLocaleString("th-TH")} บาท`, 400);
@@ -116,7 +117,7 @@ export async function POST(req: NextRequest) {
     const dup = (await new sql.Request(tx).input("l", sql.Int, q.lead_id).input("sf", sql.NVarChar(50), slipField)
       .query(`SELECT TOP 1 id, confirmed_at FROM payments p WITH (UPDLOCK, HOLDLOCK)
                WHERE p.lead_id = @l AND p.slip_field = @sf AND ${OM_PAY_LIVE_SQL("p")}`)).recordset[0];
-    if (dup) return fail(dup.confirmed_at ? "ใบนี้รับเงินครบแล้ว" : "มีสลิปรอ Account ยืนยันอยู่แล้ว — รอผลก่อน");
+    if (dup) return fail(dup.confirmed_at ? "ใบนี้รับเงินครบแล้ว" : "มีสลิปที่รอฝ่ายบัญชียืนยันอยู่แล้ว — กรุณารอผลก่อน");
 
     // บัตรเครดิต: ค่าธรรมเนียมคิดจากยอดใบ ปัดเป็นบาท แบบ OrderStep (Math.round(amount * pct / 100))
     const ccFee = cc ? Math.round((Number(q.total) * ccPct) / 100) : 0;
@@ -155,7 +156,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, id: paymentId });
   } catch (e) {
     try { await tx.rollback(); } catch {}
-    console.error("POST /api/om/payments", e);
-    return NextResponse.json({ error: e instanceof Error ? e.message : "บันทึกสลิปไม่สำเร็จ" }, { status: 500 });
+    return NextResponse.json({ error: omErrorText(e, "บันทึกสลิปไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "POST /api/om/payments") }, { status: 500 });
   }
 }

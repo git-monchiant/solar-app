@@ -22,12 +22,12 @@ export async function PATCH(req: NextRequest) {
 
   const b = await req.json().catch(() => ({}));
   const key = typeof b.key === "string" ? b.key.trim() : "";
-  if (!key) return NextResponse.json({ error: "ต้องระบุ key" }, { status: 400 });
+  if (!key) return NextResponse.json({ error: "ข้อมูลไม่ครบหรือไม่ถูกต้อง" }, { status: 400 });
 
   const db = await getOmDb();
   const cur = await db.request().input("k", sql.NVarChar(80), key)
     .query(`SELECT [key] FROM om_settings WHERE [key] = @k COLLATE Latin1_General_BIN2`);
-  if (!cur.recordset[0]) return NextResponse.json({ error: "ไม่รู้จักค่านี้" }, { status: 404 });
+  if (!cur.recordset[0]) return NextResponse.json({ error: "ไม่พบการตั้งค่าที่ระบุ" }, { status: 404 });
 
   // เก็บเป็น JSON — number/boolean/null เท่านั้นที่ผ่าน CHECK ในฐาน
   let json: string | null = null;
@@ -37,12 +37,12 @@ export async function PATCH(req: NextRequest) {
       const n = Number(b.value);
       if (b.value === "true" || b.value === "false") json = b.value;
       else if (Number.isFinite(n)) json = String(n);
-      else return NextResponse.json({ error: "ค่าต้องเป็นตัวเลขหรือ true/false" }, { status: 400 });
+      else return NextResponse.json({ error: "กรุณาระบุค่าเป็นตัวเลข หรือเลือกเปิด/ปิด" }, { status: 400 });
     }
   }
   // ตัวเลขต้องไม่ติดลบ (ชั่วโมง/จำนวนครั้ง/จำนวนคิว)
   if (json !== null && Number.isFinite(Number(json)) && Number(json) < 0) {
-    return NextResponse.json({ error: "ค่าต้องไม่ติดลบ" }, { status: 400 });
+    return NextResponse.json({ error: "กรุณาระบุค่าที่ไม่ติดลบ" }, { status: 400 });
   }
 
   await db.request()

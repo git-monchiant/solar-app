@@ -93,11 +93,11 @@ export default function OmFieldListPage() {
   return (
     <div>
       <ListPageHeader
-        title={activeItem?.label ?? "เช็คลิสต์"}
+        title={activeItem?.label ?? "ใบตรวจรับงาน"}
         subtitle={`${new Date().toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })} · O&M`}
         search={q}
         onSearchChange={setQ}
-        searchPlaceholder="ค้นบ้านเลขที่ · ชื่อลูกค้า · โครงการ · ทีม"
+        searchPlaceholder="ค้นหาบ้านเลขที่ · ชื่อลูกค้า · เบอร์โทร · โครงการ"
         tabs={TABS}
         activeTab={tab}
         onTabChange={(k) => setTab(k as TabKey)}
@@ -109,7 +109,7 @@ export default function OmFieldListPage() {
         {rows === null ? <Loading /> : !byDay.size ? (
           <div className="text-center text-gray-400 py-16 text-sm">
             {needle ? "ไม่พบงานที่ค้นหา"
-              : tab === "today" ? "วันนี้ไม่มีงานที่ต้องกรอกใบตรวจ" : tab === "open" ? "ไม่มีงานค้าง" : "ยังไม่มีงานที่ปิดแล้ว"}
+              : tab === "today" ? "วันนี้ไม่มีงานที่ต้องกรอกใบตรวจรับงาน" : tab === "open" ? "ไม่มีงานที่ยังไม่ปิด" : "ยังไม่มีงานที่ปิดแล้ว"}
           </div>
         ) : (
           <div className="space-y-4">
@@ -131,12 +131,12 @@ export default function OmFieldListPage() {
                               <div className="flex items-center gap-1.5 min-w-0 leading-tight">
                                 <I d={D.house} c="#0ea5e9" />
                                 <span className="text-base font-bold text-gray-900 truncate">
-                                  {r.house_number ?? "—"} · {r.customer_name || "ไม่มีชื่อในฐาน"}
+                                  {r.house_number ?? "—"} · {r.customer_name || "ไม่มีชื่อ"}
                                 </span>
                               </div>
                               <div className="flex items-center gap-1.5 text-sm text-gray-500 mt-0.5 min-w-0">
                                 <I d={D.phone} c={r.customer_phone ? "#10b981" : "#9ca3af"} />
-                                {r.customer_phone ? <span className="tabular-nums">{r.customer_phone}</span> : <span className="text-gray-400">ไม่มีเบอร์ในฐาน</span>}
+                                {r.customer_phone ? <span className="tabular-nums">{r.customer_phone}</span> : <span className="text-gray-400">ไม่มีเบอร์โทร</span>}
                               </div>
                             </div>
                             <span className={`ml-auto shrink-0 text-xs font-semibold px-2.5 py-0.5 rounded-full text-white ${statusTone(r.status)}`}>
@@ -163,7 +163,7 @@ export default function OmFieldListPage() {
         <p className="mt-4 text-xs text-gray-400 px-1">
           ★ แสดงงานที่ถึงคิวช่างแล้ว (นัดแล้ว · เข้างาน) ครบทุกใบ รวมที่เลยวันนัดแล้ว ·
           แท็บปิดแล้วแสดงช่วง 7 วันก่อนถึง 30 วันข้างหน้า ·
-          กดที่งานเพื่อเปิดใบตรวจรับงานและกรอกเช็คลิสต์
+          กดที่งานเพื่อเปิดและกรอกใบตรวจรับงาน
         </p>
       </div>
     </div>

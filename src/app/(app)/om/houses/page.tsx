@@ -16,12 +16,13 @@ import Dropdown from "@/components/ui/Dropdown";
 import Loading from "@/components/ui/Loading";
 import ModalBase from "@/components/ui/ModalBase";
 import SyncBar from "@/components/om/SyncBar";
-import { SystemCard, type HouseDetail } from "@/components/om/HouseSystemCard";
+import { SystemCard, SEGMENT, unitStatusLabel, type HouseDetail } from "@/components/om/HouseSystemCard";
 import { formatThaiDate } from "@/lib/utils/formatters";
 import { thDT } from "@/lib/om/service-view";
 import { formatSlotsRange } from "@/lib/time-slots";
 import { ORIGIN_OPTIONS, parseOrigin, type HouseOrigin } from "@/lib/om/house-origin";
 import { HOUSE_MANAGE_ROLES, OM_WORK_ROLES } from "@/lib/om/om-roles";
+import { statusLabel } from "@/lib/om/booking";
 import OmNewHouseModal from "@/components/om/OmNewHouseModal";
 
 interface Row {
@@ -43,7 +44,7 @@ interface Stats { total: number; nophone: number; nowarr: number; noinv: number;
 //   ใช้ร่วมกับแท็บ "อุปกรณ์" ของหน้ารายละเอียดงานบริการ — แก้ที่นั่นที่เดียว
 type Detail = HouseDetail;
 const ROLE: Record<string, string> = { owner: "เจ้าของ", resident: "ผู้อยู่อาศัย", contact: "ผู้ติดต่อ" };
-const SRC: Record<string, string> = { contract_base: "สิทธิ์ตั้งต้น", renewal: "ต่อสัญญา", purchase: "ซื้อเพิ่ม", import: "import", manual_adjust: "ปรับมือ", expire: "หมดอายุ" };
+const SRC: Record<string, string> = { contract_base: "สิทธิ์ตั้งต้น", renewal: "ต่อสัญญา", purchase: "ซื้อเพิ่ม", import: "นำเข้าข้อมูล", manual_adjust: "ปรับมือ", expire: "หมดอายุ" };
 
 // แท็บกรอง — key ตรงกับทั้ง /api/om/houses?filter= และธงใน /api/om/houses/groups
 const TABS: { k: string; t: string; s: keyof Stats }[] = [
@@ -51,10 +52,10 @@ const TABS: { k: string; t: string; s: keyof Stats }[] = [
   // ★ 25 ก.ย. 69 เอาแท็บ "ถึงคิวล้าง" ออก (ผู้ใช้เลือก B1) — นิยามไม่ตรงกับแท็บติดตามของหน้างานบริการ
   //   (ที่นี่ 1,546 vs ที่นั่น 919) คนเห็นสองตัวเลขเรื่องเดียวกัน · คิวล้างดูที่หน้างานบริการที่เดียว
   //   API ยังรับ filter=duewash อยู่ · หน้านี้เหลือแท็บคุณภาพข้อมูลล้วน ๆ
-  { k: "nophone", t: "ไม่มีเบอร์", s: "nophone" },
+  { k: "nophone", t: "ไม่มีเบอร์โทร", s: "nophone" },
   { k: "nowarr", t: "ไม่มีวันประกัน", s: "nowarr" },
-  { k: "noinv", t: "ไม่รู้อินเวอร์เตอร์", s: "noinv" },
-  { k: "nocust", t: "ยังไม่ผูกลูกค้า", s: "nocust" },
+  { k: "noinv", t: "ไม่มีข้อมูลอินเวอร์เตอร์", s: "noinv" },
+  { k: "nocust", t: "ยังไม่ระบุลูกค้า", s: "nocust" },
   // ★ 2 ก.ย.: บ้านที่จดว่าไม่ติดโซลาร์ 50 หลัง ถูกซ่อนออกไปแล้ว (is_om=0 + om_excluded_reason)
   //   เหลือ "รอตรวจ" = ไม่มีสเปกระบบและไม่เคยล้าง ยังจับไม่ได้ว่ามีโซลาร์จริงไหม
   { k: "nospec", t: "รอตรวจ · ไม่มีสเปก", s: "nospec" },
@@ -137,7 +138,7 @@ export default function OmHousesPage() {
     // ★ โหลดไม่ขึ้นต้องเด้ง toast ด้วย — แถบ error อยู่บนสุดของหน้า ถ้าเลื่อนลงมาจะไม่เห็นเลย
     //   (เคยเกิด 24 ก.ย. 69: view om_entitlement_balance ถูกย้อนรุ่น modal เปิดแล้วหายไปเฉย ๆ)
     try { setSel(await apiFetch(`/api/om/houses/${id}`)); }
-    catch (e) { const m = e instanceof Error ? e.message : String(e); setErr(m); say(`เปิดบ้านไม่ได้: ${m}`); setOpen(false); }
+    catch (e) { const m = e instanceof Error ? e.message : String(e); setErr(m); say(`ไม่สามารถเปิดข้อมูลบ้านได้: ${m}`); setOpen(false); }
   };
   // ★ เปิดบ้านจากลิงก์ (/om/houses?house=<id>) — ปุ่ม "แก้ไขข้อมูลบ้าน" ในหน้ารายละเอียดงานบริการ
   //   (แผน 20260928-04 ข้อ 6) · แก้ข้อมูลบ้าน/สิทธิ์ที่ modal นี้ที่เดียว หน้ารายละเอียดแสดงอย่างเดียว
@@ -177,7 +178,7 @@ export default function OmHousesPage() {
       });
       setSel(await apiFetch(`/api/om/houses/${sel.house.id}`));
       load(); loadGroups();
-      say(on ? "เอากลับเข้าระบบแล้ว" : "ซ่อนออกจากงาน O&M แล้ว — ข้อมูลยังอยู่ครบ");
+      say(on ? "นำกลับเข้าระบบแล้ว" : "ซ่อนออกจากงาน O&M แล้ว — ข้อมูลยังอยู่ครบ");
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   };
@@ -293,7 +294,7 @@ export default function OmHousesPage() {
         subtitle="O&M · ทะเบียนบ้านที่ติดโซลาร์ · ข้อมูลจาก REM / ระบบขาย / ไฟล์นำเข้า"
         search={q}
         onSearchChange={(v) => { setQ(v); setPage(1); }}
-        searchPlaceholder="ค้นบ้านเลขที่ · ชื่อลูกค้า · เบอร์"
+        searchPlaceholder="ค้นหาบ้านเลขที่ · ชื่อลูกค้า · เบอร์โทร"
         tabs={TABS.map((t) => ({ key: t.k, label: t.t, count: tabCount(t.s) ?? undefined }))}
         activeTab={filter}
         onTabChange={(k) => { setFilter(k); setGrp("__ALL__"); setPage(1); setQ(""); }}
@@ -346,7 +347,7 @@ export default function OmHousesPage() {
             <div className="hidden md:block overflow-x-auto">
               <table className="w-full min-w-[900px] border-collapse">
                 <thead><tr className="bg-gray-50 text-left">
-                  {[isVipGroup ? "ชื่อบ้าน / เจ้าของ" : "บ้านเลขที่", "ระบบ / kWp", "วันเริ่มประกัน", "ล้างล่าสุด", "สิทธิ์เหลือ", "ชื่อลูกค้า", "เบอร์", ""].map((h) => (
+                  {[isVipGroup ? "ชื่อบ้าน / เจ้าของ" : "บ้านเลขที่", "ระบบ / kWp", "วันเริ่มประกัน", "ล้างล่าสุด", "สิทธิ์คงเหลือ", "ชื่อลูกค้า", "เบอร์โทร", ""].map((h) => (
                     <th key={h} className="px-4 py-2 text-xs font-bold text-gray-500 border-b border-gray-200 whitespace-nowrap">{h}</th>
                   ))}
                 </tr></thead>
@@ -381,7 +382,7 @@ export default function OmHousesPage() {
                         <span className={`text-sm font-bold ${h.balance > 0 ? "text-primary-dark" : "text-gray-400"}`}>{Math.max(0, h.balance)}</span>
                       </td>
                       <td className="px-4 py-2 border-b border-gray-100 text-sm">
-                        {h.customer_name || <span className="text-gray-400">ยังไม่ผูก</span>}
+                        {h.customer_name || <span className="text-gray-400">ยังไม่ระบุ</span>}
                         {h.customer_count > 1 && <span className="ml-1 text-xxs font-bold px-2 rounded-full bg-gray-100 text-gray-500">+{h.customer_count - 1}</span>}
                       </td>
                       <td className="px-4 py-2 border-b border-gray-100 text-sm whitespace-nowrap">
@@ -404,7 +405,7 @@ export default function OmHousesPage() {
                     <div className="text-sm font-bold">{h.house_number ? `บ้าน ${h.house_number}` : (h.project_name || "—")}</div>
                     {(q || allSelected) && h.house_number && <div className="text-xs font-semibold text-blue-900/70 truncate">{h.project_name}</div>}
                     <div className="text-xs font-medium text-gray-500">
-                      {h.kwp_list ? `${h.kwp_list} kW` : "—"} · เหลือ <b>{Math.max(0, h.balance)}</b> · {h.customer_phone || "ไม่มีเบอร์"}
+                      {h.kwp_list ? `${h.kwp_list} kW` : "—"} · สิทธิ์คงเหลือ <b>{Math.max(0, h.balance)}</b> · {h.customer_phone || "ไม่มีเบอร์โทร"}
                     </div>
                     <div className="text-xs font-medium text-gray-500">
                       {(() => {
@@ -475,7 +476,7 @@ export default function OmHousesPage() {
               <span className="truncate">
                 {sel ? (sel.house.house_number ? `บ้าน ${sel.house.house_number}` : sel.house.project_name) : "กำลังโหลด…"}
               </span>
-              {sel && <span className="text-xxs font-bold px-2 rounded-full bg-gray-100 text-gray-500 shrink-0">id {sel.house.id}</span>}
+              {sel && <span className="text-xxs font-bold px-2 rounded-full bg-gray-100 text-gray-500 shrink-0">รหัส {sel.house.id}</span>}
               {sel?.house.is_vip && <span className="text-xxs font-bold px-2 rounded-full bg-amber-100 text-amber-700 shrink-0">VIP</span>}
             </div>
           }
@@ -506,9 +507,9 @@ export default function OmHousesPage() {
                     {canManage ? (
                       <button type="button" style={{ minHeight: 0 }} disabled={busy} onClick={() => setOm(true)}
                         className="h-8 px-3 rounded-full bg-primary text-white text-xs font-bold cursor-pointer disabled:opacity-50">
-                        ↩ เอากลับเข้าระบบ
+                        ↩ นำกลับเข้าระบบ
                       </button>
-                    ) : <span className="text-xxs text-amber-700">เอากลับเข้าระบบได้โดย admin / หัวหน้า</span>}
+                    ) : <span className="text-xxs text-amber-700">นำกลับเข้าระบบได้โดยผู้ดูแลระบบ / หัวหน้างาน</span>}
                   </div>
                 )}
 
@@ -524,16 +525,16 @@ export default function OmHousesPage() {
                         <span className="text-xs font-bold text-gray-700 truncate">โครงการ <small className="font-medium text-gray-400">{sel.house.project_id ? `รหัส ${sel.house.project_id}` : "ยังไม่มีรหัส"}</small></span>
                         <input value={sel.house.project_name ?? ""} disabled placeholder="ไม่อยู่ในโครงการ"
                           className="h-9 rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm font-semibold text-gray-500 truncate" /></label>
-                      <label className="grid gap-1"><span className="text-xs font-bold text-gray-700">segment</span>
+                      <label className="grid gap-1"><span className="text-xs font-bold text-gray-700">ประเภท</span>
                         <select value={sel.house.segment} onChange={(e) => upd({ segment: e.target.value })}
                           className="h-9 rounded-lg border border-gray-200 px-2 text-sm font-semibold outline-none focus:border-primary">
-                          {["house", "condo", "sales_office", "facility"].map((s) => <option key={s}>{s}</option>)}
+                          {["house", "condo", "sales_office", "facility"].map((s) => <option key={s} value={s}>{SEGMENT[s] ?? s}</option>)}
                         </select></label>
                       <label className="grid gap-1"><span className="text-xs font-bold text-gray-700">สถานะยูนิต</span>
                         <select value={sel.house.unit_status ?? ""} onChange={(e) => upd({ unit_status: e.target.value || null })}
                           className="h-9 rounded-lg border border-gray-200 px-2 text-sm font-semibold outline-none focus:border-primary">
                           <option value="">—</option>
-                          {["occupied", "ห้องว่าง", "บ้านตัวอย่าง", "พร้อมขาย"].map((s) => <option key={s}>{s}</option>)}
+                          {["occupied", "ห้องว่าง", "บ้านตัวอย่าง", "พร้อมขาย"].map((s) => <option key={s} value={s}>{unitStatusLabel(s)}</option>)}
                         </select></label>
                       {/* ★ แบบบ้าน · เนื้อที่ · พิกัด จาก REM (อ่านอย่างเดียว) — ช่างใช้ประเมินงาน + นำทาง */}
                       {(sel.house.model_name || sel.house.titledeed_area || sel.house.latitude) && (
@@ -547,7 +548,7 @@ export default function OmHousesPage() {
                         </div>
                       )}
                       <label className="grid gap-1 col-span-2">
-                        <span className="text-xs font-bold text-gray-700">note ทีม <small className="font-medium text-gray-400">— ลูกค้าไม่เห็น</small></span>
+                        <span className="text-xs font-bold text-gray-700">หมายเหตุ <small className="font-medium text-gray-400">— ลูกค้าไม่เห็น</small></span>
                         <input value={sel.house.note ?? ""} onChange={(e) => upd({ note: e.target.value })}
                           className="h-9 rounded-lg border border-gray-200 px-3 text-sm font-semibold outline-none focus:border-primary" /></label>
                       <div className="col-span-2 flex flex-wrap gap-x-6 gap-y-2">
@@ -561,12 +562,12 @@ export default function OmHousesPage() {
                     </div>
 
                     <Sec t={`ลูกค้า (${sel.customers.length})`} />
-                    {sel.customers.length === 0 && <div className="px-5 py-2 text-xs text-gray-400">ยังไม่ผูกลูกค้า</div>}
+                    {sel.customers.length === 0 && <div className="px-5 py-2 text-xs text-gray-400">ยังไม่ระบุลูกค้า</div>}
                     {sel.customers.map((c) => (
                       <div key={c.link_id} className="flex items-center gap-2 px-5 py-2 border-b border-gray-100 text-sm">
                         <div className="flex-1 min-w-0">
                           <b>{c.full_name}</b>
-                          <div className="text-xxs font-medium text-gray-500">{c.phone || "ไม่มีเบอร์"}</div>
+                          <div className="text-xxs font-medium text-gray-500">{c.phone || "ไม่มีเบอร์โทร"}</div>
                         </div>
                         <span className={`text-xxs font-bold px-2 rounded-full ${c.role === "owner" ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
                           {ROLE[c.role] ?? c.role}</span>
@@ -593,7 +594,7 @@ export default function OmHousesPage() {
                       </div>
                     )}
                     {sel.systems.length === 0 && (
-                      <div className="px-5 py-2 text-xs text-gray-400">ไม่มีระบบติดตั้ง{sel.house.has_solar ? "" : " (has_solar=0)"}</div>
+                      <div className="px-5 py-2 text-xs text-gray-400">ไม่มีระบบติดตั้ง</div>
                     )}
                     {sel.systems.map((s, i) => <SystemCard key={s.id} sel={sel} s={s} i={i} />)}
 
@@ -607,7 +608,7 @@ export default function OmHousesPage() {
                         {sel.house.wash_due
                           ? <b className="text-orange-600">ถึงรอบล้างแล้ว{sel.house.next_wash ? "" : " · ยังไม่เคยล้าง"}</b>
                           : <>ครบรอบถัดไป <b className="text-gray-900">{formatThaiDate(sel.house.next_wash)}</b></>}
-                        {sel.house.wash_due && balance <= 0 ? <span className="text-red-600"> · สิทธิ์หมด ต้องเสนอราคาก่อนนัด</span> : null}
+                        {sel.house.wash_due && balance <= 0 ? <span className="text-red-600"> · ไม่มีสิทธิ์คงเหลือ ต้องเสนอราคาก่อนนัด</span> : null}
                       </div>
                     )}
 
@@ -626,7 +627,7 @@ export default function OmHousesPage() {
                       {!sel.systems.length && <span className="text-xxs text-gray-400">ต้องมีระบบติดตั้งก่อน</span>}
                       {otherBals.map((b) => (
                         <span key={b.service_type_id} className="text-xxs font-bold px-2 py-0.5 rounded-full bg-sky-50 text-sky-700">
-                          {b.service_type_label} เหลือ {Math.max(0, b.balance)}/{b.total_granted}
+                          {b.service_type_label} คงเหลือ {Math.max(0, b.balance)}/{b.total_granted}
                         </span>
                       ))}
                     </div>
@@ -707,7 +708,7 @@ export default function OmHousesPage() {
                           <div key={b.id} className="flex gap-2 px-5 py-1.5 border-b border-gray-100 text-xs">
                             <span>{b.scheduled_at?.slice(0, 10)} · {formatSlotsRange(b.time_slot) || b.scheduled_at?.slice(11, 16)}</span>
                             <span className="font-semibold">{b.service_type || "—"}</span>
-                            <span className="ml-auto text-xxs font-bold px-2 rounded-full bg-gray-100 text-gray-500">{b.status}</span>
+                            <span className="ml-auto text-xxs font-bold px-2 rounded-full bg-gray-100 text-gray-500">{statusLabel(b.status)}</span>
                           </div>
                         ))}
                       </>

@@ -86,8 +86,8 @@ export default function SyncBar({ onChanged }: { onChanged?: () => void }) {
         ? await apiFetch("/api/om/rem/sync", { method: "POST", body: JSON.stringify({ limit: 5 }) })
         : await apiFetch("/api/om/sweep", { method: "POST", body: JSON.stringify({}) });
       setMsg(what === "rem"
-        ? `ดึงแล้ว ${r.projects} โครงการ`
-        : `กวาด ${r.scanned} · เข้าระบบ ${(r.results ?? []).filter((x: { action: string }) => x.action !== "queued").length} · เข้าคิว ${(r.results ?? []).filter((x: { action: string }) => x.action === "queued").length}`);
+        ? `ดึงข้อมูลแล้ว ${r.projects} โครงการ`
+        : `ตรวจสอบ ${r.scanned} รายการ · เพิ่มเข้าระบบ ${(r.results ?? []).filter((x: { action: string }) => x.action !== "queued").length} · เข้าคิวรอตรวจสอบ ${(r.results ?? []).filter((x: { action: string }) => x.action === "queued").length}`);
       await load(); onChanged?.();
     } catch (e) { setMsg(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(""); setTimeout(() => setMsg(""), 6000); }
@@ -116,13 +116,13 @@ export default function SyncBar({ onChanged }: { onChanged?: () => void }) {
           : remStale && remAge !== null ? agoText(remAge) : short(stats?.last_synced ?? null)}
       </button>
       <button type="button" style={{ minHeight: 0 }} onClick={() => setPop(pop === "sweep" ? "" : "sweep")} className={chip(pop === "sweep", sweepStale)}>
-        {dot(sweepStale)}<span className="max-md:hidden">กวาด</span>งานขาย {sweepStale && sweepAge !== null ? agoText(sweepAge) : short(lastSweep?.started_at ?? null)}
+        {dot(sweepStale)}<span className="max-md:hidden">ดึง</span>งานขาย {sweepStale && sweepAge !== null ? agoText(sweepAge) : short(lastSweep?.started_at ?? null)}
       </button>
       {/* ป้ายรอคนตัดสิน — โผล่เฉพาะตอนมีของค้าง */}
       {pending > 0 && (
         <Link href="/om/match-queue" style={{ minHeight: 0 }}
           className="h-7 px-2.5 rounded-full bg-active text-white font-bold inline-flex items-center whitespace-nowrap">
-          รอ<span className="max-md:hidden">คน</span>ตัดสิน {pending.toLocaleString()} →
+          รอตรวจสอบ {pending.toLocaleString()} →
         </Link>
       )}
 
@@ -133,7 +133,7 @@ export default function SyncBar({ onChanged }: { onChanged?: () => void }) {
               <div className="flex items-baseline justify-between gap-2">
                 <b className="text-gray-900">ทะเบียน REM</b>
                 <span className="text-xxs text-gray-500">
-                  {(stats?.units ?? 0).toLocaleString()} unit · {(stats?.transfers ?? 0).toLocaleString()} สัญญาโอน · {(stats?.owners ?? 0).toLocaleString()} เจ้าของ
+                  {(stats?.units ?? 0).toLocaleString()} ยูนิต · {(stats?.transfers ?? 0).toLocaleString()} สัญญาโอน · {(stats?.owners ?? 0).toLocaleString()} เจ้าของ
                 </span>
               </div>
               <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
@@ -142,42 +142,43 @@ export default function SyncBar({ onChanged }: { onChanged?: () => void }) {
               <div className="text-xxs text-gray-500">ดึงครบ {done} / {hProjects} โครงการบ้าน ({pct}%) · ล่าสุด {th(stats?.last_synced ?? null)}</div>
               {noKey ? (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xxs font-semibold text-amber-800">
-                  ยังไม่ได้ตั้ง REM_API_KEY บนเซิร์ฟเวอร์นี้ — ดึงทะเบียนไม่ได้ทั้งอัตโนมัติและกดเอง
-                  {remAge !== null && <> · ข้อมูลที่มีเป็นของ {agoText(remAge)}</>}
+                  ยังไม่ได้ตั้งค่าการเชื่อมต่อ REM — กรุณาติดต่อผู้ดูแลระบบ
+                  {remAge !== null && <> · ข้อมูลล่าสุดเมื่อ {agoText(remAge)}</>}
                 </div>
               ) : remStale && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xxs font-semibold text-amber-800">
-                  {remAge === null ? "ยังไม่เคยดึงทะเบียน" : `ไม่ได้ดึงมา ${agoText(remAge)}`} — ปกติดึงทุก 6 ชม.
+                  {remAge === null ? "ยังไม่เคยดึงข้อมูล" : `ดึงข้อมูลล่าสุดเมื่อ ${agoText(remAge)}`} — ปกติดึงทุก 6 ชั่วโมง
                 </div>
               )}
               <div>
                 <button type="button" style={{ minHeight: 0 }} disabled={busy !== "" || noKey} onClick={() => run("rem")}
                   className="h-8 px-3 rounded-full border border-gray-200 bg-white text-xs font-bold text-gray-700 cursor-pointer disabled:opacity-50">
-                  {busy === "rem" ? "กำลังดึง…" : "⟳ ดึงทะเบียนเดี๋ยวนี้"}
+                  {busy === "rem" ? "กำลังดึงข้อมูล…" : "⟳ ดึงข้อมูลทันที"}
                 </button>
               </div>
             </>
           ) : (
             <>
               <div className="flex items-baseline justify-between gap-2">
-                <b className="text-gray-900">กวาดงานขาย → O&amp;M</b>
+                <b className="text-gray-900">ดึงงานขายที่ติดตั้งเสร็จเข้า O&amp;M</b>
                 <span className="text-xxs text-gray-500">อัตโนมัติทุก 1 ชั่วโมง</span>
               </div>
-              <div className="text-xxs text-gray-500">งานที่ติดตั้งเสร็จแล้ว จะกลายเป็นบ้าน O&amp;M เอง · ไม่มั่นใจ = เข้าคิวรอคนตัดสิน</div>
+              <div className="text-xxs text-gray-500">งานขายที่ติดตั้งเสร็จแล้วจะเพิ่มเป็นบ้าน O&amp;M อัตโนมัติ · รายการที่ระบบไม่แน่ใจจะเข้าคิวรอตรวจสอบ</div>
               <div className="text-xxs text-gray-500">
                 รอบล่าสุด {th(lastSweep?.started_at ?? null)}{lastSweep?.message ? ` · ${lastSweep.message}` : ""}
               </div>
               {sweepStale && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xxs font-semibold text-amber-800">
-                  {!lastSweep ? "ยังไม่เคยกวาด"
-                    : lastSweep.status !== "ok" ? `รอบล่าสุดไม่สำเร็จ (${lastSweep.status})`
-                    : `ไม่ได้กวาดมา ${agoText(sweepAge ?? 0)}`} — ปกติกวาดทุก 1 ชม.
+                  {!lastSweep ? "ยังไม่เคยดึงข้อมูล"
+                    : lastSweep.status === "running" ? "รอบล่าสุดยังทำงานไม่เสร็จ"
+                    : lastSweep.status !== "ok" ? "รอบล่าสุดไม่สำเร็จ"
+                    : `ดึงข้อมูลล่าสุดเมื่อ ${agoText(sweepAge ?? 0)}`} — ปกติดึงทุก 1 ชั่วโมง
                 </div>
               )}
               <div>
                 <button type="button" style={{ minHeight: 0 }} disabled={busy !== ""} onClick={() => run("sweep")}
                   className="h-8 px-3 rounded-full border border-gray-200 bg-white text-xs font-bold text-gray-700 cursor-pointer disabled:opacity-50">
-                  {busy === "sweep" ? "กำลังกวาด…" : "▶ กวาดเดี๋ยวนี้"}
+                  {busy === "sweep" ? "กำลังดึงข้อมูล…" : "▶ ดึงข้อมูลทันที"}
                 </button>
               </div>
             </>

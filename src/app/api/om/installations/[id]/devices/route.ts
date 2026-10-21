@@ -95,10 +95,10 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
   const body = await req.json().catch(() => ({})) as { type?: unknown; items?: unknown };
   const key = body.type as DeviceKey;
   if (!DEVICE_KEYS.includes(key)) {
-    return NextResponse.json({ error: `type ต้องเป็น ${DEVICE_KEYS.join("|")}` }, { status: 400 });
+    return NextResponse.json({ error: "ข้อมูลไม่ครบหรือไม่ถูกต้อง" }, { status: 400 });
   }
   const raw = Array.isArray(body.items) ? (body.items as InItem[]) : [];
-  if (raw.length > MAX_ITEMS) return NextResponse.json({ error: `เกิน ${MAX_ITEMS} รายการ` }, { status: 400 });
+  if (raw.length > MAX_ITEMS) return NextResponse.json({ error: `บันทึกได้ไม่เกิน ${MAX_ITEMS} รายการ` }, { status: 400 });
 
   const items = raw.map((it) => ({
     id: Number(it?.id) || null,

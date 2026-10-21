@@ -9,6 +9,7 @@ import { resolveOmNotifications } from "@/lib/om/notifications";
 import { toThaiOffset } from "@/lib/om/booking";
 import { omSlotsFor, teamClash } from "@/lib/om/time-slot";
 import { formatSlotsRange } from "@/lib/time-slots";
+import { omErrorText } from "@/lib/om/api-error";
 
 // เลื่อนนัดจากปุ่ม Reschedule ในหน้ารายละเอียด (แผน 20260928-04 · ผู้ใช้เคาะ "ทำตามแนะนำ" ข้อ 4 ข)
 // ★ ใช้กติกาในหน้าตั้งค่า O&M (กลุ่ม "การเลื่อนนัด") กับการเลื่อนโดยทีมงาน:
@@ -102,19 +103,19 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   const cur = await load(db, id);
   if (!cur) return NextResponse.json({ error: "ไม่พบใบงานนี้" }, { status: 404 });
   if (!OPEN.includes(cur.status))
-    return NextResponse.json({ error: "เลื่อนนัดได้เฉพาะงานที่ยังไม่เริ่ม (รอยืนยันนัด / นัดแล้ว)" }, { status: 400 });
+    return NextResponse.json({ error: "เลื่อนนัดได้เฉพาะใบงานที่ยังไม่เริ่มงาน (รอยืนยันนัด / นัดแล้ว)" }, { status: 400 });
 
   const picked = await omSlotsFor(db, b.scheduled_at, b.time_slot);
   if ("error" in picked) return NextResponse.json({ error: picked.error }, { status: 400 });
   const when = toThaiOffset(picked.at);
   if (!when || Number.isNaN(new Date(when).getTime()))
-    return NextResponse.json({ error: "ต้องระบุวันเวลานัดใหม่" }, { status: 400 });
+    return NextResponse.json({ error: "กรุณาระบุวันเวลานัดใหม่" }, { status: 400 });
   if (new Date(when).getTime() < Date.now())
     return NextResponse.json({ error: "วันเวลานัดใหม่ต้องเป็นเวลาข้างหน้า" }, { status: 400 });
   // เวลาเริ่มเดิม แต่จองช่องเพิ่ม/ลด = เลื่อนได้ (เช่น ขยายจาก 1 ชม. เป็น 2 ชม.)
   if (cur.scheduled_at && new Date(when).getTime() === new Date(cur.scheduled_at).getTime()
       && (picked.slot ?? "") === (cur.time_slot ?? ""))
-    return NextResponse.json({ error: "ยังเป็นวันเวลาเดิม" }, { status: 400 });
+    return NextResponse.json({ error: "วันเวลาที่เลือกตรงกับนัดเดิม กรุณาเลือกวันเวลาใหม่" }, { status: 400 });
   // ★ 21 ต.ค. 69 นัดทับเวลาไม่ได้ (แผน 20261021-02 รอบ 3) — ใบตัวเองไม่นับ
   const clash = await teamClash(db, when, picked.slot, id);
   if (clash) return NextResponse.json({ error: clash }, { status: 409 });
@@ -149,7 +150,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     await tx.commit();
   } catch (e) {
     await tx.rollback().catch(() => {});
-    return NextResponse.json({ error: e instanceof Error ? e.message : "เลื่อนนัดไม่สำเร็จ" }, { status: 500 });
+    return NextResponse.json({ error: omErrorText(e, "เลื่อนนัดไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "POST /api/om/bookings/[id]/reschedule") }, { status: 500 });
   }
 
   // ── แจ้งลูกค้าทาง LINE — หลัง commit เท่านั้น · ส่งไม่ได้ไม่ทำให้การเลื่อนนัดล้ม ──

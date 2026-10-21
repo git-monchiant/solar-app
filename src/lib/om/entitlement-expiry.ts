@@ -1,4 +1,5 @@
 import { sql } from "@/lib/db";
+import { formatThaiDate } from "@/lib/utils/formatters";
 
 // ตัดสิทธิ์ที่หมดอายุ (แผน docs/plan/20260924-02 เฟส 4 · งานเก็บตก)
 //
@@ -45,9 +46,11 @@ export async function expireOmGrants(db: Db): Promise<{ checked: number; forfeit
         SELECT ISNULL(SUM(balance), 0) b FROM om_entitlement_balance
          WHERE installation_id = @inst AND service_type_id = @t`)).recordset[0].b);
       const cut = Math.max(0, Math.min(g.qty - used, balance));
+      // ★ 21 ต.ค. 69 แผน 20261021-01: ข้อความขึ้นในประวัติสิทธิ์ — วันที่แบบไทย (เดิม 2026-10-22)
+      const expiry = formatThaiDate(g.valid_to);
       const reason = cut > 0
-        ? `สิทธิ์หมดอายุ ${g.valid_to} · ไม่ได้ใช้ ${cut} ครั้ง${g.reason ? ` · ${g.reason}` : ""}`
-        : `ตรวจหมดอายุ ${g.valid_to} · ใช้ครบแล้ว${g.reason ? ` · ${g.reason}` : ""}`;
+        ? `สิทธิ์หมดอายุ ${expiry} · ไม่ได้ใช้ ${cut} ครั้ง${g.reason ? ` · ${g.reason}` : ""}`
+        : `ตรวจสอบสิทธิ์หมดอายุ ${expiry} · ใช้ครบแล้ว${g.reason ? ` · ${g.reason}` : ""}`;
       const ins = await new sql.Request(tx)
         .input("inst", sql.Int, g.installation_id).input("q", sql.Int, -cut).input("t", sql.Int, g.type_id)
         .input("r", sql.NVarChar(300), reason.slice(0, 300)).input("of", sql.Int, g.id)
@@ -57,7 +60,7 @@ export async function expireOmGrants(db: Db): Promise<{ checked: number; forfeit
         await new sql.Request(tx)
           .input("h", sql.Int, g.house_id).input("i", sql.Int, g.installation_id)
           .input("ref", sql.Int, ins.recordset[0].id).input("q", sql.Int, -cut)
-          .input("d", sql.NVarChar(400), `สิทธิ์หมดอายุ −${cut} (หมด ${g.valid_to})`)
+          .input("d", sql.NVarChar(400), `สิทธิ์หมดอายุ −${cut} (หมดอายุ ${expiry})`)
           .input("rs", sql.NVarChar(300), reason.slice(0, 300))
           // action ต้องเป็น add/edit/remove (CK_om_ent_hist_action) — หมดอายุคือ "เพิ่มแถวติดลบ" ลง ledger จึงเป็น add
           //   ส่วนคำว่าหมดอายุอยู่ใน detail · actor = NULL = ระบบ

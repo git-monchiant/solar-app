@@ -51,12 +51,12 @@ type Meta = { label: string; hint?: string; unit?: string };
 const SECTIONS: { title: string; desc: string; items: Record<string, Meta> }[] = [
   {
     title: "การนัดหมาย",
-    desc: "ปฏิทินเลือกวันนัด · เลื่อนนัดเกินที่ตั้ง ระบบเตือนแต่ไม่ห้าม",
+    desc: "ใช้กับปฏิทินเลือกวันนัด · หากเลื่อนนัดเกินที่กำหนด ระบบจะแจ้งเตือนแต่ไม่บังคับ",
     items: {
       "booking.advance_days_max":    { label: "นัดล่วงหน้าได้ไกลสุด", unit: "วัน", hint: "วันที่เกินนี้เลือกในปฏิทินไม่ได้" },
-      "reschedule.max_times":        { label: "เลื่อนนัดได้", unit: "ครั้ง/นัด", hint: "เกินแล้วขึ้นเตือน + จดในประวัติ · 0 = ไม่จำกัด" },
-      "reschedule.min_hours_before": { label: "เลื่อนก่อนถึงนัดอย่างน้อย", unit: "ชั่วโมง", hint: "กระชั้นกว่านี้ขึ้นเตือน · 0 = ไม่เตือน" },
-      "reschedule.notify_line":      { label: "แจ้งลูกค้าทาง LINE เมื่อเลื่อนนัด", hint: "เฉพาะบ้านที่ลูกค้าผูก LINE แล้ว" },
+      "reschedule.max_times":        { label: "เลื่อนนัดได้", unit: "ครั้ง/นัด", hint: "หากเกินกำหนด ระบบจะแจ้งเตือนและบันทึกในประวัติ · ใส่ 0 หากไม่จำกัด" },
+      "reschedule.min_hours_before": { label: "เลื่อนก่อนถึงนัดอย่างน้อย", unit: "ชั่วโมง", hint: "หากกระชั้นกว่านี้ ระบบจะแจ้งเตือน · ใส่ 0 หากไม่ต้องการแจ้งเตือน" },
+      "reschedule.notify_line":      { label: "แจ้งลูกค้าทาง LINE เมื่อเลื่อนนัด", hint: "เฉพาะบ้านที่ลูกค้าเชื่อมต่อ LINE แล้ว" },
     },
   },
   {
@@ -64,19 +64,19 @@ const SECTIONS: { title: string; desc: string; items: Record<string, Meta> }[] =
     desc: "วันนัดโทรครั้งหน้า ถ้าไม่ได้เลือกวันเอง",
     items: {
       "call.retry_days":    { label: "ไม่รับสาย นัดโทรใหม่อีก", unit: "วัน" },
-      "call.max_attempts":  { label: "ไม่รับสายครบ ย้ายไปติดต่อไม่ได้", unit: "ครั้ง", hint: "เฉพาะบ้านที่ยังไม่มีงานเดินหน้า" },
+      "call.max_attempts":  { label: "ไม่รับสายครบ ย้ายไปแท็บติดต่อไม่ได้", unit: "ครั้ง", hint: "เฉพาะบ้านที่ยังไม่มีใบงานที่ดำเนินการอยู่" },
       "call.postpone_days": { label: "ลูกค้าขอเลื่อน นัดโทรใหม่อีก", unit: "วัน" },
     },
   },
   {
-    title: "ซิงค์ข้อมูลจาก REM",
-    desc: "งานเบื้องหลัง · บ้านโอนใหม่เข้าระบบเอง ไม่ต้องกด",
+    title: "ดึงข้อมูลจาก REM",
+    desc: "ระบบทำงานเบื้องหลัง · บ้านที่โอนใหม่เข้าระบบอัตโนมัติ",
     items: {
       "sync.rem_auto":      { label: "ดึงทะเบียนโอน/เจ้าของอัตโนมัติ" },
       "sync.promo_auto":    { label: "ดึงของแถม/โซลาร์อัตโนมัติ" },
-      "sync.rem_every_min": { label: "ดึงทะเบียน + ของแถมทุก", unit: "นาที" },
-      "sync.rem_batch":     { label: "ดึงต่อรอบ", unit: "โครงการ", hint: "สูงสุด 200 · มากกว่าจำนวนโครงการ = ครบทุกรอบ" },
-      "sync.sweep_auto":    { label: "กวาดงานขายที่ติดตั้งเสร็จเข้า O&M", hint: "ทุก 1 ชั่วโมง (คงที่)" },
+      "sync.rem_every_min": { label: "ดึงทะเบียนและของแถมทุก", unit: "นาที" },
+      "sync.rem_batch":     { label: "ดึงต่อรอบ", unit: "โครงการ", hint: "สูงสุด 200 · หากมากกว่าจำนวนโครงการ จะดึงครบทุกโครงการในรอบเดียว" },
+      "sync.sweep_auto":    { label: "ดึงงานขายที่ติดตั้งเสร็จเข้า O&M", hint: "ทุก 1 ชั่วโมง (คงที่)" },
     },
   },
 ];
@@ -86,7 +86,7 @@ const minutesHint = (v: Setting["value"]) => {
   const n = Number(v);
   if (!Number.isFinite(n) || n < 60) return null;
   const h = Math.floor(n / 60), m = n % 60;
-  return `= ทุก ${h} ชั่วโมง${m ? ` ${m} นาที` : ""}`;
+  return `คิดเป็นทุก ${h} ชั่วโมง${m ? ` ${m} นาที` : ""}`;
 };
 
 // ★ 15 ต.ค. 69 ผู้ใช้สั่งเอาป้าย "รอ business ยืนยัน" ออก (call.* ยังมี pending_biz = 1 ในฐาน แต่ไม่แสดง)
@@ -180,7 +180,7 @@ function RulesTab() {
       rows: Object.entries(s.items).flatMap(([k, m]) => { const x = byKey.get(k); return x ? [{ x, m }] : []; }),
     })),
     {
-      title: "อื่น ๆ", desc: "ค่าที่เพิ่มในฐานแต่หน้านี้ยังไม่ได้จัดกลุ่ม",
+      title: "อื่น ๆ", desc: "ค่าที่เพิ่มในระบบแต่ยังไม่ได้จัดกลุ่ม",
       rows: others.map((x) => ({ x, m: { label: x.label_th, hint: x.note ?? undefined } as Meta })),
     },
   ].filter((s) => s.rows.length > 0);
@@ -208,7 +208,7 @@ function RulesTab() {
       </div>
 
       <p className="text-xs text-gray-400 px-1">
-        แก้แล้วมีผลทันที ไม่ต้อง deploy ใหม่ · ช่องตัวเลขบันทึกเมื่อกด Enter หรือคลิกออกจากช่อง
+        การแก้ไขมีผลทันที · ช่องตัวเลขจะบันทึกเมื่อกด Enter หรือคลิกออกจากช่อง
       </p>
     </div>
   );
@@ -218,9 +218,9 @@ function RulesTab() {
 //   กติกา (ของเดิม) · ค่าขัดกัน (414 รายการรอตัดสิน) · โครงการ (แก้ชื่อ/ดูสถานะ sync) · คิวจับคู่
 const TABS = [
   { k: "rules", t: "กติกา" },
-  { k: "conflicts", t: "ค่าขัดกัน" },
+  { k: "conflicts", t: "ข้อมูลไม่ตรงกัน" },
   { k: "projects", t: "โครงการ" },
-  { k: "queue", t: "คิวจับคู่" },
+  { k: "queue", t: "รอตรวจสอบบ้าน" },
   // ★ 15 ต.ค. 69 ผู้ใช้สั่งซ่อนแท็บ "ใบตรวจรับงาน" — มีใบกลางใบเดียว ไม่เคยแก้ตั้งแต่ 16 ก.ย.
   //   ซ่อนแค่แท็บ: ช่างกรอกขั้น 05 / กันปิดงานไม่ครบ / PDF อ่านใบจากฐานตรง ไม่ผ่านแท็บนี้
   //   components/om/JobFormsTab.tsx + /api/om/job-forms ยังอยู่ครบ — เปิดคืน = ใส่ { k: "forms", t: "ใบตรวจรับงาน" }

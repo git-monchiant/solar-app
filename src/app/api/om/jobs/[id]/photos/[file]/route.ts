@@ -41,7 +41,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string;
     return NextResponse.json({ error: "คำขอไม่ถูกต้อง" }, { status: 400 });
 
   if (!(await allowed(req, bookingId, file)))
-    return NextResponse.json({ error: "ไม่มีสิทธิ์ดูรูปนี้" }, { status: 403 });
+    return NextResponse.json({ error: "ไม่มีสิทธิ์เข้าถึงรูปนี้" }, { status: 403 });
 
   const p = await photoPath(file);
   // ★ 404 ห้ามถูก cache — ไฟล์ที่ยังไม่มาแล้วมาทีหลังจะโดนจำว่าไม่มีอยู่เป็นชั่วโมง

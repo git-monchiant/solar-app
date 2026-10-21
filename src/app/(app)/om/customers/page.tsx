@@ -22,8 +22,8 @@ interface Row {
 // ตัวกรองเดิม (ชิปกดสลับ) → แท็บแบบหน้าบ้าน · "all" = ไม่กรอง (API รับค่าว่าง)
 const TABS = [
   { k: "all", t: "ทั้งหมด" },
-  { k: "nophone", t: "ไม่มีเบอร์" }, { k: "bad", t: "ชื่อน่าสงสัย" },
-  { k: "line", t: "ผูก LINE" }, { k: "multi", t: "หลายบ้าน" }, { k: "hidden", t: "ที่ซ่อนไว้" },
+  { k: "nophone", t: "ไม่มีเบอร์โทร" }, { k: "bad", t: "ชื่อต้องตรวจสอบ" },
+  { k: "line", t: "เชื่อมต่อ LINE แล้ว" }, { k: "multi", t: "หลายบ้าน" }, { k: "hidden", t: "ที่ซ่อนไว้" },
 ];
 
 export default function OmCustomersPage() {
@@ -71,10 +71,10 @@ export default function OmCustomersPage() {
       {/* หัวจอกลางชุดเดียวกับหน้าบ้าน/งานบริการ — หัวเรื่อง = ชื่อเมนูที่ active · ตัวกรองเดิมเป็นแท็บ */}
       <ListPageHeader
         title={activeItem?.label ?? "ลูกค้า"}
-        subtitle="O&M · ทะเบียนลูกค้า · สิทธิ์ล้างดูที่หน้าบ้าน / ระบบติดตั้ง"
+        subtitle="O&M · ทะเบียนลูกค้า · ดูสิทธิ์ล้างแผงได้ที่หน้าบ้าน / ระบบติดตั้ง"
         search={q}
         onSearchChange={(v) => { setQ(v); setPage(1); }}
-        searchPlaceholder="ค้นชื่อ · เบอร์ · บ้านเลขที่ · โครงการ"
+        searchPlaceholder="ค้นหาชื่อ · เบอร์โทร · บ้านเลขที่ · โครงการ"
         tabs={TABS.map((t) => ({ key: t.k, label: t.t }))}
         activeTab={filter}
         onTabChange={(k) => { setFilter(k); setPage(1); }}
@@ -102,7 +102,7 @@ export default function OmCustomersPage() {
             <div className="hidden md:block overflow-x-auto">
               <table className="w-full min-w-[860px] border-collapse">
                 <thead><tr className="bg-gray-50 text-left">
-                  {["ชื่อ", "เบอร์โทร", "บ้านที่ผูก", "สถานะ", ""].map((h) => (
+                  {["ชื่อ", "เบอร์โทร", "บ้านที่เชื่อมโยง", "สถานะ", ""].map((h) => (
                     <th key={h} className="px-4 py-2 text-xs font-bold text-gray-500 border-b border-gray-200 whitespace-nowrap">{h}</th>
                   ))}
                 </tr></thead>
@@ -116,7 +116,7 @@ export default function OmCustomersPage() {
                       <td className="px-4 py-2 border-b border-gray-100 text-sm">
                         {c.phone ? <>
                           <b>{c.phone}</b>{c.phone_count > 1 && <span className="ml-1 text-xxs font-bold px-2 rounded-full bg-gray-100 text-gray-500">+{c.phone_count - 1}</span>}
-                        </> : <span className="text-amber-600 font-bold text-xs">ไม่มีเบอร์</span>}
+                        </> : <span className="text-amber-600 font-bold text-xs">ไม่มีเบอร์โทร</span>}
                       </td>
                       <td className="px-4 py-2 border-b border-gray-100 text-sm">
                         {c.house_count > 1 ? <b>{c.house_count} หลัง</b> : (c.first_house || "—")}
@@ -141,7 +141,7 @@ export default function OmCustomersPage() {
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-bold">{c.full_name || "— ไม่มีชื่อ —"}</div>
                     <div className="text-xs font-medium text-gray-500">
-                      {c.phone || "⚠ ไม่มีเบอร์"} · {c.house_count > 1 ? `${c.house_count} หลัง` : (c.first_house || "—")}
+                      {c.phone || "⚠ ไม่มีเบอร์โทร"} · {c.house_count > 1 ? `${c.house_count} หลัง` : (c.first_house || "—")}
                     </div>
                     <div className="mt-0.5 flex gap-1 flex-wrap">
                       {c.line_linked ? <span className="text-xxs font-bold px-2 rounded-full bg-teal-50 text-teal-700">LINE</span> : null}

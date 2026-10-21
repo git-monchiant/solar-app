@@ -81,7 +81,7 @@ const houseKw = (kwpList: string | null) =>
 
 const tierLabel = (p: Pkg) => `${p.kw_min.toFixed(2)}–${p.kw_max.toFixed(2)} kW`;
 const planLabel = (p: Pkg) => p.plan_type === "contract"
-  ? `สัญญา ${p.contract_months ?? 12} เดือน · เข้า ${p.visits ?? 2} ครั้ง` : "รายครั้ง";
+  ? `สัญญา ${p.contract_months ?? 12} เดือน · ให้บริการ ${p.visits ?? 2} ครั้ง` : "รายครั้ง";
 
 export default function OmQuotationPanel({ item, skip, onSaved, onReload }: {
   item: Item;
@@ -192,9 +192,9 @@ export default function OmQuotationPanel({ item, skip, onSaved, onReload }: {
         ? { title: "ยืนยันการอนุมัติ", variant: "success", confirmText: "อนุมัติ",
             message: q.status === "pending_solar_sup"
               ? "ยืนยันว่า Solar Manager ตรวจเอกสารแล้ว และส่งต่อให้ Sale Manager อนุมัติขั้นสุดท้าย"
-              : "ยืนยันว่าได้ตรวจสอบ Package O&M ราคา และส่วนลดของใบนี้แล้ว" }
-        : { title: "สร้าง Revision ใหม่", confirmText: "สร้าง Revision",
-            message: `คัดลอก ${q.doc_no} เป็นใบร่างเลขที่ใหม่ แก้แล้วต้องส่งอนุมัติใหม่ทั้งสองขั้น` });
+              : "ยืนยันว่าได้ตรวจสอบแพ็กเกจ O&M ราคา และส่วนลดของใบเสนอราคานี้แล้ว" }
+        : { title: "สร้างฉบับแก้ไข", confirmText: "สร้างฉบับแก้ไข",
+            message: `คัดลอก ${q.doc_no} เป็นฉบับร่างเลขที่ใหม่ · เมื่อแก้ไขแล้วต้องส่งอนุมัติใหม่ทั้งสองขั้น` });
       if (!ok) return;
     }
     run(async () => {
@@ -202,14 +202,14 @@ export default function OmQuotationPanel({ item, skip, onSaved, onReload }: {
         body: JSON.stringify({ action, note, certify: action === "approve" }) });
       return action === "approve" ? `อนุมัติ ${q.doc_no} แล้ว`
         : action === "changes_required" ? `ส่ง ${q.doc_no} กลับให้แก้ไขแล้ว`
-          : `สร้าง Revision จาก ${q.doc_no} แล้ว`;
+          : `สร้างฉบับแก้ไขจาก ${q.doc_no} แล้ว`;
     });
   };
 
   /** ส่งขออนุมัติทุกฉบับที่ร่าง/ถูกส่งกลับ ทีเดียว — แบบปุ่มยาวของฝั่งขาย */
   const submitAll = async () => {
     const ok = await dialog.confirm({ title: "ส่งใบเสนอราคาขออนุมัติ", confirmText: "ส่งอนุมัติ",
-      message: `ส่ง ${readyQuotes.map((q) => q.doc_no).join(", ")} ให้ Solar Manager ตรวจ แล้วต่อ Sale Manager · ระหว่างรออนุมัติแก้ใบไม่ได้ จนกว่าผู้อนุมัติจะส่งกลับ` });
+      message: `ส่ง ${readyQuotes.map((q) => q.doc_no).join(", ")} ให้ Solar Manager ตรวจสอบ แล้วส่งต่อ Sale Manager อนุมัติ · ระหว่างรออนุมัติจะแก้ไขใบเสนอราคาไม่ได้ จนกว่าผู้อนุมัติจะส่งกลับ` });
     if (!ok) return;
     run(async () => {
       // ส่งทีละใบ — พังกลางทางบอกว่าใบไหนส่งไปแล้ว (จอโหลดใหม่ให้ใน run) ใบที่เหลือกดส่งอีกรอบได้
@@ -229,7 +229,7 @@ export default function OmQuotationPanel({ item, skip, onSaved, onReload }: {
 
   const remove = async (q: Quote) => {
     const ok = await dialog.confirm({ title: "ลบฉบับร่าง", variant: "danger", confirmText: "ลบ",
-      message: `ลบใบเสนอราคาฉบับร่าง ${q.doc_no} (ชุด ${q.option_no}) ถาวร? กู้คืนไม่ได้` });
+      message: `ต้องการลบใบเสนอราคาฉบับร่าง ${q.doc_no} (ชุด ${q.option_no}) หรือไม่ ลบแล้วกู้คืนไม่ได้` });
     if (!ok) return;
     run(async () => {
       await apiFetch(`/api/om/quotations/${q.id}`, { method: "DELETE" });
@@ -253,13 +253,13 @@ export default function OmQuotationPanel({ item, skip, onSaved, onReload }: {
   const nextQuoteBtn = canIssue
     ? <button type="button" style={{ minHeight: 0 }} onClick={() => setEditor({ option: 1, quote: null, fresh: true })}
         className="ml-auto h-8 px-3.5 rounded-lg bg-primary text-white text-xs font-bold cursor-pointer">ออกใบเสนอราคางานถัดไป</button>
-    : <b className="ml-auto text-xs">รอ Sale ออกใบ</b>;
+    : <b className="ml-auto text-xs">รอฝ่ายขายออกใบเสนอราคา</b>;
 
   if (skip && !item.q_id) {
     if (nextNeedsQuote) {
       return (
         <div className="text-sm text-gray-600 leading-relaxed flex items-center gap-2 flex-wrap">
-          <span>งานล่าสุด<b>ใช้สิทธิ์ฟรี</b>และจบแล้ว · บ้านนี้<b>สิทธิ์ล้างหมด</b> งานถัดไปต้องออกใบเสนอราคาก่อนนัด</span>
+          <span>ใบงานล่าสุด<b>ใช้สิทธิ์ฟรี</b>และสิ้นสุดแล้ว · บ้านนี้<b>ไม่มีสิทธิ์ล้างคงเหลือ</b> งานถัดไปต้องออกใบเสนอราคาก่อนนัด</span>
           {nextQuoteBtn}
           {editorEl}
         </div>
@@ -274,8 +274,8 @@ export default function OmQuotationPanel({ item, skip, onSaved, onReload }: {
       <div className="text-sm text-gray-600 leading-relaxed">
         {isRepair
           ? <>งาน<b>ซ่อมนอกประกัน</b>ต้องมีใบเสนอราคา</>
-          : <>บ้านนี้<b>สิทธิ์หมดแล้ว</b> งานถัดไปต้องมีใบเสนอราคา</>} — <b>รอ Sale ออกใบ</b>
-        <div className="mt-1 text-xs text-gray-400">ใบเสนอราคา O&amp;M ออกได้เฉพาะ Sale</div>
+          : <>บ้านนี้<b>ไม่มีสิทธิ์คงเหลือ</b> งานถัดไปต้องมีใบเสนอราคา</>} — <b>รอฝ่ายขายออกใบเสนอราคา</b>
+        <div className="mt-1 text-xs text-gray-400">ใบเสนอราคา O&amp;M ออกได้เฉพาะฝ่ายขาย</div>
       </div>
     );
   }
@@ -294,24 +294,24 @@ export default function OmQuotationPanel({ item, skip, onSaved, onReload }: {
           </span>{" "}
           <span className="text-red-500">*</span>
         </div>
-        <div className="hidden md:block text-xxs text-gray-400 text-right">อนุมัติให้ครบทุกฉบับ แล้วส่งให้ทีมขายเลือกในขั้น 03 · ชำระเต็มจำนวนก่อนวันนัดหมาย</div>
+        <div className="hidden md:block text-xxs text-gray-400 text-right">ต้องอนุมัติครบทุกฉบับก่อนส่งให้ฝ่ายขายเลือกในขั้น 03 · ชำระเต็มจำนวนก่อนวันนัดหมาย</div>
       </div>
 
       {actErr && <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">{actErr}</div>}
 
       {item.job_status === "cancelled" && current.length > 0 && (
         <div className="rounded-xl bg-gray-50 border border-gray-200 px-3.5 py-2.5 text-sm text-gray-600 flex items-center gap-2 flex-wrap">
-          <span>ลูกค้าไม่เอา — ใบงาน #{item.booking_id} และใบเสนอราคาของใบงานนี้<b>ยกเลิกแล้ว</b></span>
+          <span>ลูกค้าปฏิเสธบริการ — ใบงานเลขที่ {item.booking_id} และใบเสนอราคาของใบงานนี้<b>ยกเลิกแล้ว</b></span>
           {canIssue && (
             <button type="button" style={{ minHeight: 0 }} onClick={() => setEditor({ option: 1, quote: null, fresh: true })}
-              className="ml-auto h-8 px-3.5 rounded-lg bg-primary text-white text-xs font-bold cursor-pointer">ลูกค้าเปลี่ยนใจ? ออกใบเสนอราคาใหม่</button>
+              className="ml-auto h-8 px-3.5 rounded-lg bg-primary text-white text-xs font-bold cursor-pointer">ออกใบเสนอราคาใหม่</button>
           )}
         </div>
       )}
       {/* ใบของงานที่ปิดไปแล้ว — บ้านสิทธิ์หมด งานถัดไปต้องมีใบใหม่ (ใบเดิมแก้ไม่ได้แล้ว) */}
       {item.job_status === "closed" && nextNeedsQuote && current.length > 0 && (
         <div className="rounded-xl bg-gray-50 border border-gray-200 px-3.5 py-2.5 text-sm text-gray-600 flex items-center gap-2 flex-wrap">
-          <span>ใบนี้เป็นของใบงาน #{item.booking_id} ที่ปิดแล้ว · บ้านนี้<b>สิทธิ์ล้างหมด</b> งานถัดไปต้องออกใบใหม่</span>
+          <span>ใบเสนอราคานี้เป็นของใบงานเลขที่ {item.booking_id} ที่ปิดแล้ว · บ้านนี้<b>ไม่มีสิทธิ์ล้างคงเหลือ</b> งานถัดไปต้องออกใบเสนอราคาใหม่</span>
           {nextQuoteBtn}
         </div>
       )}
@@ -503,7 +503,7 @@ function QuoteCard({ quote: q, busy, chosen, dimmed, canEdit, canDelete, canRevi
       <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50/70 p-3">
         <div className="text-xxs font-semibold text-gray-400">แพ็กเกจหลัก</div>
         <div className="mt-1 font-bold text-sm text-gray-900 break-words">
-          {pkgPrice > 0 ? q.package_name_snapshot : "ไม่ใช้แพ็กเกจ — ใส่รายการเอง"}
+          {pkgPrice > 0 ? q.package_name_snapshot : "ไม่ใช้แพ็กเกจ — ระบุรายการเอง"}
         </div>
         <div className="mt-1 text-xxs text-gray-500">
           {pkgPrice > 0 ? `${formatTHB(pkgPrice)} บาท` : "งานซ่อม / งานเพิ่ม"}
@@ -528,7 +528,7 @@ function QuoteCard({ quote: q, busy, chosen, dimmed, canEdit, canDelete, canRevi
           {q.created_at ? ` · ${formatThaiDateShort(q.created_at)} ${formatThaiTime(q.created_at)} น.` : ""}
         </div>
       )}
-      {q.note && <div className="mt-1 text-xxs text-gray-500 break-words">โน้ต: {q.note}</div>}
+      {q.note && <div className="mt-1 text-xxs text-gray-500 break-words">หมายเหตุ: {q.note}</div>}
       {q.status === "changes_required" && q.approval_note && (
         <div className="mt-2 text-xs text-red-600 line-clamp-2">
           ส่งกลับโดย {q.returned_by_role || "ผู้อนุมัติ"}
@@ -578,7 +578,7 @@ function QuoteCard({ quote: q, busy, chosen, dimmed, canEdit, canDelete, canRevi
             {view("col-span-2")}
             <button type="button" disabled={busy} onClick={onRevise}
               className="h-full rounded-lg border border-gray-200 px-2 text-xs font-semibold leading-4 cursor-pointer disabled:opacity-50">
-              Revision
+              สร้างฉบับแก้ไข
             </button>
           </>
         ) : view("col-span-3")}
@@ -665,7 +665,7 @@ function DetailRows({ details, onChange, onRestore }: {
         {onRestore && (
           <button type="button" onClick={onRestore}
             className="rounded-md px-2 py-1 text-xxs font-semibold text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600">
-            ↺ คืนค่าจาก Master
+            ↺ คืนค่าตามแพ็กเกจ
           </button>
         )}
       </div>
@@ -708,7 +708,7 @@ function PackagePickerDialog({ pkgs, fit, replacing, onPick, onClose }: {
         </div>
         {replacing && (
           <div className="shrink-0 border-b border-amber-100 bg-amber-50 px-3 py-1.5 text-xxs text-amber-800">
-            ใบเสนอราคา O&amp;M มีแพ็กเกจได้ 1 ตัว — เลือกใหม่จะแทนตัวเดิม
+            ใบเสนอราคา O&amp;M มีแพ็กเกจได้ 1 รายการ — เลือกใหม่จะแทนที่รายการเดิม
           </div>
         )}
         <div className="min-h-0 flex-1 overflow-y-auto">
@@ -726,7 +726,7 @@ function PackagePickerDialog({ pkgs, fit, replacing, onPick, onClose }: {
                       <span aria-hidden="true" className="shrink-0 text-base">☀️</span>
                       <span className="min-w-0">
                         {/* หัวข้ออย่างเดียว — ขอบเขตงานยาวหลายบรรทัดแล้ว (แผน 20261014-04) ผู้ใช้สั่งเอาออก 15 ต.ค. ดูได้หลังเลือก (รายละเอียดใต้แพ็กเกจ) */}
-                        <span className="block truncate text-sm font-semibold text-gray-800">Package O&amp;M {tier} · {planLabel(p)}</span>
+                        <span className="block truncate text-sm font-semibold text-gray-800">แพ็กเกจ O&amp;M {tier} · {planLabel(p)}</span>
                       </span>
                     </span>
                     <span className="shrink-0 text-sm font-bold tabular-nums text-gray-700">{formatTHB(p.price)}</span>
@@ -817,11 +817,11 @@ function QuoteEditor({ item, optionNo, quote, onClose, onDone }: {
   const kwText = `${Number(kw.toFixed(2))} kW`;
   const fitTierText = fit ? `${fit.kw_min.toFixed(2)}–${fit.kw_max.toFixed(2)} kW` : "";
   const sizeNote = !pkgReady || !pkg ? null
-    : !fit ? { warn: false, text: "ไม่มีข้อมูลขนาดระบบของบ้านนี้ในทะเบียน — ตรวจขนาดก่อนเลือกแพ็กเกจ" }
+    : !fit ? { warn: false, text: "ไม่มีข้อมูลขนาดระบบของบ้านนี้ — กรุณาตรวจสอบขนาดก่อนเลือกแพ็กเกจ" }
     : !omSameTier(pkg, fit)
       ? { warn: true, text: `บ้านนี้ขนาด ${kwText} — แพ็กเกจที่ตรงคือ ${fitTierText} (เลือกอยู่ ${tierLabel(pkg)})`
-          + (fit.over ? " · เกินแพ็กเกจใหญ่สุด ใส่ส่วนที่เกินเป็น “งานเพิ่ม”" : "") }
-    : fit.over ? { warn: true, text: `บ้านนี้ขนาด ${kwText} เกินแพ็กเกจใหญ่สุด (${fitTierText}) — ใส่ส่วนที่เกินเป็น “งานเพิ่ม”` }
+          + (fit.over ? " · เกินแพ็กเกจที่ใหญ่ที่สุด ให้เพิ่มส่วนที่เกินเป็น “งานเพิ่ม”" : "") }
+    : fit.over ? { warn: true, text: `บ้านนี้ขนาด ${kwText} เกินแพ็กเกจที่ใหญ่ที่สุด (${fitTierText}) — ให้เพิ่มส่วนที่เกินเป็น “งานเพิ่ม”` }
     : null;
   const subtotal = (pkg?.price ?? 0) + lines.reduce((s, x) => s + Math.max(0, x.quantity) * Math.max(0, x.unit_price), 0);
   const discountAmount = Math.round(Math.min(subtotal,
@@ -856,12 +856,12 @@ function QuoteEditor({ item, optionNo, quote, onClose, onDone }: {
   };
 
   const validate = () => {
-    if (!pkgReady) return "รอโหลดรายการแพ็กเกจให้เสร็จก่อน";
-    if (pkgGone) return "แพ็กเกจเดิมของใบนี้ถูกปิดใช้งานแล้ว — เลือกแพ็กเกจใหม่ หรือลบหัวข้อแพ็กเกจออก";
+    if (!pkgReady) return "กรุณารอให้โหลดรายการแพ็กเกจเสร็จก่อน";
+    if (pkgGone) return "แพ็กเกจเดิมของใบเสนอราคานี้ถูกปิดใช้งานแล้ว — กรุณาเลือกแพ็กเกจใหม่ หรือลบหัวข้อแพ็กเกจออก";
     if (!pkg && lines.length === 0) return "กรุณาเพิ่มแพ็กเกจ หรืองานเพิ่ม อย่างน้อย 1 รายการ";
-    if (lines.some((x) => !x.item_name.trim())) return "กรุณาตั้งชื่อหัวข้อให้ครบทุกอัน";
+    if (lines.some((x) => !x.item_name.trim())) return "กรุณาตั้งชื่อหัวข้อให้ครบทุกรายการ";
     if (lines.some((x) => !(x.quantity > 0))) return "จำนวนของงานเพิ่มต้องมากกว่า 0";
-    if (discountAmount > 0 && !reason.trim()) return "ใส่ชื่อส่วนลดด้วย — Sale Sup ใช้ประกอบการอนุมัติ";
+    if (discountAmount > 0 && !reason.trim()) return "กรุณาระบุชื่อส่วนลด (ใช้ประกอบการอนุมัติ)";
     if (issueDate > todayIso()) return "วันที่ใบเสนอราคาต้องไม่เป็นวันที่ล่วงหน้า";
     return "";
   };
@@ -935,7 +935,7 @@ function QuoteEditor({ item, optionNo, quote, onClose, onDone }: {
     if (!(e.target as HTMLElement).closest("input,textarea,button")) toggle(key);
   };
   const caret = (key: string) => (
-    <button type="button" onClick={() => toggle(key)} aria-label={openKey === key ? "ย่อ" : "กาง"}
+    <button type="button" onClick={() => toggle(key)} aria-label={openKey === key ? "ย่อ" : "ขยาย"}
       className="flex h-6 w-5 shrink-0 items-center justify-center text-gray-400 transition-transform hover:text-gray-600">
       <span className={openKey === key ? "rotate-90" : ""}>▸</span>
     </button>
@@ -1008,7 +1008,7 @@ function QuoteEditor({ item, optionNo, quote, onClose, onDone }: {
                     {pkgGone && (
                       <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                         <span className="min-w-0 flex-1">
-                          แพ็กเกจเดิมของใบนี้ ({quote?.package_name_snapshot || "Package O&M"}) ถูกปิดใช้งานแล้ว — เลือกแพ็กเกจใหม่จาก “+ เพิ่มแพ็กเกจ” หรือลบออก
+                          แพ็กเกจเดิมของใบเสนอราคานี้ ({quote?.package_name_snapshot || "แพ็กเกจ O&M"}) ถูกปิดใช้งานแล้ว — กรุณาเลือกแพ็กเกจใหม่จาก “+ เพิ่มแพ็กเกจ” หรือลบออก
                         </span>
                         <button type="button" onClick={() => { setPkgId(null); setPkgDetails([]); }} aria-label="ลบหัวข้อ" className={CLOSE}>×</button>
                       </div>
@@ -1025,10 +1025,10 @@ function QuoteEditor({ item, optionNo, quote, onClose, onDone }: {
                               ref={(el) => { if (!el) return; el.style.height = "auto"; el.style.height = `${el.scrollHeight}px`; }}
                               placeholder="หัวรายการบนเอกสาร เช่น งานบริการ O&M ระบบโซลาร์เซลล์ ขนาด 5 kW" aria-label="หัวรายการแพ็กเกจบนเอกสาร"
                               className="w-full resize-none overflow-hidden rounded-md border border-transparent bg-transparent px-1.5 py-1 text-sm font-semibold leading-snug text-gray-800 outline-none transition-colors placeholder:font-normal placeholder:text-gray-300 hover:border-gray-200 focus:border-primary focus:bg-white" />
-                            <div className="px-1.5 text-xxs text-gray-400">Package O&amp;M {tierLabel(pkg)} · {planLabel(pkg)}</div>
+                            <div className="px-1.5 text-xxs text-gray-400">แพ็กเกจ O&amp;M {tierLabel(pkg)} · {planLabel(pkg)}</div>
                           </div>
                           <div className="w-14 shrink-0">
-                            <input value="1" readOnly tabIndex={-1} title="ใบละ 1 แพ็กเกจ" aria-label="จำนวนของแพ็กเกจนี้"
+                            <input value="1" readOnly tabIndex={-1} title="ใบเสนอราคาละ 1 แพ็กเกจ" aria-label="จำนวนของแพ็กเกจนี้"
                               className={`text-center cursor-default text-gray-400 hover:border-transparent ${CELL}`} />
                           </div>
                           <div className="w-[72px] shrink-0">
@@ -1160,8 +1160,8 @@ function QuoteEditor({ item, optionNo, quote, onClose, onDone }: {
           <span className="hidden text-xxs text-gray-400 lg:inline">
             💡 พิมพ์{" "}
             <code className="rounded bg-gray-100 px-1 font-mono text-gray-600">[ข้อความ]</code>{" "}
-            ในชื่อรายการ → เอกสารแสดงเป็น <span className="font-bold text-red-600">(ข้อความ)</span>{" "}
-            สีแดง · คลิกหัวข้อเพื่อกาง/หุบ
+            ในชื่อรายการ เอกสารจะแสดงเป็น <span className="font-bold text-red-600">(ข้อความ)</span>{" "}
+            สีแดง · คลิกหัวข้อเพื่อขยาย/ย่อ
           </span>
           <div className="ml-auto flex items-center gap-3">
             <button type="button" disabled={busy || !pkgReady} onClick={preview}

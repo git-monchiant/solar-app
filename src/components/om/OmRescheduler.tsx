@@ -60,8 +60,8 @@ export default function OmRescheduler({ bookingId, currentAt, currentSlot, rules
       // บอกผลแจ้ง LINE ตามจริง — ผูกไว้แต่ส่งไม่ออก (เช่น LINE ยังไม่เปิดใช้) ต้องไม่เงียบ
       const line = !r.line.linked ? ""
         : r.line.sent === r.line.linked ? " · แจ้งลูกค้าทาง LINE แล้ว"
-        : !r.line.enabled ? " · LINE ยังไม่เปิดใช้ — ไม่ได้แจ้งลูกค้า"
-        : ` · แจ้ง LINE ได้ ${r.line.sent}/${r.line.linked} บัญชี`;
+        : !r.line.enabled ? " · LINE ยังไม่เปิดใช้งาน — ระบบไม่ได้แจ้งลูกค้า"
+        : ` · แจ้งทาง LINE สำเร็จ ${r.line.sent}/${r.line.linked} บัญชี`;
       onSaved(`เลื่อนนัดแล้ว${line}`);
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
     finally { setSaving(false); }
@@ -69,7 +69,8 @@ export default function OmRescheduler({ bookingId, currentAt, currentSlot, rules
 
   return (
     <div className="space-y-3">
-      <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">เลื่อนนัด</div>
+      {/* ★ 21 ต.ค. 69 แผน 20261021-01: เปิดจากปุ่มอังกฤษ "Reschedule" (ชุดเดียวกับหน้า lead) — หัวใช้คำเดียวกับปุ่ม */}
+      <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">Reschedule — เลื่อนนัด</div>
 
       <div className="rounded-lg bg-white/60 border border-active/15 p-3 space-y-3">
         <OmSlotPicker date={date} slot={slot} excludeId={bookingId} rules={rules} pickedLabel="เลื่อนเป็น" project={project}
@@ -87,10 +88,11 @@ export default function OmRescheduler({ bookingId, currentAt, currentSlot, rules
       {preview && (preview.will.to_pending || preview.rules.notify_line) && (
         <div className="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2.5 text-xs text-gray-700 space-y-1">
           <div className="font-semibold text-gray-500">เมื่อยืนยันเลื่อนนัด</div>
-          {preview.will.to_pending && <div>• ใบงานกลับเป็น <b>รอยืนยันนัด</b> — ตกลงวันใหม่กับลูกค้าแล้วกด &quot;ลูกค้ายืนยันแล้ว&quot; อีกครั้ง</div>}
+          {/* ★ 21 ต.ค. 69 แผน 20261021-01: เดิมบอกให้กดปุ่ม "ลูกค้ายืนยันแล้ว" ที่เอาออกไปแล้ว 1 ต.ค. */}
+          {preview.will.to_pending && <div>• ใบงานกลับเป็น <b>รอยืนยันนัด</b> — กรุณายืนยันวันใหม่กับลูกค้าอีกครั้ง</div>}
           {preview.rules.notify_line && (preview.will.notify_line
-            ? <div>• แจ้งลูกค้าทาง LINE ({preview.line_links} บัญชีที่ผูกบ้านนี้){!preview.line_enabled && <span className="text-amber-700"> — LINE ยังไม่เปิดใช้ จะยังไม่ส่งจริง</span>}</div>
-            : <div className="text-gray-500">• บ้านนี้ยังไม่ผูก LINE — ไม่ได้แจ้งลูกค้า โทรแจ้งเอง</div>)}
+            ? <div>• แจ้งลูกค้าทาง LINE ({preview.line_links} บัญชีที่เชื่อมต่อกับบ้านนี้){!preview.line_enabled && <span className="text-amber-700"> — LINE ยังไม่เปิดใช้งาน ระบบจะยังไม่ส่งข้อความ</span>}</div>
+            : <div className="text-gray-500">• บ้านนี้ยังไม่เชื่อมต่อ LINE — ระบบไม่ได้แจ้งลูกค้า กรุณาโทรแจ้ง</div>)}
           {/* ★ 1 ต.ค. 69 ผู้ใช้สั่งเอาเตือนเกินเพดาน (เลื่อนเกินกี่ครั้ง / ใกล้นัดเดิม) ออกจากจอ — API ยังจดไว้ในประวัติเหมือนเดิม */}
         </div>
       )}

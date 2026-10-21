@@ -12,6 +12,7 @@ import { OM_BOOKING_PAID_SQL } from "@/lib/om/om-quotation";
 import { omSlotsFor, teamClash } from "@/lib/om/time-slot";
 import { houseOriginSql, parseOrigin } from "@/lib/om/house-origin";
 import { GROUP_LABEL, HG } from "@/lib/om/house-scope";
+import { omErrorText } from "@/lib/om/api-error";
 
 // แท็บ "ติดตาม" ของงานบริการ — ★ การ์ดคำนวณสด ไม่มีแถวงานรอไว้ล่วงหน้า
 //   เกณฑ์: บ้าน O&M ที่มีระบบติดตั้ง + เลยรอบล้าง (om_service_type.cycle_months)
@@ -174,7 +175,7 @@ export async function GET(req: NextRequest) {
     page, size,
   });
   } catch (e) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : "อ่านรายการติดตามไม่สำเร็จ" }, { status: 500 });
+    return NextResponse.json({ error: omErrorText(e, "โหลดรายการติดตามไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "GET /api/om/follow") }, { status: 500 });
   }
 }
 
@@ -189,7 +190,7 @@ export async function POST(req: NextRequest) {
   const houseId = Number(b.house_id);
   const outcome = String(b.outcome ?? "") as Outcome;
   if (!houseId || !OUTCOME.includes(outcome))
-    return NextResponse.json({ error: "ต้องระบุบ้านและผลการโทร" }, { status: 400 });
+    return NextResponse.json({ error: "กรุณาระบุบ้านและผลการติดตาม" }, { status: 400 });
 
   const cfg = await getSettings("call.");
   const retryDays = Number(cfg["call.retry_days"] ?? 3);
@@ -272,7 +273,7 @@ export async function POST(req: NextRequest) {
       if (cur?.status === "payment" && outcome === "agreed" && !paid) {
         await tx.rollback();
         return NextResponse.json(
-          { error: "ยังไม่ได้รับเงินค่าบริการ — นัดได้หลัง Account ยืนยันรับเงินแล้ว" }, { status: 409 });
+          { error: "ยังไม่ได้รับเงินค่าบริการ — นัดได้หลังฝ่ายบัญชียืนยันรับเงินแล้ว" }, { status: 409 });
       }
       // ★ บ้านสิทธิ์หมดต้องเสนอราคาก่อน (ผู้ใช้เคาะ 28 ก.ย. 69 — ปิดทางลัดตกลงนัดตรง ๆ)
       //   ตรงกับคำตอบข้อ 2 ของแผน 20260924-02 "ต้องเสนอราคาทั้งหมด รวมสิทธิ์หมด" + "เก็บค่าบริการก่อนนัดหมาย"
@@ -289,7 +290,7 @@ export async function POST(req: NextRequest) {
         if (need?.quota === 1 && Number(need.balance) <= 0) {
           await tx.rollback();
           return NextResponse.json({ error:
-            "บ้านนี้สิทธิ์ล้างหมดแล้ว — ออกใบเสนอราคาที่ขั้น 02 และรับเงินก่อนนัด · ถ้าตัวเลขสิทธิ์ผิด แก้ที่หน้าบ้าน / ระบบติดตั้ง" },
+            "บ้านนี้ไม่มีสิทธิ์ล้างแผงคงเหลือ — กรุณาออกใบเสนอราคาและรับชำระเงินก่อนนัด" },
             { status: 409 });
         }
       }
@@ -304,8 +305,8 @@ export async function POST(req: NextRequest) {
       if (cur && target !== cur.status && !canMove(String(cur.status), target)) {
         await tx.rollback();
         return NextResponse.json({ error:
-          `ใบงาน #${cur.id} อยู่ขั้น "${statusLabel(String(cur.status))}" แล้ว — ${outcome === "agreed" ? "ตกลงนัด" : "ขอเลื่อน"}จากการโทรไม่ได้`
-          + (["pending", "confirmed"].includes(String(cur.status)) ? " · เลื่อนนัดใช้ปุ่ม Reschedule ที่ขั้นนัดหมาย" : "") },
+          `ใบงานเลขที่ ${cur.id} อยู่ในสถานะ "${statusLabel(String(cur.status))}" — บันทึก${outcome === "agreed" ? "ตกลงรับบริการ" : "ขอเลื่อน"}จากการติดตามไม่ได้`
+          + (["pending", "confirmed"].includes(String(cur.status)) ? " · หากต้องการเลื่อนนัด กรุณาใช้ปุ่ม Reschedule ที่ขั้นนัดหมาย" : "") },
           { status: 409 });
       }
       // ★ 21 ต.ค. 69 นัดทับเวลาไม่ได้ (แผน 20261021-02 รอบ 3) — ใบงานตัวเอง (นัดเดิม) ไม่นับ
@@ -359,6 +360,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, booking_id: bookingId, next_date: next });
   } catch (e) {
     await tx.rollback().catch(() => {});
-    return NextResponse.json({ error: e instanceof Error ? e.message : "บันทึกไม่สำเร็จ" }, { status: 500 });
+    return NextResponse.json({ error: omErrorText(e, "บันทึกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "POST /api/om/follow") }, { status: 500 });
   }
 }

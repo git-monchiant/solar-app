@@ -132,7 +132,7 @@ export default function JobHistoryItem({ h, isLast }: { h: HistoryRow; isLast?: 
         )}
         <div className="text-xs text-gray-400 mt-1">
           โดย {h.actor_name ?? "—"}
-          {h.booking_id && <> · ใบงาน #{h.booking_id}</>}
+          {h.booking_id && <> · ใบงานเลขที่ {h.booking_id}</>}
         </div>
       </div>
     </div>

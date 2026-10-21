@@ -64,10 +64,11 @@ export const repairPending = (r: Pick<Item, "job_status" | "repair_needed" | "re
 /** สถานะใบเสนอราคา → ป้าย (ชุดเดียวกับลำดับอนุมัติฝั่งขาย แผน 20260730-01) */
 export const QUOTE_STATUS: Record<string, { t: string; tone: string }> = {
   draft: { t: "ร่าง", tone: "bg-gray-100 text-gray-700" },
-  pending_solar_sup: { t: "รอ Solar Sup อนุมัติ", tone: "bg-amber-50 text-amber-700" },
-  pending_sales_sup: { t: "รอ Sale Sup อนุมัติ", tone: "bg-amber-50 text-amber-700" },
-  pending_approval: { t: "รอ Sale Sup อนุมัติ", tone: "bg-amber-50 text-amber-700" },
-  changes_required: { t: "ส่งกลับแก้", tone: "bg-red-50 text-red-700" },
+  // ★ 21 ต.ค. 69 แผน 20261021-01: ชื่อผู้อนุมัติตาม roles.ts (เดิม Solar Sup / Sale Sup)
+  pending_solar_sup: { t: "รอ Solar Manager อนุมัติ", tone: "bg-amber-50 text-amber-700" },
+  pending_sales_sup: { t: "รอ Sale Manager อนุมัติ", tone: "bg-amber-50 text-amber-700" },
+  pending_approval: { t: "รอ Sale Manager อนุมัติ", tone: "bg-amber-50 text-amber-700" },
+  changes_required: { t: "ส่งกลับแก้ไข", tone: "bg-red-50 text-red-700" },
   approved: { t: "อนุมัติแล้ว", tone: "bg-emerald-50 text-emerald-700" },
   // ลูกค้าไม่เอา — ยกเลิกทั้งใบงาน (POST /api/om/bookings/[id]/cancel) · สถานะเดียวกับที่ฝั่งขายเตรียมไว้
   cancelled: { t: "ยกเลิกแล้ว", tone: "bg-gray-100 text-gray-500" },
@@ -75,10 +76,10 @@ export const QUOTE_STATUS: Record<string, { t: string; tone: string }> = {
 
 /** สถานะเงินของใบงานขั้นชำระเงิน (เฟส 4) — ชุดเดียวกับขั้นย่อย journey 2310/2320/2330 */
 export const PAY_STATE: Record<NonNullable<Item["pay_state"]>, { t: string; tone: string }> = {
-  unpaid: { t: "รอชำระ", tone: "bg-fuchsia-50 text-fuchsia-800" },
+  unpaid: { t: "รอชำระเงิน", tone: "bg-fuchsia-50 text-fuchsia-800" },
   // แผน 20261014-03 — เช็คที่รับแล้วเด้ง แถวเก็บไว้ · ต้องแนบหลักฐานชำระใหม่
-  bounced: { t: "เช็คเด้ง · รอชำระใหม่", tone: "bg-red-50 text-red-700" },
-  verifying: { t: "รอ Account ยืนยันรับเงิน", tone: "bg-amber-50 text-amber-800" },
+  bounced: { t: "เช็คคืน · รอชำระใหม่", tone: "bg-red-50 text-red-700" },
+  verifying: { t: "รอฝ่ายบัญชียืนยันรับเงิน", tone: "bg-amber-50 text-amber-800" },
   paid: { t: "ชำระแล้ว · รอโทรนัด", tone: "bg-emerald-50 text-emerald-800" },
 };
 
@@ -103,11 +104,12 @@ export const TODAY_TABS = [
   { k: "appt_today", t: "นัดวันนี้", empty: "วันนี้ไม่มีนัดเข้าบ้าน",
     hint: "ใบงานที่นัดเข้าบ้านวันนี้ (รอยืนยันนัด · นัดแล้ว · เข้างาน)" },
   { k: "call_today", t: "โทรวันนี้", empty: "วันนี้ไม่มีบ้านที่ถึงวันนัดโทร",
-    hint: "บ้านที่ยังไม่ได้นัด และถึงวันนัดโทรใหม่แล้ว (ตั้งจากผลโทร \"ไม่รับสาย\" / \"ขอเลื่อน\")" },
-  { k: "overdue", t: "เลยนัด", empty: "ไม่มีงานที่เลยวันนัด",
-    hint: "ใบงานที่เลยวันนัดแล้วแต่ยังไม่ปิด — ตามช่าง/ลูกค้า หรือเลื่อนนัดใหม่" },
-  { k: "money", t: "เสนอราคา / รอเงิน", empty: "ไม่มีใบงานค้างเสนอราคาหรือรอชำระ",
-    hint: "ใบงานเสียเงินที่ค้างขั้นเสนอราคาหรือชำระเงิน — งานของ Sale" },
+    // ★ 21 ต.ค. 69 แผน 20261021-01: เดิมอ้างผลโทร "ขอเลื่อน" ที่เอาออกแล้ว — วันโทรใหม่ตั้งจากหน้าต่าง Follow-up
+    hint: "บ้านที่ยังไม่ได้นัด และถึงวันนัดโทรใหม่แล้ว (ตั้งจาก \"นัดติดตามครั้งถัดไป\" ในหน้าต่าง Follow-up)" },
+  { k: "overdue", t: "เกินกำหนดนัด", empty: "ไม่มีใบงานที่เกินกำหนดนัด",
+    hint: "ใบงานที่เกินวันนัดแล้วแต่ยังไม่ปิด — ติดตามช่าง/ลูกค้า หรือเลื่อนนัดใหม่" },
+  { k: "money", t: "เสนอราคา / รอชำระเงิน", empty: "ไม่มีใบงานที่รอเสนอราคาหรือรอชำระเงิน",
+    hint: "ใบงานมีค่าบริการที่รอเสนอราคา / ชำระเงิน — งานของฝ่ายขาย" },
 ] as const;
 
 export const TONE: Record<string, string> = {

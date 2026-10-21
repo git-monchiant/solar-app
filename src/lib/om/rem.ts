@@ -118,7 +118,7 @@ export function projectFromContract(contractId: string): string {
 }
 
 async function post<T>(path: string, body: Record<string, string>): Promise<T[]> {
-  if (!KEY) throw new Error("ยังไม่ได้ตั้ง REM_API_KEY");
+  if (!KEY) throw new Error("ยังไม่ได้ตั้งค่าการเชื่อมต่อ REM — กรุณาติดต่อผู้ดูแลระบบ");
   const res = await fetch(`${BASE}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Basic ${KEY}` },

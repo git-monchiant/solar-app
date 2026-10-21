@@ -7,6 +7,7 @@ import { getQuotationActor } from "@/lib/quotation";
 import { resolveAccountingNotifications } from "@/lib/accounting-notifications";
 import { OM_BOUNCE_BACK_TO_PAYMENT, grantPurchasedRights } from "@/lib/om/om-quotation";
 import { notifyOmUser, resolveOmNotifications } from "@/lib/om/notifications";
+import { omErrorText } from "@/lib/om/api-error";
 
 // Account ยืนยันรับเงิน / ปฏิเสธสลิป ค่าบริการงาน O&M (แผน docs/plan/20260924-02 เฟส 4)
 // ★ ผู้ใช้เคาะ 24 ก.ย. ข้อ 1 "Account เหมือนฝั่งขาย" — ยืนยันรับเงินอย่างเดียว สิทธิ์ account / admin
@@ -25,15 +26,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!actor) return NextResponse.json({ error: "ไม่พบผู้ใช้" }, { status: 401 });
   const roles = getEffectiveRolesFromReq(req, actor.roles);
   if (!roles.includes("account") && !roles.includes("admin"))
-    return NextResponse.json({ error: "ยืนยันรับเงินได้เฉพาะ Account" }, { status: 403 });
+    return NextResponse.json({ error: "ยืนยันรับเงินได้เฉพาะฝ่ายบัญชี" }, { status: 403 });
 
   const id = Number((await params).id);
   const body = await req.json().catch(() => ({}));
   const action = String(body.action || "");
   const reason = String(body.reason || "").trim().slice(0, 300);
-  if (!["confirm", "reject", "cheque_received", "cheque_bounced"].includes(action)) return NextResponse.json({ error: "action ไม่ถูกต้อง" }, { status: 400 });
-  if (action === "reject" && !reason) return NextResponse.json({ error: "ใส่เหตุผลที่ปฏิเสธด้วย — Sale ใช้แก้ไขก่อนแนบใหม่" }, { status: 400 });
-  if (action === "cheque_bounced" && !reason) return NextResponse.json({ error: "ใส่เหตุผลด้วย (เช่น เช็คเด้ง / ลูกค้ายกเลิกเช็ค) — Sale ใช้ตามเก็บเงินใหม่" }, { status: 400 });
+  if (!["confirm", "reject", "cheque_received", "cheque_bounced"].includes(action)) return NextResponse.json({ error: "ข้อมูลไม่ครบหรือไม่ถูกต้อง" }, { status: 400 });
+  if (action === "reject" && !reason) return NextResponse.json({ error: "กรุณาระบุเหตุผลที่ปฏิเสธ" }, { status: 400 });
+  if (action === "cheque_bounced" && !reason) return NextResponse.json({ error: "กรุณาระบุเหตุผล (เช่น เช็คคืน / ลูกค้ายกเลิกเช็ค)" }, { status: 400 });
 
   const db = await getOmDb();
   const tx = new sql.Transaction(db);
@@ -54,15 +55,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const fail = async (error: string, status = 409) => { await tx.rollback(); return NextResponse.json({ error }, { status }); };
     if (!p) return fail("ไม่พบรายการค่าบริการ O&M", 404);
     if (p.confirmed_at) return fail("รายการนี้ยืนยันรับเงินไปแล้ว");
-    if (p.cheque_status === "bounced") return fail("เช็คนี้บันทึกว่าเด้งแล้ว — รอ Sale แนบหลักฐานชำระใหม่");
+    if (p.cheque_status === "bounced") return fail("เช็คนี้บันทึกเป็นเช็คคืนแล้ว — รอฝ่ายขายแนบหลักฐานการชำระเงินใหม่");
     // ★ แผน 20261014-03: รับเช็คแล้ว = Sale โทรนัด/งานเดินต่อได้แล้ว — ห้ามลบแถวแบบปฏิเสธสลิป (ใบงานจะเดินต่อโดยไม่มีเงิน)
     //   ใช้ "เช็คเด้ง" แทน: เก็บแถวไว้แบบฝั่งขาย + ดึงใบงานที่ยังไม่ถึงหน้างานกลับขั้นชำระเงิน
-    if (action === "reject" && p.cheque_received_at) return fail("รับเช็คไปแล้ว — ใช้ \"เช็คเด้ง\" แทนการปฏิเสธ");
+    if (action === "reject" && p.cheque_received_at) return fail("รับเช็คไปแล้ว — กรุณาใช้ \"เช็คคืน\" แทนการปฏิเสธ");
     if (action === "cheque_bounced" && (p.payment_method !== "cheque" || !p.cheque_received_at))
-      return fail("เช็คเด้งใช้กับเช็คที่รับไปแล้วเท่านั้น — เช็คที่ยังไม่รับให้กดปฏิเสธ", 400);
+      return fail("บันทึกเช็คคืนได้เฉพาะเช็คที่รับไปแล้ว — เช็คที่ยังไม่รับ กรุณากดปฏิเสธ", 400);
     if (action === "cheque_received" && p.payment_method !== "cheque") return fail("รองรับเฉพาะรายการรับชำระด้วยเช็ค", 400);
     if (action === "cheque_received" && p.cheque_received_at) return fail("รับเช็คไปแล้ว — รอยืนยันเงินเข้า");
-    if (action === "confirm" && p.payment_method === "cheque" && !p.cheque_received_at) return fail("ยืนยันรับเช็คก่อน แล้วค่อยยืนยันเงินเข้า");
+    if (action === "confirm" && p.payment_method === "cheque" && !p.cheque_received_at) return fail("กรุณายืนยันรับเช็คก่อนยืนยันเงินเข้า");
     let backToPayment = false;
 
     if (action === "cheque_received") {
@@ -84,9 +85,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       await logBooking(tx, {
         bookingId: p.booking_id, houseId: p.house_id, action: "paid", actorUserId: gate.userId,
         to: { payment_id: id, amount: Number(p.amount), grant_qty: grant.qty },
-        reason: grant.qty ? `เติมสิทธิ์ +${grant.qty} ครั้ง`
-          : grant.skip === "no_quota" ? "งานชนิดนี้ไม่ใช้สิทธิ์ (เช่น ซ่อม) — จ่ายรายงาน ไม่ต้องเติมสิทธิ์"
-          : "บ้านนี้ไม่มีระบบติดตั้งในทะเบียน — ไม่ได้เติมสิทธิ์",
+        reason: grant.qty ? `เพิ่มสิทธิ์ +${grant.qty} ครั้ง`
+          : grant.skip === "no_quota" ? "งานประเภทนี้ไม่ใช้สิทธิ์ (เช่น ซ่อม) — ชำระเป็นรายครั้ง ไม่ต้องเพิ่มสิทธิ์"
+          : "บ้านนี้ไม่มีข้อมูลระบบติดตั้ง — ไม่ได้เพิ่มสิทธิ์",
       });
     } else if (action === "cheque_bounced") {
       // คอลัมน์ชุดเดียวกับ PATCH /api/payments/[id] cheque_failed=bounced ของฝั่งขาย — แถวอยู่เป็นหลักฐาน
@@ -122,11 +123,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       await notifyOmUser(tx, action === "cheque_received"
         ? { recipientUserId: uid, type: "om_payment_cheque", eventKey: `om_payment_cheque:${id}`,
             title: `รับเช็คค่าบริการ ${p.doc_no} แล้ว — โทรนัดได้`,
-            message: `${who} · ${Number(p.amount).toLocaleString("th-TH")} บาท · รับโดย ${actor.full_name} · รอ Account ยืนยันเงินเข้า`,
+            message: `${who} · ${Number(p.amount).toLocaleString("th-TH")} บาท · รับโดย ${actor.full_name} · รอฝ่ายบัญชียืนยันเงินเข้า`,
             houseId: p.house_id, bookingId: p.booking_id, createdBy: gate.userId }
         : action === "cheque_bounced"
         ? { recipientUserId: uid, type: "om_payment_cheque_bounced", eventKey: `om_payment_cheque_bounced:${id}`,
-            title: `เช็คค่าบริการ ${p.doc_no} เด้ง — แนบหลักฐานชำระใหม่`,
+            title: `เช็คค่าบริการ ${p.doc_no} เป็นเช็คคืน — กรุณาแนบหลักฐานการชำระเงินใหม่`,
             message: `${who} · เหตุผล: ${reason}${backToPayment ? " · ใบงานกลับขั้นชำระเงิน นัดเดิมพักไว้จนกว่าจะรับเงิน" : ""}`,
             houseId: p.house_id, bookingId: p.booking_id, createdBy: gate.userId }
         : action === "confirm"
@@ -135,7 +136,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             message: `${who} · ${Number(p.amount).toLocaleString("th-TH")} บาท · ยืนยันโดย ${actor.full_name}`,
             houseId: p.house_id, bookingId: p.booking_id, createdBy: gate.userId }
         : { recipientUserId: uid, type: "om_payment_rejected", eventKey: `om_payment_rejected:${id}`,
-            title: `Account ปฏิเสธสลิป ${p.doc_no} — แนบใหม่`,
+            title: `ฝ่ายบัญชีปฏิเสธสลิป ${p.doc_no} — กรุณาแนบใหม่`,
             message: `${who} · เหตุผล: ${reason}`,
             houseId: p.house_id, bookingId: p.booking_id, createdBy: gate.userId });
     }
@@ -146,7 +147,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ ok: true });
   } catch (e) {
     try { await tx.rollback(); } catch {}
-    console.error("POST /api/om/payments/[id]", e);
-    return NextResponse.json({ error: e instanceof Error ? e.message : "ดำเนินการไม่สำเร็จ" }, { status: 500 });
+    return NextResponse.json({ error: omErrorText(e, "ดำเนินการไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "POST /api/om/payments/[id]") }, { status: 500 });
   }
 }

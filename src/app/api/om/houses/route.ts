@@ -8,6 +8,7 @@ import { HIDDEN_GROUPS, bucketSql } from "@/lib/om/house-scope";
 import { houseOriginSql, parseOrigin } from "@/lib/om/house-origin";
 import { OM_WORK_ROLES } from "@/lib/om/om-roles";
 import { createManualHouse, parseManualHouseInput } from "@/lib/om/manual-house";
+import { omErrorText } from "@/lib/om/api-error";
 
 // ทะเบียนบ้าน/ระบบติดตั้ง — ค้นหา + กรอง + แบ่งหน้า · เพิ่มบ้านเอง (POST)
 // สิทธิ์ล้างอยู่ที่บ้าน (installations → grants/redemptions) ไม่ใช่ที่คน
@@ -185,6 +186,6 @@ export async function POST(req: NextRequest) {
     if (!r.ok) return NextResponse.json({ error: r.error, conflicts: r.conflicts }, { status: r.status });
     return NextResponse.json(r);
   } catch (e) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : "บันทึกไม่สำเร็จ" }, { status: 500 });
+    return NextResponse.json({ error: omErrorText(e, "บันทึกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "POST /api/om/houses") }, { status: 500 });
   }
 }

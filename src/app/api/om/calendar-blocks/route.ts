@@ -34,10 +34,10 @@ export async function POST(req: NextRequest) {
   const kind = String(b.kind ?? "holiday");
   const date = String(b.block_date ?? "").slice(0, 10);
   const title = String(b.title ?? "").trim();
-  if (!KINDS.includes(kind)) return NextResponse.json({ error: "ชนิดไม่ถูกต้อง" }, { status: 400 });
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return NextResponse.json({ error: "ต้องระบุวันที่" }, { status: 400 });
-  if (!title) return NextResponse.json({ error: "ต้องใส่ชื่อ เช่น วันสงกรานต์" }, { status: 400 });
-  if (kind === "team_off" && !b.team_id) return NextResponse.json({ error: "ทีมหยุดต้องเลือกทีม" }, { status: 400 });
+  if (!KINDS.includes(kind)) return NextResponse.json({ error: "ประเภทไม่ถูกต้อง" }, { status: 400 });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return NextResponse.json({ error: "กรุณาระบุวันที่" }, { status: 400 });
+  if (!title) return NextResponse.json({ error: "กรุณาระบุชื่อ เช่น วันสงกรานต์" }, { status: 400 });
+  if (kind === "team_off" && !b.team_id) return NextResponse.json({ error: "วันหยุดของทีม กรุณาเลือกทีม" }, { status: 400 });
 
   const db = await getOmDb();
   const r = await db.request()
@@ -58,7 +58,7 @@ export async function DELETE(req: NextRequest) {
   const gate = await requireAnyRole(req, ADMIN);
   if (gate.error) return gate.error;
   const id = Number(req.nextUrl.searchParams.get("id"));
-  if (!id) return NextResponse.json({ error: "ต้องระบุ id" }, { status: 400 });
+  if (!id) return NextResponse.json({ error: "ไม่พบรายการ" }, { status: 400 });
   const db = await getOmDb();
   await db.request().input("id", sql.Int, id).query(`DELETE FROM om_calendar_blocks WHERE id = @id`);
   return NextResponse.json({ ok: true });

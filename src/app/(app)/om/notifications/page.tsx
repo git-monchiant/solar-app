@@ -106,7 +106,7 @@ export default function OmNotificationsPage() {
                   <span className="flex flex-wrap items-center justify-between gap-2">
                     <span className="font-semibold text-gray-900">
                       {it.title}
-                      {it.resolved_at && <span className="ml-2 text-xxs font-medium text-gray-400">จบเรื่องแล้ว</span>}
+                      {it.resolved_at && <span className="ml-2 text-xxs font-medium text-gray-400">ดำเนินการแล้ว</span>}
                     </span>
                     <span className="text-xxs text-gray-400">{formatThaiDate(it.created_at, { time: true, buddhist: true })}</span>
                   </span>

@@ -23,11 +23,11 @@ type House = { id: number; house_number: string | null; project_name: string | n
 
 const TIER: Record<string, { t: string; c: string }> = {
   confident: { t: "มั่นใจ", c: "bg-green-100 text-green-800" },
-  likely: { t: "น่าจะใช่", c: "bg-amber-100 text-amber-800" },
-  unknown: { t: "ไม่รู้", c: "bg-red-100 text-red-800" },
+  likely: { t: "ค่อนข้างตรง", c: "bg-amber-100 text-amber-800" },
+  unknown: { t: "ระบุไม่ได้", c: "bg-red-100 text-red-800" },
 };
-const STATUS: Record<string, string> = { pending: "รอตัดสิน", accepted: "รับแล้ว", rejected: "ตีกลับ", auto: "อัตโนมัติ" };
-const VIA: Record<string, string> = { project_house: "โครงการ+บ้านเลขที่", citizen_id: "เลขบัตร", phone: "เบอร์" };
+const STATUS: Record<string, string> = { pending: "รอตรวจสอบ", accepted: "ยืนยันแล้ว", rejected: "นอกโครงการ", auto: "อัตโนมัติ" };
+const VIA: Record<string, string> = { project_house: "โครงการ+บ้านเลขที่", citizen_id: "เลขบัตร", phone: "เบอร์โทร" };
 const thDate = (s: string | null) => s ? new Date(s).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "2-digit" }) : "—";
 
 export default function MatchQueuePage() {
@@ -65,7 +65,7 @@ export default function MatchQueuePage() {
       const r = await apiFetch("/api/om/sweep/queue", {
         method: "POST", body: JSON.stringify({ lead_id: leadId, action, ...extra }),
       });
-      say(r.already ? "รายการนี้เข้าระบบไปแล้ว" : `บันทึกแล้ว · บ้าน #${r.house_id}`);
+      say(r.already ? "รายการนี้เข้าระบบไปแล้ว" : `บันทึกแล้ว · บ้านรหัส ${r.house_id}`);
       setPick(null); setHq(""); load();
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(0); }
@@ -73,23 +73,23 @@ export default function MatchQueuePage() {
 
   const nOf = (st: string) => counts.filter((c) => c.status === st).reduce((s, c) => s + c.n, 0);
   const TABS = [
-    { k: "pending", t: "รอตัดสิน" }, { k: "accepted", t: "รับแล้ว" },
-    { k: "rejected", t: "ตีกลับ" }, { k: "auto", t: "อัตโนมัติ" }, { k: "all", t: "ทั้งหมด" },
+    { k: "pending", t: "รอตรวจสอบ" }, { k: "accepted", t: "ยืนยันแล้ว" },
+    { k: "rejected", t: "นอกโครงการ" }, { k: "auto", t: "อัตโนมัติ" }, { k: "all", t: "ทั้งหมด" },
   ];
 
   return (
     <div className="p-3 md:p-5 flex flex-col gap-3">
       <div className="flex items-center gap-3 flex-wrap">
         <div>
-          <h1 className="text-lg font-bold text-gray-900 leading-tight">คิวรอจับคู่</h1>
+          <h1 className="text-lg font-bold text-gray-900 leading-tight">รอตรวจสอบบ้าน</h1>
           <div className="text-xxs font-bold uppercase tracking-wider text-gray-500">
-            O&amp;M · งานขายที่ติดตั้งเสร็จแต่ยังไม่รู้ว่าเป็นบ้านหลังไหน
+            O&amp;M · งานขายที่ติดตั้งเสร็จแล้ว แต่ระบบยังระบุบ้านไม่ได้
           </div>
         </div>
         <span className="flex-1" />
         <Link href="/om/houses" style={{ minHeight: 0 }}
           className="h-9 px-4 rounded-full border border-gray-200 bg-white text-sm font-bold text-gray-700 inline-flex items-center">
-          ← กลับหน้าบ้าน
+          ← กลับไปหน้าบ้าน / ระบบติดตั้ง
         </Link>
       </div>
 
@@ -120,7 +120,7 @@ export default function MatchQueuePage() {
                   {/* งานขาย */}
                   <div>
                     <div className="font-bold text-gray-900">{r.full_name}</div>
-                    <div className="text-xxs text-gray-500 font-mono">lead #{r.lead_id} · {r.phone ?? "ไม่มีเบอร์"}</div>
+                    <div className="text-xxs text-gray-500 font-mono">lead #{r.lead_id} · {r.phone ?? "ไม่มีเบอร์โทร"}</div>
                     <div className="text-xxs text-gray-500">ติดตั้งเสร็จ {thDate(r.install_completed_at)}</div>
                     <div className="text-xxs text-gray-500">
                       โครงการฝั่งขาย: {r.sales_project_name ?? <i className="text-gray-400">ไม่ได้ระบุ</i>}
@@ -143,7 +143,7 @@ export default function MatchQueuePage() {
                   {/* ผู้สมัคร */}
                   <div>
                     {uniq.length === 0 ? (
-                      <div className="text-xxs text-gray-500">ไม่มีผู้สมัครเลย — ต้องหาบ้านเอง</div>
+                      <div className="text-xxs text-gray-500">ไม่พบบ้านที่ใกล้เคียง — กรุณาค้นหาเอง</div>
                     ) : uniq.map((c) => (
                       <button key={c.contract_id} type="button" style={{ minHeight: 0 }} disabled={done}
                         onClick={() => setChosen((s) => ({ ...s, [r.lead_id]: c.contract_id! }))}
@@ -154,27 +154,27 @@ export default function MatchQueuePage() {
                         </div>
                         <div className="text-xxs font-mono text-gray-500">{c.contract_id}</div>
                         {c.owner_names && <div className="text-xxs text-gray-500">เจ้าของ: {c.owner_names}</div>}
-                        <div className="text-xxs text-gray-400">เจอจาก {VIA[c.via] ?? c.via}</div>
+                        <div className="text-xxs text-gray-400">พบจาก {VIA[c.via] ?? c.via}</div>
                       </button>
                     ))}
                     {!done && (
                       <button type="button" style={{ minHeight: 0 }}
                         onClick={() => { setPick(pick === r.lead_id ? null : r.lead_id); setHq(""); }}
                         className="h-8 px-3 rounded-full border border-gray-200 bg-white text-xs font-bold text-gray-700 cursor-pointer">
-                        🔍 ค้นบ้านเอง
+                        🔍 ค้นหาบ้านเอง
                       </button>
                     )}
                     {pick === r.lead_id && (
                       <div className="mt-2">
                         <input value={hq} onChange={(e) => setHq(e.target.value)} autoFocus
-                          placeholder="บ้านเลขที่ · ชื่อลูกค้า · เบอร์"
+                          placeholder="บ้านเลขที่ · ชื่อลูกค้า · เบอร์โทร"
                           className="h-8 w-full rounded-full border border-gray-200 bg-gray-50 px-3 text-xs font-semibold outline-none focus:bg-white" />
                         {hits.map((h) => (
                           <button key={h.id} type="button" style={{ minHeight: 0 }} disabled={busy === r.lead_id}
                             onClick={() => decide(r.lead_id, "link", { house_id: h.id })}
                             className="w-full text-left rounded-lg border border-gray-200 px-2.5 py-1.5 mt-1 hover:border-active cursor-pointer">
                             <div className="text-xs font-bold text-gray-900">{h.house_number || "(ไม่มีบ้านเลขที่)"} · {h.project_name ?? "นอกโครงการ"}</div>
-                            <div className="text-xxs text-gray-500">{h.customer_name ?? "ยังไม่ผูกลูกค้า"} · #{h.id}</div>
+                            <div className="text-xxs text-gray-500">{h.customer_name ?? "ยังไม่ระบุลูกค้า"} · รหัส {h.id}</div>
                           </button>
                         ))}
                       </div>
@@ -187,7 +187,7 @@ export default function MatchQueuePage() {
                       r.house_id ? (
                         <Link href={`/om/houses?q=${r.house_id}`} style={{ minHeight: 0 }}
                           className="h-8 px-3 rounded-full border border-gray-200 bg-white text-xs font-bold text-gray-700 inline-flex items-center">
-                          เปิดบ้าน #{r.house_id}
+                          เปิดบ้านรหัส {r.house_id}
                         </Link>
                       ) : <span className="text-xxs text-gray-400">—</span>
                     ) : (
@@ -195,19 +195,19 @@ export default function MatchQueuePage() {
                         <button type="button" style={{ minHeight: 0 }} disabled={busy === r.lead_id || !selCt}
                           onClick={() => decide(r.lead_id, "accept", { contract_id: selCt })}
                           className="h-8 px-3 rounded-full bg-active text-white text-xs font-bold cursor-pointer disabled:opacity-40">
-                          ✓ รับ · สร้างบ้าน
+                          ✓ ยืนยัน · สร้างบ้านใหม่
                         </button>
                         <button type="button" style={{ minHeight: 0 }} disabled={busy === r.lead_id}
                           onClick={() => { setPick(r.lead_id); setHq(""); }}
                           className="h-8 px-3 rounded-full border border-gray-200 bg-white text-xs font-bold text-gray-700 cursor-pointer">
-                          ผูกกับบ้านที่มีอยู่
+                          เชื่อมโยงกับบ้านที่มีอยู่
                         </button>
                         <button type="button" style={{ minHeight: 0 }} disabled={busy === r.lead_id}
                           onClick={() => decide(r.lead_id, "reject")}
                           className="h-8 px-3 rounded-full border border-red-200 bg-white text-xs font-bold text-danger cursor-pointer">
                           ✕ ไม่ใช่บ้านในโครงการ
                         </button>
-                        <div className="text-xxs text-gray-500">“ไม่ใช่” = ไปกลุ่ม <b>ลูกค้าทั่วไป</b></div>
+                        <div className="text-xxs text-gray-500">หากไม่ใช่บ้านในโครงการ จะย้ายไปกลุ่ม <b>ลูกค้าทั่วไป</b></div>
                       </div>
                     )}
                   </div>
@@ -218,9 +218,9 @@ export default function MatchQueuePage() {
         )}
 
         <div className="flex gap-4 flex-wrap px-4 py-2.5 border-t border-gray-100 bg-gray-50 text-xxs text-gray-500">
-          <span><b className="text-green-800">มั่นใจ</b> โครงการ+บ้านเลขที่ ตรงกับเลขบัตร/เบอร์ → ทำอัตโนมัติ ไม่เข้าคิว</span>
-          <span><b className="text-amber-800">น่าจะใช่</b> ยืนยันได้ทางเดียว → เข้าคิวให้กดรับ</span>
-          <span><b className="text-red-800">ไม่รู้</b> หาไม่เจอ หรือสองทางชี้คนละที่ → ต้องหาเอง</span>
+          <span><b className="text-green-800">มั่นใจ</b> โครงการ+บ้านเลขที่ตรงกับเลขบัตร/เบอร์โทร — ระบบดำเนินการอัตโนมัติ ไม่เข้าคิว</span>
+          <span><b className="text-amber-800">ค่อนข้างตรง</b> ข้อมูลตรงกันทางเดียว — เข้าคิวรอยืนยัน</span>
+          <span><b className="text-red-800">ระบุไม่ได้</b> ไม่พบข้อมูล หรือข้อมูลสองทางชี้ไปคนละบ้าน — กรุณาค้นหาเอง</span>
         </div>
       </div>
 
@@ -232,8 +232,9 @@ export default function MatchQueuePage() {
   );
 }
 
+const LOG_STATUS: Record<string, string> = { ok: "สำเร็จ", error: "ผิดพลาด", running: "กำลังทำงาน" };
 const KIND: Record<string, string> = {
-  sales_sweep: "กวาดงานขาย", rem_sync: "ดึงทะเบียน REM", rem_bulk_load: "โหลดทะเบียนครั้งแรก",
+  sales_sweep: "ดึงงานขาย", rem_sync: "ดึงทะเบียน REM", rem_bulk_load: "โหลดทะเบียนครั้งแรก",
 };
 
 function SyncHistory() {
@@ -243,11 +244,11 @@ function SyncHistory() {
   if (!log.length) return null;
   return (
     <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-      <div className="px-4 py-2.5 border-b border-gray-100 text-md font-bold text-gray-900">ประวัติ sync</div>
+      <div className="px-4 py-2.5 border-b border-gray-100 text-md font-bold text-gray-900">ประวัติการดึงข้อมูล</div>
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead><tr className="bg-gray-50">
-            {["เมื่อ", "งาน", "ขอบเขต", "ผล", "ข้อความ"].map((h) => (
+            {["เวลา", "งาน", "ขอบเขต", "ผล", "ข้อความ"].map((h) => (
               <th key={h} className="text-left px-3 py-2 text-xxs font-bold uppercase tracking-wider text-gray-500 border-b border-gray-200 whitespace-nowrap">{h}</th>
             ))}
           </tr></thead>
@@ -261,7 +262,7 @@ function SyncHistory() {
                 <td className="px-3 py-2 text-xxs font-mono text-gray-500 max-w-[220px] truncate">{l.scope}</td>
                 <td className="px-3 py-2 text-xxs whitespace-nowrap">
                   <span className={`inline-block w-2 h-2 rounded-full mr-1.5 ${l.status === "ok" ? "bg-success" : l.status === "error" ? "bg-danger" : "bg-warning"}`} />
-                  {l.status}
+                  {LOG_STATUS[l.status] ?? l.status}
                 </td>
                 <td className="px-3 py-2 text-xxs text-gray-500">{l.message}</td>
               </tr>

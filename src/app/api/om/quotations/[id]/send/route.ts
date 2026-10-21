@@ -5,6 +5,7 @@ import { getOmDb } from "@/lib/om/line";
 import { logBooking } from "@/lib/om/booking-log";
 import { getQuotationActor } from "@/lib/quotation";
 import { OM_PAY_LIVE_SQL, OM_SLIP_PREFIX, canIssueOmQuotation } from "@/lib/om/om-quotation";
+import { omErrorText } from "@/lib/om/api-error";
 
 // ส่งใบเสนอราคา O&M ที่อนุมัติครบแล้วให้ลูกค้า → ใบงานเข้าขั้นชำระเงิน (แผน docs/plan/20260924-02 เฟส 4)
 // ★ เทียบกับฝั่งขาย: อนุมัติครบ → ส่งให้ลูกค้า → ขั้นชำระเงิน (ของขายคือ handoff_to_sales ที่ตั้ง lead เป็น order)
@@ -22,7 +23,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const actor = await getQuotationActor(gate.userId);
   if (!actor) return NextResponse.json({ error: "ไม่พบผู้ใช้" }, { status: 401 });
   if (!canIssueOmQuotation(getEffectiveRolesFromReq(req, actor.roles)))
-    return NextResponse.json({ error: "ส่งใบเสนอราคา O&M ให้ลูกค้าได้เฉพาะ Sale" }, { status: 403 });
+    return NextResponse.json({ error: "ส่งใบเสนอราคา O&M ให้ลูกค้าได้เฉพาะฝ่ายขาย" }, { status: 403 });
 
   const id = Number((await params).id);
   const db = await getOmDb();
@@ -51,13 +52,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const fail = async (error: string, status = 409) => { await tx.rollback(); return NextResponse.json({ error }, { status }); };
     if (!q) return fail("ไม่พบใบเสนอราคา O&M", 404);
     if (q.status !== "approved") return fail("ลูกค้าเลือกได้เฉพาะใบที่อนุมัติครบทั้งสองขั้นแล้ว");
-    if (q.latest_id !== q.id) return fail("ใบนี้มี Revision ใหม่กว่าแล้ว — เลือกใบล่าสุดของชุดนี้แทน");
+    if (q.latest_id !== q.id) return fail("ใบเสนอราคานี้มีฉบับแก้ไขที่ใหม่กว่า — กรุณาเลือกฉบับล่าสุดของชุดนี้แทน");
     if (q.job_status !== "quote" && q.job_status !== "payment") return fail("ใบงานไม่ได้อยู่ขั้นเสนอราคา/ชำระเงินแล้ว");
-    if (q.not_ready > 0) return fail("ยังมีชุดที่ไม่ได้อนุมัติ — อนุมัติให้ครบทุกชุด (หรือลบชุดที่ร่างทิ้งไว้) ก่อนส่งใบเสนอราคา");
+    if (q.not_ready > 0) return fail("ยังมีชุดที่ไม่ได้อนุมัติ — กรุณาอนุมัติให้ครบทุกชุด (หรือลบชุดที่เป็นฉบับร่าง) ก่อนส่งใบเสนอราคา");
     const handoff = q.job_status === "quote";
     if (!handoff) {
       if (q.sent_to_customer_at) { await tx.rollback(); return NextResponse.json({ ok: true, booking_id: q.om_booking_id }); }
-      if (q.pay_rows > 0) return fail("แนบสลิปค่าบริการแล้ว — เปลี่ยนชุดไม่ได้ (Account ปฏิเสธสลิปก่อนจึงเปลี่ยนได้)");
+      if (q.pay_rows > 0) return fail("แนบสลิปค่าบริการแล้ว — เปลี่ยนชุดไม่ได้ (ต้องให้ฝ่ายบัญชีปฏิเสธสลิปก่อนจึงเปลี่ยนได้)");
     }
 
     // ชุดที่เลือกมีได้ใบเดียวต่อใบงาน — ล้างของชุดเดิมก่อน
@@ -81,7 +82,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ ok: true, booking_id: q.om_booking_id });
   } catch (e) {
     try { await tx.rollback(); } catch {}
-    console.error("POST /api/om/quotations/[id]/send", e);
-    return NextResponse.json({ error: e instanceof Error ? e.message : "ส่งใบเสนอราคาไม่สำเร็จ" }, { status: 500 });
+    return NextResponse.json({ error: omErrorText(e, "ส่งใบเสนอราคาไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "POST /api/om/quotations/[id]/send") }, { status: 500 });
   }
 }

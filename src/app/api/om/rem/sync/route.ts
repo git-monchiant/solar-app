@@ -6,6 +6,7 @@ import { remConfigured } from "@/lib/om/rem";
 import { finishSync, logSync, syncProject, syncPromotionsByUnit } from "@/lib/om/rem-sync";
 import { syncBookingPromos, fetchBookingInfoRaw } from "@/lib/om/rem-booking";
 import { reconcileRemLinks } from "@/lib/om/rem-reconcile";
+import { omErrorText } from "@/lib/om/api-error";
 
 // ดึงทะเบียน REM ลง staging
 // ★ ดึงทั้งโครงการทีเดียวเสมอ — วัดแล้วดึง 1 หลังกับทั้งโครงการใช้เวลาพอกัน (~2.5 กับ ~3.0 วิ)
@@ -44,7 +45,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const gate = await requireAnyRole(req, ADMIN);
   if (gate.error) return gate.error;
-  if (!remConfigured()) return NextResponse.json({ error: "ยังไม่ได้ตั้ง REM_API_KEY" }, { status: 400 });
+  if (!remConfigured()) return NextResponse.json({ error: "ยังไม่ได้ตั้งค่าการเชื่อมต่อ REM — กรุณาติดต่อผู้ดูแลระบบ" }, { status: 400 });
 
   const b = await req.json().catch(() => ({}));
   const db = await getOmDb();
@@ -55,13 +56,13 @@ export async function POST(req: NextRequest) {
     try {
       const r = await reconcileRemLinks(db);
       await finishSync(db, logId, { status: "ok", inserted: r.contractsLinked + r.owners.created,
-        message: `เปิดบ้าน ${r.housesOpened} · เติมระบบ ${r.installationsCreated} · สร้างบ้าน ${r.housesCreated} · เชื่อมสัญญา ${r.contractsLinked} · ขนาดจากโปรฯ ${r.promoFilled} · เติม unit ${r.unitsLinked} · สร้างเจ้าของ ${r.owners.created} · สิทธิ์ ${r.grantsCreated}` });
+        message: `เปิดบ้าน ${r.housesOpened} · เติมระบบ ${r.installationsCreated} · สร้างบ้าน ${r.housesCreated} · เชื่อมสัญญา ${r.contractsLinked} · ขนาดจากโปรฯ ${r.promoFilled} · เติมยูนิต ${r.unitsLinked} · สร้างเจ้าของ ${r.owners.created} · สิทธิ์ ${r.grantsCreated}` });
       return NextResponse.json({ ok: true, housesOpened: r.housesOpened, installationsCreated: r.installationsCreated, housesCreated: r.housesCreated, contractsLinked: r.contractsLinked, promoFilled: r.promoFilled, unitsLinked: r.unitsLinked,
         ownersCreated: r.owners.created, ownersReused: r.owners.reused, grantsCreated: r.grantsCreated });
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "reconcile ไม่สำเร็จ";
+      const msg = e instanceof Error ? e.message : "เชื่อมโยงข้อมูล REM ไม่สำเร็จ";
       await finishSync(db, logId, { status: "error", message: msg });
-      return NextResponse.json({ error: msg }, { status: 500 });
+      return NextResponse.json({ error: omErrorText(e, "เชื่อมโยงข้อมูล REM ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "POST /api/om/rem/sync reconcile") }, { status: 500 });
     }
   }
 
@@ -84,12 +85,12 @@ export async function POST(req: NextRequest) {
     try {
       const r = await syncBookingPromos(db, limit, { onlyOm: b.only_om === true });
       await finishSync(db, logId, { status: "ok", fetched: r.done, inserted: r.rows, skipped: r.failed + r.mismatch,
-        message: `ดึง ${r.done} สัญญา · ของแถม ${r.rows} แถว · มีโซลาร์ ${r.solar} · ตัดกันข้อมูลผิด ${r.mismatch} · เหลือ ${r.remaining}` });
+        message: `ดึง ${r.done} สัญญา · ของแถม ${r.rows} แถว · มีโซลาร์ ${r.solar} · ข้ามเพราะข้อมูลไม่ตรง ${r.mismatch} · เหลือ ${r.remaining}` });
       return NextResponse.json({ ok: true, ...r });
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "ดึง BookingInfo ไม่สำเร็จ";
+      const msg = e instanceof Error ? e.message : "ดึงข้อมูลของแถมจาก REM ไม่สำเร็จ";
       await finishSync(db, logId, { status: "error", message: msg });
-      return NextResponse.json({ error: msg }, { status: 500 });
+      return NextResponse.json({ error: omErrorText(e, "ดึงข้อมูลของแถมจาก REM ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "POST /api/om/rem/sync booking") }, { status: 500 });
     }
   }
 
@@ -104,7 +105,7 @@ export async function POST(req: NextRequest) {
     } catch (e) {
       const msg = e instanceof Error ? e.message : "ดึงโปรโมชันไม่สำเร็จ";
       await finishSync(db, logId, { status: "error", message: msg });
-      return NextResponse.json({ error: msg }, { status: 500 });
+      return NextResponse.json({ error: omErrorText(e, "ดึงโปรโมชันไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "POST /api/om/rem/sync promo") }, { status: 500 });
     }
   }
 
@@ -138,8 +139,8 @@ export async function POST(req: NextRequest) {
       message: `${targets.length} โครงการ · ${fetched} แถว` });
     return NextResponse.json({ ok: true, projects: targets.length, results: done });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "sync ไม่สำเร็จ";
+    const msg = e instanceof Error ? e.message : "ดึงข้อมูล REM ไม่สำเร็จ";
     await finishSync(db, logId, { status: "error", fetched, message: msg });
-    return NextResponse.json({ error: msg, done }, { status: 500 });
+    return NextResponse.json({ error: omErrorText(e, "ดึงข้อมูล REM ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "POST /api/om/rem/sync"), done }, { status: 500 });
   }
 }

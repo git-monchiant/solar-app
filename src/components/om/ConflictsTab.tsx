@@ -84,15 +84,15 @@ export default function ConflictsTab({ onChanged }: { onChanged?: (left: number)
       <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
         <div className="px-4 py-2.5 flex items-center gap-2 flex-wrap border-b border-gray-100">
           <b className="text-base font-bold">
-            {done ? "ตัดสินไปแล้ว" : "ค่าที่ขัดกัน"} {total.toLocaleString()} รายการ
+            {done ? "ตรวจสอบแล้ว" : "ข้อมูลไม่ตรงกัน"} {total.toLocaleString()} รายการ
           </b>
           <span className="text-xs text-gray-500">
-            {done ? "ดูย้อนหลังว่าเลือกอะไรไป" : "ไฟล์ต้นทางให้ค่าหนึ่ง ระบบมีอีกค่าหนึ่ง — ระบบไม่เขียนทับ เก็บไว้ให้ตัดสิน"}
+            {done ? "ดูย้อนหลังว่าเลือกใช้ค่าใด" : "ค่าจากไฟล์ต้นทางไม่ตรงกับค่าในระบบ — ระบบไม่เขียนทับ เก็บไว้ให้ตรวจสอบ"}
           </span>
           <span className="md:ml-auto flex items-center gap-2 flex-wrap">
             <button type="button" style={{ minHeight: 0 }} onClick={() => { setDone(!done); setPage(1); }}
               className="h-8 px-3 rounded-lg border border-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-50 cursor-pointer">
-              {done ? "← กลับไปที่ค้าง" : "ดูที่ตัดสินแล้ว"}
+              {done ? "← กลับไปรายการรอตรวจสอบ" : "ดูที่ตรวจสอบแล้ว"}
             </button>
             {!done && <>
               <button type="button" style={{ minHeight: 0 }} onClick={() => setAll("keep")}
@@ -109,7 +109,7 @@ export default function ConflictsTab({ onChanged }: { onChanged?: (left: number)
 
         {rows === null ? <Loading /> : rows.length === 0 ? (
           <div className="px-4 py-8 text-center text-sm text-gray-400">
-            {done ? "ยังไม่มีรายการที่ตัดสิน" : "ไม่มีค่าที่ขัดกันค้างอยู่"}
+            {done ? "ยังไม่มีรายการที่ตรวจสอบแล้ว" : "ไม่มีข้อมูลไม่ตรงกันที่รอตรวจสอบ"}
           </div>
         ) : (
           <>
@@ -117,7 +117,7 @@ export default function ConflictsTab({ onChanged }: { onChanged?: (left: number)
             <div className="hidden md:block overflow-x-auto">
               <table className="w-full min-w-[900px] border-collapse text-xs">
                 <thead><tr className="bg-gray-50 text-left">
-                  {["โครงการ", "บ้านเลขที่", "ช่องข้อมูล", "ค่าในระบบ", "ค่าจากไฟล์", "ห่างกัน", done ? "ผลตัดสิน" : "เลือกใช้", "จุดอ้างอิง"].map((h) => (
+                  {["โครงการ", "บ้านเลขที่", "ช่องข้อมูล", "ค่าในระบบ", "ค่าจากไฟล์", "ห่างกัน", done ? "ผลการตรวจสอบ" : "เลือกใช้", "จุดอ้างอิง"].map((h) => (
                     <th key={h} className="px-3 py-2 text-xxs font-bold text-gray-500 border-b border-gray-200 whitespace-nowrap">{h}</th>
                   ))}
                 </tr></thead>

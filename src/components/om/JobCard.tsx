@@ -83,11 +83,11 @@ export default function JobCard({ r, onOpen }: { r: Item; onOpen: () => void }) 
           <div className="flex-1 min-w-0 md:w-56 md:flex-none xl:w-72">
             <div className="flex items-center gap-1.5 min-w-0 leading-tight">
               <I d={D.house} c="#0ea5e9" />
-              <span className="text-base font-bold text-gray-900 truncate">{r.house_number} · {r.customer_name || "ไม่มีชื่อในฐาน"}</span>
+              <span className="text-base font-bold text-gray-900 truncate">{r.house_number} · {r.customer_name || "ไม่มีชื่อ"}</span>
             </div>
             <div className="flex items-center gap-1.5 text-sm text-gray-500 mt-0.5 min-w-0">
               <I d={D.phone} c={r.phone ? "#10b981" : "#9ca3af"} />
-              {r.phone ? <span className="tabular-nums">{r.phone}</span> : <span className="text-gray-400">ไม่มีเบอร์ในฐาน</span>}
+              {r.phone ? <span className="tabular-nums">{r.phone}</span> : <span className="text-gray-400">ไม่มีเบอร์โทร</span>}
               {r.kwp_list && <span className="text-xs text-gray-400 truncate">· {r.kwp_list} kW</span>}
             </div>
           </div>
@@ -96,7 +96,7 @@ export default function JobCard({ r, onOpen }: { r: Item; onOpen: () => void }) 
             <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full text-white ${TONE[r.bucket] ?? "bg-gray-400"}`}>{BUCKET_LABEL[r.bucket] ?? r.bucket}</span>
             {r.job_status && EXIT_KEYS.includes(r.job_status) && (
               <span className={`text-xxs px-2 py-0.5 rounded-full text-white font-bold ${statusTone(r.job_status)}`}
-                title="ใบงานล่าสุดของบ้านนี้จบแบบนี้ — บ้านกลับมารอติดตามใหม่">งานล่าสุด {statusLabel(r.job_status)}</span>
+                title="สถานะสุดท้ายของใบงานล่าสุด — บ้านกลับมารอติดตามใหม่">ใบงานล่าสุด {statusLabel(r.job_status)}</span>
             )}
           </div>
         </div>
@@ -108,7 +108,7 @@ export default function JobCard({ r, onOpen }: { r: Item; onOpen: () => void }) 
           {/* ★ บ้านที่ทีมเพิ่มเองที่ยังไม่เคยมีสิทธิ์ = "ลูกค้าทั่วไป" (ผู้ใช้สั่ง 15 ต.ค. 69 · ไม่เคยมีสิทธิ์ จะเรียกว่าหมดไม่ได้)
               ยังต้องเสนอราคาก่อนนัดเหมือนสิทธิ์หมด — กติกานั้นดู balance ไม่ใช่ป้ายนี้ */}
           {r.balance > 0
-            ? <span className="px-2 py-0.5 rounded-md bg-teal-50 text-gray-700">สิทธิ์เหลือ <b className="text-primary-dark">{r.balance}</b> ครั้ง</span>
+            ? <span className="px-2 py-0.5 rounded-md bg-teal-50 text-gray-700">สิทธิ์คงเหลือ <b className="text-primary-dark">{r.balance}</b> ครั้ง</span>
             : <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 font-bold">{r.new_manual ? "ลูกค้าทั่วไป" : "สิทธิ์หมด"}</span>}
           {r.last_wash
             ? <span className="px-2 py-0.5 rounded-md bg-gray-100 text-gray-700">ล้างล่าสุด <b>{thD(r.last_wash)}</b> <span className="text-gray-400">({m} เดือน)</span></span>

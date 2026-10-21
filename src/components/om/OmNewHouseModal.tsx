@@ -87,7 +87,7 @@ export default function OmNewHouseModal({ onClose, onOpenHouse }: {
     !pick && !f.first_name.trim() && "ชื่อลูกค้า",
     !pick && !/^0\d{9}$/.test(phone) && "เบอร์โทร 10 หลัก",
     pick && phone && !/^0\d{9}$/.test(phone) && "เบอร์โทร 10 หลัก",
-    fakePhone && "เบอร์จริง (เลขซ้ำ/เรียงกันใช้ไม่ได้)",
+    fakePhone && "เบอร์โทรที่ใช้งานได้ (ใช้เลขซ้ำหรือเลขเรียงไม่ได้)",
     idCard && !/^\d{13}$/.test(idCard) && "เลขบัตร 13 หลัก",
     !houseNumber && "บ้านเลขที่",
     !f.project_id && !f.address.trim() && "ที่อยู่ (บ้านนอกโครงการ)",
@@ -116,10 +116,10 @@ export default function OmNewHouseModal({ onClose, onOpenHouse }: {
       const body = await res.json().catch(() => ({}));
       if (res.status === 409 && Array.isArray(body.conflicts)) {
         setConflicts(body.conflicts);
-        setError(body.error || "ข้อมูลชนกับที่มีอยู่แล้ว");
+        setError(body.error || "ข้อมูลซ้ำกับที่มีในระบบ");
         return;
       }
-      if (!res.ok) throw new Error(body.error || `บันทึกไม่สำเร็จ (${res.status})`);
+      if (!res.ok) throw new Error(body.error || "บันทึกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
       onClose();
       router.push(`/om/services/${body.house_id}`);
     } catch (e) {
@@ -142,7 +142,7 @@ export default function OmNewHouseModal({ onClose, onOpenHouse }: {
       footer={
         <div className="grid gap-2">
           {problems.length > 0 && (
-            <div className="text-xs text-gray-500">ยังขาด: {problems.join(" · ")}</div>
+            <div className="text-xs text-gray-500">กรุณากรอก: {problems.join(" · ")}</div>
           )}
           <div className="flex gap-2">
             <button type="button" onClick={onClose}
@@ -162,7 +162,7 @@ export default function OmNewHouseModal({ onClose, onOpenHouse }: {
         <Sec t="ลูกค้า" />
         {pick ? (
           <div className="flex items-center gap-2 rounded-lg bg-active-light px-3 py-2 text-sm">
-            <span>ใช้ลูกค้าเดิม <b>{pick.name || `#${pick.id}`}</b></span>
+            <span>ใช้ลูกค้าเดิม <b>{pick.name || `รหัส ${pick.id}`}</b></span>
             <button type="button" style={{ minHeight: 0 }} onClick={() => setPick(null)}
               className="ml-auto h-7 px-3 rounded-lg border border-gray-200 bg-white text-xs font-bold cursor-pointer">เปลี่ยน</button>
           </div>
@@ -182,26 +182,26 @@ export default function OmNewHouseModal({ onClose, onOpenHouse }: {
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="grid gap-1"><span className="text-xs font-bold text-gray-700">เบอร์โทร {pick ? "" : "*"}</span>
             <input value={f.phone} onChange={set("phone")} inputMode="tel" placeholder="08xxxxxxxx" className={INPUT} />
-            {fakePhone && <span className="text-xs text-red-600">เบอร์นี้ไม่ใช่เบอร์จริง — ใส่เบอร์ที่ติดต่อลูกค้าได้</span>}</label>
-          <label className="grid gap-1"><span className="text-xs font-bold text-gray-700">เลขบัตร ปชช.</span>
-            <input value={f.id_card} onChange={set("id_card")} inputMode="numeric" placeholder="ไม่บังคับ — ช่วยกันลูกค้าซ้ำ" className={INPUT} /></label>
+            {fakePhone && <span className="text-xs text-red-600">เบอร์โทรไม่ถูกต้อง — กรุณากรอกเบอร์ที่ติดต่อลูกค้าได้</span>}</label>
+          <label className="grid gap-1"><span className="text-xs font-bold text-gray-700">เลขบัตรประชาชน</span>
+            <input value={f.id_card} onChange={set("id_card")} inputMode="numeric" placeholder="ไม่บังคับ — ใช้ตรวจสอบรายชื่อซ้ำ" className={INPUT} /></label>
         </div>
         {/* คนที่ชน — ต้องเลือกใช้คนเดิม ระบบไม่สร้างคนซ้ำ (เปลี่ยนเบอร์/เลขบัตรได้ถ้าไม่ใช่คนเดียวกัน) */}
         {needPick && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 grid gap-2">
-            <div className="text-xs font-bold text-amber-800">มีลูกค้าใช้เบอร์ / เลขบัตรนี้อยู่แล้ว — ถ้าเป็นคนเดียวกัน กดใช้ลูกค้าคนนี้</div>
+            <div className="text-xs font-bold text-amber-800">มีลูกค้าที่ใช้เบอร์โทร / เลขบัตรนี้อยู่แล้ว — หากเป็นบุคคลเดียวกัน กด “ใช้ลูกค้ารายนี้”</div>
             {people.map((p) => (
               <div key={p.id} className="flex flex-wrap items-center gap-2 text-sm">
                 <span className="min-w-0">
-                  <b>{p.name || `#${p.id}`}</b>
-                  <span className="text-xs text-gray-500"> · ชน{[...p.kinds].map((k) => (k === "phone" ? "เบอร์" : "เลขบัตร")).join("+")}</span>
+                  <b>{p.name || `รหัส ${p.id}`}</b>
+                  <span className="text-xs text-gray-500"> · {[...p.kinds].map((k) => (k === "phone" ? "เบอร์โทร" : "เลขบัตร")).join("/")}ตรงกัน</span>
                   {p.houses.map((h) => (
                     <a key={h.house_id} href={`/om/services/${h.house_id}`} target="_blank" rel="noreferrer"
                       className="ml-2 text-xs font-bold text-active hover:underline">บ้าน {houseLabel(h)} ↗</a>
                   ))}
                 </span>
                 <button type="button" style={{ minHeight: 0 }} onClick={() => setPick({ id: p.id, name: p.name })}
-                  className="ml-auto h-7 px-3 rounded-lg bg-primary text-white text-xs font-bold cursor-pointer">ใช้ลูกค้าคนนี้</button>
+                  className="ml-auto h-7 px-3 rounded-lg bg-primary text-white text-xs font-bold cursor-pointer">ใช้ลูกค้ารายนี้</button>
               </div>
             ))}
           </div>
@@ -221,14 +221,14 @@ export default function OmNewHouseModal({ onClose, onOpenHouse }: {
         {houseHit && (
           houseHit.house_state === "dormant" ? (
             <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
-              มีบ้าน <b>{houseLabel(houseHit)}</b> ในทะเบียนอยู่แล้ว (ยังไม่เปิดงาน O&M{houseHit.customer_name ? ` · ${houseHit.customer_name}` : ""})
-              — กดบันทึกจะ<b>เปิดใช้บ้านเดิม</b>แทนการสร้างใหม่ ข้อมูลเดิมไม่ถูกเขียนทับ
+              มีบ้าน <b>{houseLabel(houseHit)}</b> ในระบบอยู่แล้ว (ยังไม่เปิดใช้งาน O&M{houseHit.customer_name ? ` · ${houseHit.customer_name}` : ""})
+              — เมื่อกดบันทึก ระบบจะ<b>เปิดใช้บ้านเดิม</b>แทนการสร้างใหม่ ข้อมูลเดิมไม่ถูกเขียนทับ
             </div>
           ) : (
             <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 flex flex-wrap items-center gap-2">
               <span>
                 บ้าน <b>{houseLabel(houseHit)}</b>{houseHit.customer_name ? ` · ${houseHit.customer_name}` : ""}{" "}
-                {houseHit.house_state === "hidden" ? "ถูกซ่อนออกจากงาน O&M — เปิดบ้านแล้วกด “เอากลับเข้าระบบ”" : "มีในระบบ O&M แล้ว"}
+                {houseHit.house_state === "hidden" ? "ถูกซ่อนออกจากงาน O&M — เปิดข้อมูลบ้านแล้วกด “นำกลับเข้าระบบ”" : "มีในระบบ O&M แล้ว"}
               </span>
               {houseHit.house_state === "hidden" ? (
                 <button type="button" style={{ minHeight: 0 }} onClick={() => onOpenHouse(houseHit.house_id!)}
@@ -242,17 +242,17 @@ export default function OmNewHouseModal({ onClose, onOpenHouse }: {
         )}
         <label className="grid gap-1"><span className="text-xs font-bold text-gray-700">ที่อยู่ {f.project_id ? "" : "*"}</span>
           <textarea value={f.address} onChange={set("address")} rows={2}
-            placeholder={f.project_id ? "ไม่บังคับ — บ้านในโครงการช่างหาได้จากบ้านเลขที่" : "ถนน · ตำบล · อำเภอ · จังหวัด — ช่างใช้เดินทาง"}
+            placeholder={f.project_id ? "ไม่บังคับ — บ้านในโครงการค้นหาได้จากบ้านเลขที่" : "ถนน · ตำบล · อำเภอ · จังหวัด — สำหรับช่างเดินทางไปหน้างาน"}
             className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold outline-none focus:border-primary" /></label>
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="grid gap-1"><span className="text-xs font-bold text-gray-700">พิกัด</span>
             <input value={f.coords} onChange={set("coords")} placeholder="13.7563, 100.5018 หรือลิงก์ Google Maps" className={INPUT} />
             {coords && (
               <a href={`https://www.google.com/maps?q=${coords.lat},${coords.lng}`} target="_blank" rel="noreferrer"
-                className="text-xs font-bold text-active hover:underline">📍 เปิดแผนที่ตรวจ</a>
+                className="text-xs font-bold text-active hover:underline">📍 เปิดแผนที่ตรวจสอบ</a>
             )}</label>
-          <label className="grid gap-1"><span className="text-xs font-bold text-gray-700">note ทีม <small className="font-medium text-gray-400">— ลูกค้าไม่เห็น</small></span>
-            <input value={f.note} onChange={set("note")} placeholder="เช่น ติดตั้งโดยบริษัทไหน" className={INPUT} /></label>
+          <label className="grid gap-1"><span className="text-xs font-bold text-gray-700">หมายเหตุ <small className="font-medium text-gray-400">— ลูกค้าไม่เห็น</small></span>
+            <input value={f.note} onChange={set("note")} placeholder="เช่น ชื่อบริษัทที่ติดตั้ง" className={INPUT} /></label>
         </div>
 
         {/* ── ระบบโซลาร์ (ไม่บังคับ · ผู้ใช้เลือก D2 = A) */}
@@ -265,7 +265,7 @@ export default function OmNewHouseModal({ onClose, onOpenHouse }: {
           <label className="grid gap-1"><span className="text-xs font-bold text-gray-700">ขนาดระบบ kWp</span>
             <input value={f.size_kwp} onChange={set("size_kwp")} inputMode="decimal" className={INPUT} /></label>
           <label className="grid gap-1 col-span-2 sm:col-span-1"><span className="text-xs font-bold text-gray-700">ยี่ห้อแบตเตอรี่</span>
-            <input value={f.battery_brand} onChange={set("battery_brand")} placeholder="ไม่มีก็เว้นว่าง" className={INPUT} /></label>
+            <input value={f.battery_brand} onChange={set("battery_brand")} placeholder="เว้นว่างได้หากไม่มี" className={INPUT} /></label>
           <label className="grid gap-1"><span className="text-xs font-bold text-gray-700">แบตเตอรี่ kWh</span>
             <input value={f.battery_kwh} onChange={set("battery_kwh")} inputMode="decimal" className={INPUT} /></label>
           <label className="grid gap-1"><span className="text-xs font-bold text-gray-700">วันติดตั้ง</span>
@@ -273,7 +273,7 @@ export default function OmNewHouseModal({ onClose, onOpenHouse }: {
         </div>
         {noSpec && (
           <div className="text-xs text-amber-700">
-            ⚠ ไม่ได้กรอกยี่ห้อ / ขนาด — ใบเสนอราคาจะไม่ขึ้นขนาด kW ให้เอง (พิมพ์ในใบได้) และเช็คแพ็กเกจตรงขนาดบ้านไม่ได้
+            ⚠ ไม่ได้กรอกยี่ห้อ / ขนาด — ใบเสนอราคาจะไม่แสดงขนาด kW อัตโนมัติ (พิมพ์เพิ่มในใบเสนอราคาได้) และตรวจสอบแพ็กเกจที่ตรงกับขนาดระบบไม่ได้
           </div>
         )}
         <div className="text-xs text-gray-500">

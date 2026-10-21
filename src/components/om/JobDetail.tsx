@@ -197,7 +197,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
   // ชื่อแท็บ = บ้านเลขที่ - ชื่อลูกค้า เหมือนหน้า lead — เปิดหลายแท็บแล้วยังแยกออกว่าแท็บไหนบ้านไหน
   useEffect(() => {
     const prev = document.title;
-    const name = item.customer_name || "ไม่มีชื่อในฐาน";
+    const name = item.customer_name || "ไม่มีชื่อ";
     document.title = item.house_number ? `${item.house_number} - ${name}` : name;
     return () => { document.title = prev; };
   }, [item.house_number, item.customer_name]);
@@ -273,7 +273,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
   // confirm = ปุ่ม "ยืนยันและเข้างาน" ขั้น 04 — บันทึกเป็นนัดแล้ว แล้วพาไปขั้น 05
   const saveCall = async (oc: string, confirm = false) => {
     if (!oc) return;
-    if (oc === "agreed" && (!apDate || !apSlot)) { setErr("ตกลงนัดแล้วต้องเลือกวันและช่วงเวลา"); return; }
+    if (oc === "agreed" && (!apDate || !apSlot)) { setErr("กรุณาเลือกวันและช่วงเวลานัด"); return; }
     setBusy(true); setErr("");
     try {
       await apiFetch("/api/om/follow", {
@@ -297,14 +297,14 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
   // เปิดใบงานซ่อมจากใบนี้ (ปิดแล้ว) — ใบใหม่เริ่มขั้นติดตาม (ในประกัน) หรือเสนอราคา (นอกประกัน)
   const openRepair = async () => {
     if (!item.booking_id) return;
-    if (!rpDetail.trim()) { setErr("ต้องระบุอาการ / สิ่งที่ต้องซ่อม"); return; }
-    if (rpWarranty === null) { setErr("เลือกก่อนว่างานซ่อมนี้อยู่ในประกันหรือนอกประกัน"); return; }
+    if (!rpDetail.trim()) { setErr("กรุณาระบุอาการ / สิ่งที่ต้องซ่อม"); return; }
+    if (rpWarranty === null) { setErr("กรุณาเลือกว่างานซ่อมนี้อยู่ในประกันหรือนอกประกัน"); return; }
     setBusy(true); setErr("");
     try {
       const d = await apiFetch(`/api/om/bookings/${item.booking_id}/repair`, {
         method: "POST", body: JSON.stringify({ in_warranty: rpWarranty, detail: rpDetail.trim() }),
       });
-      onSaved(`เปิดใบงานซ่อม #${d.id} แล้ว`); onDone();
+      onSaved(`เปิดใบงานซ่อมเลขที่ ${d.id} แล้ว`); onDone();
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   };
@@ -316,7 +316,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
       await apiFetch(`/api/om/bookings/${item.booking_id}/cancel`, {
         method: "POST", body: JSON.stringify({ reason: cancelReason.trim() }),
       });
-      onSaved(isRepairJob ? "ยกเลิกใบงานซ่อมแล้ว" : "บันทึกลูกค้าไม่เอา — ยกเลิกใบงานแล้ว"); onDone();
+      onSaved(isRepairJob ? "ยกเลิกใบงานซ่อมแล้ว" : "ลูกค้าปฏิเสธบริการ — ยกเลิกใบงานแล้ว"); onDone();
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   };
@@ -344,7 +344,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
         method: "POST", body: JSON.stringify({ text: noteText.trim(), booking_id: item.booking_id }),
       });
       setNoteOpen(false); setNoteText("");
-      onSaved("บันทึกโน้ตแล้ว"); onReload?.();
+      onSaved("บันทึกหมายเหตุแล้ว"); onReload?.();
     } catch (e) { setNoteErr(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   };
@@ -378,10 +378,10 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
   // ตัดสิทธิ์ไหม — ★ เฟส 5: ซ่อม (ในประกัน) เป็นงานฟรีที่ไม่ใช้สิทธิ์ล้าง ดูจาก consumes_quota ไม่ใช่ skip อย่างเดียว
   //   ★ แผน 20260929-02: การ์ดปิดงานล็อกจนกว่าจะปิด ⇒ ก่อนปิดบอกที่การ์ดเข้างานแทน
   const quotaNote = skip && item.consumes_quota !== 0
-    ? (cur === "closed" ? <>ตัด<b>สิทธิ์ล้าง 1 ครั้ง</b></> : <>ปิดแล้วระบบจะตัด<b>สิทธิ์ล้าง 1 ครั้ง</b> เหลือ {Math.max(0, item.balance - 1)} ครั้ง</>)
+    ? (cur === "closed" ? <>หัก<b>สิทธิ์ล้าง 1 ครั้ง</b></> : <>เมื่อปิดงาน ระบบจะหัก<b>สิทธิ์ล้าง 1 ครั้ง</b> คงเหลือ {Math.max(0, item.balance - 1)} ครั้ง</>)
     : skip
-    ? <>งาน{item.service_type ?? "นี้"}ฟรี <b>ไม่ตัดสิทธิ์ล้าง</b></>
-    : <>งานเสียเงิน <b>ไม่ตัดสิทธิ์</b></>;
+    ? <>งาน{item.service_type ?? "นี้"}ฟรี <b>ไม่หักสิทธิ์ล้าง</b></>
+    : <>งานมีค่าบริการ <b>ไม่หักสิทธิ์</b></>;
 
   // ── แถบสรุปการโทรรอบนี้ (แผน 20260929-03 ข้อ 3) — ข้อมูลชุดเดียวกับการ์ดในรายการ (JobCard) ──
   //   เดิม API ส่งมาแล้วแต่การ์ดไม่แสดง ต้องไล่ Activity Log เอง · ไม่รู้ว่าอีกกี่ครั้งจะตกแท็บติดต่อไม่ได้
@@ -482,7 +482,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
         {/* ทางไปบันทึกติดต่อไม่ได้ — คนที่ชินกับปุ่มเดิมในการ์ดจะได้ไม่หลง
             ★ 21 ต.ค. 69 ผู้ใช้สั่งเอาออกจากขั้น 01 (ปุ่ม Follow-up บนหัวการ์ดมีอยู่แล้ว) — เหลือเฉพาะงานชำระแล้วที่ขั้น 04 */}
         {mode === "paid" && <div className="text-xs text-gray-500 flex items-center gap-1.5 flex-wrap">
-          <span>ติดต่อแล้วยังไม่ได้ข้อสรุป หรือติดต่อไม่ได้? บันทึกที่ปุ่ม</span>
+          <span>หากยังไม่ได้ข้อสรุปหรือติดต่อไม่ได้ บันทึกที่ปุ่ม</span>
           <button type="button" onClick={() => setFollowOpen(true)} style={{ minHeight: 0 }}
             className="inline-flex items-center gap-1 px-2 h-6 rounded-md bg-amber-50 text-amber-700 border border-amber-200 font-semibold hover:bg-amber-100 cursor-pointer">
             <ClockIcon className="w-3.5 h-3.5" strokeWidth={2} />Follow-up
@@ -492,17 +492,17 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
         {/* ผลของตัวเลือก — บอกก่อนกด */}
         {mode === "follow" && oc === "agreed" && (needQuote ? (
           <div className="mt-3 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs leading-relaxed text-amber-900">
-            บ้านนี้<b>สิทธิ์ล้างหมดแล้ว</b> — ออกใบเสนอราคาที่ขั้น <b>02</b> และรับเงินก่อนนัด (เก็บค่าบริการก่อนนัดหมาย)
-            · ถ้าตัวเลขสิทธิ์ผิด แก้ที่หน้าบ้าน / ระบบติดตั้ง
+            บ้านนี้<b>ไม่มีสิทธิ์ล้างคงเหลือ</b> — ออกใบเสนอราคาที่ขั้น <b>02</b> และรับชำระเงินก่อนนัดหมาย
+            · หากจำนวนสิทธิ์ไม่ถูกต้อง แก้ไขที่หน้าบ้าน / ระบบติดตั้ง
           </div>
         ) : (
           <div className="mt-3 rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 text-xs leading-relaxed text-gray-600">
-            เลือกวันนัดต่อที่ขั้น <b>04 นัดหมาย</b> — ยังไม่บันทึกจนกว่าจะเลือกวันเสร็จ
+            เลือกวันนัดต่อที่ขั้น <b>04 นัดหมาย</b> — ระบบจะบันทึกเมื่อเลือกวันนัดเรียบร้อย
           </div>
         ))}
         {mode === "follow" && oc === "declined" && (
           <div className="mt-3 rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 text-xs leading-relaxed text-gray-600">
-            <b>ไม่สร้างใบงาน</b> ย้ายไปแท็บปฏิเสธ · <b>สิทธิ์ไม่ถูกตัด</b> ยังใช้ได้ถ้าเปลี่ยนใจ
+            <b>ไม่สร้างใบงาน</b> ย้ายไปแท็บปฏิเสธ · <b>ไม่หักสิทธิ์</b>
           </div>
         )}
 
@@ -602,7 +602,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
     if (cur === "pending")
       await apiFetch(`/api/om/bookings/${item.booking_id}`, { method: "PATCH", body: JSON.stringify({ status: "confirmed" }) });
     await apiFetch(`/api/om/bookings/${item.booking_id}`, { method: "PATCH", body: JSON.stringify({ status: "progress" }) });
-    onSaved("ช่างถึงหน้างานแล้ว — เริ่มกรอกเช็คลิสต์");
+    onSaved("ช่างถึงหน้างานแล้ว — เริ่มกรอกใบตรวจรับงาน");
     if (onReload) onReload(); else onDone();
   };
 
@@ -620,7 +620,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
             {/* กดเปิดข้อมูลลูกค้า แบบ avatar หน้า lead เปิด ProfileModal (2 ต.ค. 69) — บ้านที่ยังไม่ผูกลูกค้ากดไม่ได้ */}
             {/* Account อ่านอย่างเดียว — modal นี้แก้ข้อมูลลูกค้า/เบอร์ได้ จึงกดไม่ได้ (แผน 20261014-06) */}
             <button type="button" onClick={() => setProfileOpen(true)} disabled={!item.customer_id || viewOnly}
-              title={viewOnly ? undefined : item.customer_id ? "ข้อมูลลูกค้า" : "ยังไม่ผูกลูกค้า"}
+              title={viewOnly ? undefined : item.customer_id ? "ข้อมูลลูกค้า" : "ยังไม่ระบุลูกค้า"}
               className="w-14 h-14 rounded-full flex items-center justify-center text-gray-600 shrink-0 hover:opacity-80 transition-colors cursor-pointer disabled:cursor-default disabled:hover:opacity-100"
               style={{ minHeight: 0 }}>
               <svg className="w-12 h-12" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -637,14 +637,14 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 min-w-0">
                 <h1 className="text-lg md:text-xl font-bold tracking-tight leading-tight text-gray-900 truncate">
-                  {item.house_number ? `${item.house_number} - ` : ""}{item.customer_name || "ไม่มีชื่อในฐาน"}
+                  {item.house_number ? `${item.house_number} - ` : ""}{item.customer_name || "ไม่มีชื่อ"}
                 </h1>
                 <span className={`hidden sm:inline-flex shrink-0 text-xxs font-bold uppercase tracking-wide px-2 py-0.5 rounded-full text-white ${TONE[item.bucket] ?? "bg-gray-400"}`}>
                   {BUCKET_LABEL[item.bucket] ?? item.bucket}
                 </span>
                 {isExit && (
                   <span className={`hidden sm:inline-flex shrink-0 text-xxs font-bold tracking-wide px-2 py-0.5 rounded-full text-white ${statusTone(cur)}`}>
-                    งานล่าสุด {statusLabel(cur)}
+                    ใบงานล่าสุด {statusLabel(cur)}
                   </span>
                 )}
               </div>
@@ -657,14 +657,14 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                 <span className="truncate">
                   {item.project_name && <span className="font-bold text-gray-900">{item.project_name}</span>}
                   <span className="text-gray-300 mx-1.5">·</span>
-                  <span className="font-mono tabular-nums">{item.phone || "ไม่มีเบอร์"}</span>
+                  <span className="font-mono tabular-nums">{item.phone || "ไม่มีเบอร์โทร"}</span>
                   <span className="text-gray-300 mx-1.5">·</span>
-                  สิทธิ์เหลือ <b className="text-gray-900">{Math.max(0, item.balance)}</b> ครั้ง
+                  สิทธิ์คงเหลือ <b className="text-gray-900">{Math.max(0, item.balance)}</b> ครั้ง
                   <span className="text-gray-300 mx-1.5">·</span>
                   {item.last_wash
                     ? <>ล้างล่าสุด <b className="text-gray-900">{thD(item.last_wash)}</b></>
                     : <span className="font-semibold text-amber-600">ยังไม่เคยล้าง</span>}
-                  {item.booking_id && <><span className="text-gray-300 mx-1.5">·</span>ใบงาน #{item.booking_id}</>}
+                  {item.booking_id && <><span className="text-gray-300 mx-1.5">·</span>ใบงานเลขที่ {item.booking_id}</>}
                   {/* ★ 1 ต.ค. 69 เลิกใช้ทีม A/B/C (แผน 20261001-01 เฟส 4) — เอาชื่อทีม / "⚠ ยังไม่จ่ายทีม" ออกจากหัว */}
                 </span>
               </div>
@@ -720,7 +720,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                 <ClockIcon className="w-4 h-4" strokeWidth={2} />
                 Follow-up
               </button>
-              <button type="button" onClick={() => { setNoteErr(""); setNoteOpen(true); }} title="บันทึกโน้ตลงไทม์ไลน์ของบ้าน"
+              <button type="button" onClick={() => { setNoteErr(""); setNoteOpen(true); }} title="บันทึกหมายเหตุลง Activity Log"
                 className="flex items-center gap-1.5 px-3 h-8 rounded-lg bg-gray-100 text-gray-700 text-sm font-semibold border border-gray-200 hover:bg-gray-200 transition-colors cursor-pointer" style={{ minHeight: 0 }}>
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
@@ -787,9 +787,9 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
               <div className={`rounded-lg border px-4 py-3 text-sm ${item.in_warranty ? "bg-emerald-50 border-emerald-200" : "bg-pink-50 border-pink-200"}`}>
                 <div className="flex items-center gap-2 flex-wrap">
                   <b className="text-gray-900">ใบงานซ่อม</b>
-                  <span className="text-gray-500">มาจากใบงาน #{item.parent_booking_id}</span>
+                  <span className="text-gray-500">มาจากใบงานเลขที่ {item.parent_booking_id}</span>
                   <span className={`text-xxs font-bold px-2 py-0.5 rounded-full text-white ${item.in_warranty ? "bg-emerald-600" : "bg-pink-600"}`}>
-                    {item.in_warranty ? "ในประกัน — ไม่เก็บเงิน" : "นอกประกัน — เสนอราคาก่อนนัด"}
+                    {item.in_warranty ? "ในประกัน — ไม่มีค่าบริการ" : "นอกประกัน — เสนอราคาก่อนนัด"}
                   </span>
                   {canDecline && !cancelOpen && (
                     <button type="button" onClick={() => setCancelOpen(true)} style={{ minHeight: 0 }}
@@ -861,7 +861,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
               {stepState(2) === "done"
                 ? doneView(2,
                     // ★ 15 ต.ค. 69 ผู้ใช้สั่งย้ายใบเสร็จขึ้นบรรทัดสรุปแบบขั้นอื่น (เดิมอยู่ในกล่องสถานะเงินข้างใน)
-                    <DoneHead text={`${item.pay_state === "paid" ? "ชำระแล้ว" : "ชำระเงิน"} ${formatTHB(Number(item.q_total ?? 0))} บาท${item.q_doc_no ? ` · ตามใบ ${item.q_doc_no}` : ""}`}>
+                    <DoneHead text={`${item.pay_state === "paid" ? "ชำระแล้ว" : "ชำระเงิน"} ${formatTHB(Number(item.q_total ?? 0))} บาท${item.q_doc_no ? ` · ตามใบเสนอราคา ${item.q_doc_no}` : ""}`}>
                       {item.q_id && <OmReceiptHead item={item} />}
                     </DoneHead>,
                     () => (
@@ -891,9 +891,9 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                 <div className="space-y-3">
                   <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg border bg-emerald-50 border-emerald-600/15 text-sm text-emerald-900">
                     <CheckIcon className="w-4 h-4 shrink-0 text-emerald-600" strokeWidth={2.5} />
-                    <span className="min-w-0">ชำระค่าบริการแล้ว{item.q_doc_no && <> ตามใบ <b className="font-mono">{item.q_doc_no}</b></>} — โทรตกลงวันนัดกับลูกค้า</span>
+                    <span className="min-w-0">ชำระค่าบริการแล้ว{item.q_doc_no && <> ตามใบเสนอราคา <b className="font-mono">{item.q_doc_no}</b></>} — โทรตกลงวันนัดกับลูกค้า</span>
                   </div>
-                  {viewOnly ? waitNote("รอ Sale โทรตกลงวันนัดกับลูกค้า") : callForm("paid")}
+                  {viewOnly ? waitNote("รอฝ่ายขายโทรตกลงวันนัดกับลูกค้า") : callForm("paid")}
                 </div>
               ) : schedFree ? (
                 // ★ 1 ต.ค. 69 งานฟรีตกลงที่ขั้น 01 แล้ว — เลือกวันนัดที่นี่ที่เดียวแบบงานที่ชำระเงินแล้ว
@@ -910,7 +910,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                     <CheckIcon className="w-4 h-4 shrink-0 text-active" strokeWidth={2.5} />
                     <span className="min-w-0 flex-1">ลูกค้าตกลงแล้ว แต่ยังไม่มีวันนัด — เลือกวันนัดกับลูกค้า</span>
                   </div>
-                  {viewOnly ? waitNote("รอ Sale โทรตกลงวันนัดกับลูกค้า") : callForm("paid")}
+                  {viewOnly ? waitNote("รอฝ่ายขายโทรตกลงวันนัดกับลูกค้า") : callForm("paid")}
                 </div>
               ) : null}
             </StepCard>
@@ -954,7 +954,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                     <div className="mb-3 text-xs text-teal-700 font-semibold">ช่างทำงานเสร็จแล้ว รอปิดงาน — ปิดต่อได้ที่ขั้นส่งมอบ</div>
                   ) : undefined} />
               ) : (
-                <div className={`${SECTION} text-sm text-gray-500`}>ยังไม่มีใบงาน — ใบตรวจรับงานจะขึ้นเมื่อสร้างนัดแล้ว</div>
+                <div className={`${SECTION} text-sm text-gray-500`}>ยังไม่มีใบงาน — ใบตรวจรับงานจะแสดงเมื่อสร้างนัดแล้ว</div>
               )}
             </StepCard>
 
@@ -969,7 +969,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                     const at = report?.finished_at ?? rowsOf("closed").find((r) => r.action === "done")?.at ?? null;
                     return at ? ` ${thD(at)}` : "";
                   })()} · {report
-                    ? (report.redeemed > 0 ? `ตัดสิทธิ์ล้าง ${report.redeemed} ครั้ง` : "ไม่ตัดสิทธิ์")
+                    ? (report.redeemed > 0 ? `หักสิทธิ์ล้าง ${report.redeemed} ครั้ง` : "ไม่หักสิทธิ์")
                     : quotaNote}
                 </>}>
                   {item.booking_id && <ServiceDocButton bookingId={item.booking_id} />}
@@ -985,9 +985,9 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                   {item.repair_cancel_id
                     ? !rpOpen && (
                       <div className="text-sm text-gray-600 flex items-center gap-2 flex-wrap">
-                        <span>ใบงานซ่อม #{item.repair_cancel_id} ถูกยกเลิกแล้ว{item.repair_cancel_reason && <> — เหตุผล: <b>{item.repair_cancel_reason}</b></>}</span>
+                        <span>ใบงานซ่อมเลขที่ {item.repair_cancel_id} ถูกยกเลิกแล้ว{item.repair_cancel_reason && <> — เหตุผล: <b>{item.repair_cancel_reason}</b></>}</span>
                         <button type="button" onClick={() => setRpOpen(true)} style={{ minHeight: 0 }}
-                          className="text-active font-semibold hover:underline cursor-pointer">ลูกค้าเปลี่ยนใจ? เปิดใบงานซ่อมใหม่ ›</button>
+                          className="text-active font-semibold hover:underline cursor-pointer">เปิดใบงานซ่อมใหม่ ›</button>
                       </div>
                     )
                     : item.repair_needed === 1
@@ -996,7 +996,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                       <div className="text-sm text-gray-600 flex items-center gap-2 flex-wrap">
                         ช่างไม่ได้แจ้งงานซ่อม
                         <button type="button" onClick={() => setRpOpen(true)} style={{ minHeight: 0 }}
-                          className="text-active font-semibold hover:underline cursor-pointer">พบปัญหาภายหลัง? เปิดใบงานซ่อม ›</button>
+                          className="text-active font-semibold hover:underline cursor-pointer">เปิดใบงานซ่อม ›</button>
                       </div>
                     )}
 
@@ -1011,7 +1011,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                       <div>
                         <label className={FIELD_LABEL}>ประกันการติดตั้ง <span className="text-red-500">*</span></label>
                         <div className="flex gap-2 flex-wrap">
-                          <button type="button" onClick={() => setRpWarranty(true)} className={chipBtn(rpWarranty === true)}>ในประกัน — ไม่เก็บเงิน</button>
+                          <button type="button" onClick={() => setRpWarranty(true)} className={chipBtn(rpWarranty === true)}>ในประกัน — ไม่มีค่าบริการ</button>
                           <button type="button" onClick={() => setRpWarranty(false)} className={chipBtn(rpWarranty === false)}>นอกประกัน — ต้องเสนอราคา</button>
                         </div>
                         <span className="block mt-1.5 text-xxs text-gray-500">
@@ -1021,9 +1021,9 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                         </span>
                       </div>
                       <div className="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 text-xs leading-relaxed text-gray-600">
-                        {rpWarranty === true && <>สร้าง<b>ใบงานซ่อม</b>ขั้น <b>ติดตาม</b> → โทรนัดได้เลย ข้ามเสนอราคา/ชำระเงิน · ปิดงานแล้ว<b>ไม่ตัดสิทธิ์ล้าง</b></>}
-                        {rpWarranty === false && <>สร้าง<b>ใบงานซ่อม</b>ขั้น <b>เสนอราคา</b> → Sale ออกใบ → อนุมัติ → รับเงิน → นัด</>}
-                        {rpWarranty === null && <>เลือกก่อนว่าในประกันหรือนอกประกัน</>}
+                        {rpWarranty === true && <>สร้าง<b>ใบงานซ่อม</b>ที่ขั้น <b>ติดตาม</b> โทรนัดได้ทันทีโดยข้ามขั้นเสนอราคา/ชำระเงิน · ปิดงานแล้ว<b>ไม่หักสิทธิ์ล้าง</b></>}
+                        {rpWarranty === false && <>สร้าง<b>ใบงานซ่อม</b>ที่ขั้น <b>เสนอราคา</b> ฝ่ายขายออกใบเสนอราคา ขออนุมัติ และรับชำระเงินก่อนนัดหมาย</>}
+                        {rpWarranty === null && <>กรุณาเลือกว่าอยู่ในประกันหรือนอกประกัน</>}
                       </div>
                       <div className="flex md:justify-end">
                         <button type="button" disabled={busy} onClick={openRepair} className={`${PRIMARY_BTN} flex-1 md:flex-none md:w-64`}>
@@ -1097,7 +1097,8 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                   <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
                 </svg>
               </span>
-              <span>บันทึกโน้ต</span>
+              {/* ★ 21 ต.ค. 69 แผน 20261021-01: ปุ่มเปิดเป็นคำอังกฤษ "Note" (ชุดเดียวกับหน้า lead) — หัวหน้าต่างใช้คำเดียวกับปุ่ม */}
+              <span>Note — บันทึกหมายเหตุ</span>
             </div>
           }
           onClose={() => setNoteOpen(false)}
@@ -1117,7 +1118,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
         >
           <div className="space-y-2">
             <textarea value={noteText} onChange={(e) => setNoteText(e.target.value)}
-              placeholder="บันทึกโน้ต... (ขึ้นใน Activity Log ของบ้านนี้)" rows={4} autoFocus maxLength={300}
+              placeholder="บันทึกหมายเหตุ... (แสดงใน Activity Log ของบ้านนี้)" rows={4} autoFocus maxLength={300}
               className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-white focus:outline-none focus:border-primary text-sm resize-none" />
             <div className="text-right text-xxs text-gray-400">{noteText.length}/300</div>
             {noteErr && <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">{noteErr}</div>}

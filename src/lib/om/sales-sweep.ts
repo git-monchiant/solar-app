@@ -204,7 +204,7 @@ export async function commitLead(db: sql.ConnectionPool, lead: LeadRow, o: Commi
         .query(`INSERT INTO om_entitlement_grants (installation_id, qty, source, contract_term, reason)
                 VALUES (@i, @q, 'contract_base', @t, N'จากสัญญาในระบบขาย')`);
     } else {
-      note = "ระบบขายไม่ได้กรอกจำนวนครั้ง/ปีสัญญา — ยังไม่ให้สิทธิ์ ต้องเติมเอง";
+      note = "ระบบขายไม่ได้ระบุจำนวนครั้ง/ปีสัญญา — ยังไม่ได้เพิ่มสิทธิ์ กรุณาเพิ่มสิทธิ์เอง";
     }
 
     await new sql.Request(tx).input("l", sql.Int, lead.id).input("h", sql.Int, houseId)
@@ -252,8 +252,8 @@ const SYNC_SALES_WARRANTY = (oneInstallation: boolean) => `
   SELECT house_id, installation_id, 'om_installations', 'warranty_start',
          CONVERT(char(10), new_ws, 23), CONVERT(char(10), old_ws, 23), 'sales',
          CONCAT(N'lead ', lead_id, CASE WHEN doc_no IS NULL THEN N'' ELSE N' · ใบรับประกัน ' + doc_no END),
-         CASE WHEN new_sws IS NULL THEN N'ฝั่งขายลบวันประกัน → กลับไปใช้วันติดตั้ง/วันโอน'
-              ELSE N'วันเริ่มประกันบนใบรับประกันฝั่งขาย' END,
+         CASE WHEN new_sws IS NULL THEN N'ฝ่ายขายลบวันเริ่มประกัน — กลับไปใช้วันติดตั้ง/วันโอน'
+              ELSE N'วันเริ่มประกันบนใบรับประกันของฝ่ายขาย' END,
          'confirmed'
     FROM @chg c
    WHERE EXISTS (SELECT c.old_sws EXCEPT SELECT c.new_sws);

@@ -214,7 +214,7 @@ function ItemRow({ it, n, disabled, value, num, onPass, onFix, onNum }: {
     <div className="md:col-span-6 flex items-center gap-3">
       <span className="flex-1 text-xs text-gray-700"><span className="text-gray-400 font-semibold mr-1.5">{n}.</span>{it.label_th}</span>
       <span className="text-xxs px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 shrink-0">
-        ยังไม่เปิดใช้ ({it.kind})
+        ยังไม่เปิดใช้งาน
       </span>
     </div>
   );
@@ -416,7 +416,7 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
   });
 
   const save = async (close: boolean) => {
-    if (repair && !repairDetail.trim()) { setNextError("อาการ / สิ่งที่ต้องซ่อม (ติ๊กพบงานซ่อมไว้)"); return; }
+    if (repair && !repairDetail.trim()) { setNextError("กรุณาระบุอาการ / สิ่งที่ต้องซ่อม (เลือก “พบ ต้องซ่อม” ไว้)"); return; }
     setBusy(true); setErr("");
     try {
       const g = await gps();
@@ -453,7 +453,7 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
   // โหลดไม่ขึ้น (เช่นไม่มีใบงานนี้) ต้องบอกเหตุผล ไม่ใช่หมุนค้าง
   if (!job) return err
     ? <div className="p-6"><div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{err}</div>
-        <Link href="/om/services" className="inline-block mt-3 text-sm font-bold text-gray-600 no-underline">‹ กลับหน้างานบริการ</Link></div>
+        <Link href="/om/services" className="inline-block mt-3 text-sm font-bold text-gray-600 no-underline">‹ กลับรายการงานบริการ</Link></div>
     : <Loading />;
 
   const items = form?.items ?? [];
@@ -478,13 +478,14 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
   const goSub = (n: number) => {
     // ยังไม่ถึงหน้างาน — แท็บใบตรวจยังไม่เปิด (แบบขั้นย่อยที่ยังไม่ถึงของฝั่งขาย)
     if (appt && !appt.ready && n >= off) {
-      setNextError(appt.canNext ? "ช่างยังไม่ถึงหน้างาน — กด ถัดไป ที่แท็บนัดเมื่อถึงหน้างาน" : "ลูกค้ายังไม่ยืนยันนัด — กด ลูกค้ายืนยันแล้ว ที่แท็บนัดก่อน");
+      // ★ 21 ต.ค. 69 แผน 20261021-01: เดิมบอกให้กดปุ่ม "ลูกค้ายืนยันแล้ว" ที่เอาออกไปแล้ว 1 ต.ค.
+      setNextError(appt.canNext ? "ช่างยังไม่ถึงหน้างาน — กด “ถัดไป” ที่แท็บนัดเมื่อช่างถึงหน้างาน" : "ลูกค้ายังไม่ยืนยันนัด — กรุณายืนยันวันนัดกับลูกค้าก่อน");
       return;
     }
     // ขั้นตรวจยังไม่ครบ — ไปขั้นรูป · บันทึก / ส่งมอบ ไม่ได้ (ทั้งปุ่มถัดไปและกดแถบขั้นย่อยข้ามไป)
     if (!closed && n > subStep && n - off >= 1 && missingText) { setNextError(missingText); return; }
     if (!closed && n > subStep && n - off > 1 && repair && !repairDetail.trim()) {
-      setNextError("อาการ / สิ่งที่ต้องซ่อม (ติ๊กพบงานซ่อมไว้)"); return;
+      setNextError("กรุณาระบุอาการ / สิ่งที่ต้องซ่อม (เลือก “พบ ต้องซ่อม” ไว้)"); return;
     }
     setNextError(null);
     setSubStep(n);
@@ -517,7 +518,7 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
     //   เดิมกดได้จากทุกสถานะ แล้วหน้าเว็บเดินสถานะให้ทีละขั้นจนปิด (ข้ามการยืนยันนัด/จ่ายทีม)
     //   API กันซ้ำอีกชั้น: ปิดงานต้องมีใบตรวจแล้ว (เริ่มงานต้องจ่ายทีม — เลิกแล้ว 1 ต.ค. 69)
     if (!["confirmed", "progress", "checked"].includes(job.status)) {
-      setErr(`ใบงานยังไม่ถึงขั้นเข้างาน (ตอนนี้ "${statusLabel(job.status)}") — ยืนยันนัดที่ขั้นนัดหมายก่อน`);
+      setErr(`ใบงานยังไม่ถึงขั้นเข้างาน (สถานะปัจจุบัน "${statusLabel(job.status)}") — กรุณายืนยันนัดที่ขั้นนัดหมายก่อน`);
       return;
     }
     if (missingText) { setNextError(missingText); return; }   // ใบตรวจไม่ครบ (เช่นใบที่จำขั้นย่อยส่งมอบไว้ก่อนมีกติกานี้)
@@ -560,10 +561,10 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
     { k: "เลขที่เอกสาร", v: jobNoTxt, mono: true },
     ...(embedded ? [] : [
       { k: "ลูกค้า", v: job.customer_name, wide: true }, { k: "บ้านเลขที่", v: job.house_number },
-      { k: "โครงการ", v: job.project_name, wide: true }, { k: "เบอร์", v: job.phone },
+      { k: "โครงการ", v: job.project_name, wide: true }, { k: "เบอร์โทร", v: job.phone },
     ]),
     { k: "ประเภทงาน", v: job.service_type }, { k: "วันนัด", v: thAppt(job.scheduled_at, job.time_slot) },
-    { k: "ขนาดติดตั้ง", v: kw }, { k: "ใบตรวจ", v: formName, wide: true },
+    { k: "ขนาดติดตั้ง", v: kw }, { k: "ใบตรวจรับงาน", v: formName, wide: true },
   ];
 
   return (
@@ -571,11 +572,11 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
       {!embedded && (
         <div className="bg-white border-b border-gray-200 px-4 py-2.5 sticky top-0 z-10">
           <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-lg font-bold leading-tight">{form?.label_th ?? "ใบตรวจรับงาน / ใบบริการ"}</h1>
+            <h1 className="text-lg font-bold leading-tight">{form?.label_th ?? "ใบตรวจรับงาน"}</h1>
             {form && <span className="text-xxs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 font-semibold">v{form.version}</span>}
             {jobNoTxt && <span className="text-xs font-bold text-gray-500 tabular-nums">{jobNoTxt}</span>}
             <span className={`text-xxs px-2 py-0.5 rounded-full text-white font-semibold ${closed ? "bg-emerald-600" : "bg-violet-600"}`}>
-              {closed ? "ปิดงานแล้ว" : "กำลังทำ"}
+              {closed ? "ปิดงานแล้ว" : "กำลังดำเนินการ"}
             </span>
             <Link href="/om/services" className="ml-auto text-xs font-bold text-gray-600 no-underline border border-gray-200 rounded-full px-3 py-1">‹ กลับ</Link>
           </div>
@@ -591,7 +592,7 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
             {closed && embedded && (
               <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800 flex items-center gap-2">
                 <CheckIcon className="w-4 h-4 shrink-0" />
-                <span>ปิดงานแล้ว — ใบตรวจถูก lock แก้ไขไม่ได้</span>
+                <span>ปิดงานแล้ว — ใบตรวจรับงานถูกล็อก แก้ไขไม่ได้</span>
               </div>
             )}
 
@@ -601,12 +602,12 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
                 {/* ยังไม่มีใบของชนิดงานนี้ — ยืมใบติดตั้งมาใช้ ต้องบอกช่างให้รู้ ไม่ใช่เงียบ */}
                 {form?.fallback && (
                   <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-900">
-                    งาน{job.service_type ? `“${job.service_type}”` : "ชนิดนี้"}ยังไม่มีใบตรวจของตัวเอง — ใช้ “{form.label_th}” ไปก่อน
+                    งาน{job.service_type ? `“${job.service_type}”` : "ประเภทนี้"}ยังไม่มีใบตรวจรับงานของตัวเอง — ใช้ “{form.label_th}” แทนชั่วคราว
                   </div>
                 )}
                 {form === null && (
                   <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-800">
-                    ยังไม่มีใบตรวจในระบบเลย — ต้องตั้งใบตรวจที่หน้าตั้งค่าก่อน
+                    ยังไม่มีใบตรวจรับงานในระบบ — กรุณาตั้งค่าใบตรวจรับงานที่หน้าตั้งค่าก่อน
                   </div>
                 )}
 
@@ -654,7 +655,7 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
                   );
                 })}
                 {form && !sections.length && (
-                  <div className={`${SECTION} text-sm text-gray-400`}>ใบนี้ยังไม่มีข้อตรวจ</div>
+                  <div className={`${SECTION} text-sm text-gray-400`}>ใบตรวจรับงานนี้ยังไม่มีรายการตรวจ</div>
                 )}
               </>
             )}
@@ -738,7 +739,7 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
                       {qc?.name && <div className="h-8 flex items-center justify-center text-xs font-semibold text-gray-600">{qc.name}</div>}
                     </div>
                   </div>
-                  {!closed && <div className="mt-3 text-xxs text-gray-500">บันทึกพิกัดและเวลาอัตโนมัติตอนกดปิดงาน</div>}
+                  {!closed && <div className="mt-3 text-xxs text-gray-500">ระบบจะบันทึกพิกัดและเวลาอัตโนมัติเมื่อกดปิดงาน</div>}
                 </div>
               </>
             )}

@@ -5,6 +5,7 @@ import { getOmDb } from "@/lib/om/line";
 import { logBooking } from "@/lib/om/booking-log";
 import { ACTIVE_STATUS, ALL_STATUS, toThaiOffset } from "@/lib/om/booking";
 import { omSlotsFor, teamClash } from "@/lib/om/time-slot";
+import { omErrorText } from "@/lib/om/api-error";
 
 // งานบริการ O&M — ลิสต์ + สร้างนัด
 // ★ กติกาที่ต้องรักษา (CLAUDE.md): เวลานัดใช้ +07:00 เสมอ · ห้ามจองซ้ำประเภทเดียวกันถ้ายังมีงานค้าง
@@ -119,7 +120,7 @@ export async function POST(req: NextRequest) {
   const b = await req.json().catch(() => ({}));
   const houseId = Number(b.house_id);
   const typeId = Number(b.service_type_id);
-  if (!houseId || !typeId) return NextResponse.json({ error: "ต้องระบุบ้านและประเภทงาน" }, { status: 400 });
+  if (!houseId || !typeId) return NextResponse.json({ error: "กรุณาระบุบ้านและประเภทงาน" }, { status: 400 });
 
   const db = await getOmDb();
   let when: string | null = null;
@@ -141,7 +142,7 @@ export async function POST(req: NextRequest) {
     .query(`SELECT TOP 1 id, status FROM om_bookings
             WHERE house_id = @h AND service_type_id = @t
               AND status IN (${ACTIVE_STATUS.map((s) => `'${s}'`).join(",")})`)).recordset[0];
-  if (dup) return NextResponse.json({ error: `บ้านหลังนี้มีงานประเภทเดียวกันค้างอยู่แล้ว (งาน #${dup.id})` }, { status: 409 });
+  if (dup) return NextResponse.json({ error: `บ้านหลังนี้มีใบงานประเภทเดียวกันที่ยังไม่ปิด (ใบงานเลขที่ ${dup.id})` }, { status: 409 });
   // ★ 21 ต.ค. 69 นัดทับเวลาไม่ได้ (แผน 20261021-02 รอบ 3)
   if (when && slot) {
     const clash = await teamClash(db, when, slot, null);
@@ -167,6 +168,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, id, status });
   } catch (e) {
     await tx.rollback();
-    return NextResponse.json({ error: e instanceof Error ? e.message : "สร้างนัดไม่สำเร็จ" }, { status: 500 });
+    return NextResponse.json({ error: omErrorText(e, "สร้างนัดไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "POST /api/om/bookings") }, { status: 500 });
   }
 }

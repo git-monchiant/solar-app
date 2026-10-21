@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, requireAnyRole } from "@/lib/auth";
 import { fixDates, sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
+import { omErrorText } from "@/lib/om/api-error";
 
 // ทะเบียนใบตรวจรับงาน — ดูรายการ · ออกเวอร์ชันใหม่ · เปิด/ปิดใช้
 // ★ service_type_id = NULL คือ "ใบกลาง" ใช้กับงาน O&M ทุกชนิดที่ยังไม่มีใบเฉพาะของตัวเอง
@@ -55,14 +56,14 @@ export async function POST(req: NextRequest) {
     if (b.from_form_id) {
       const src = (await new sql.Request(tx).input("id", sql.Int, Number(b.from_form_id))
         .query(`SELECT id, service_type_id, label_th FROM om_job_form WHERE id = @id`)).recordset[0];
-      if (!src) { await tx.rollback(); return NextResponse.json({ error: "ไม่พบใบต้นทาง" }, { status: 404 }); }
+      if (!src) { await tx.rollback(); return NextResponse.json({ error: "ไม่พบใบตรวจรับงานต้นทาง" }, { status: 404 }); }
       serviceTypeId = src.service_type_id as number | null;
       label = String(b.label_th ?? src.label_th);
     } else {
       serviceTypeId = b.service_type_id === null || b.service_type_id === undefined || b.service_type_id === ""
         ? null : Number(b.service_type_id);
       label = String(b.label_th ?? "").trim();
-      if (!label) { await tx.rollback(); return NextResponse.json({ error: "ต้องตั้งชื่อใบ" }, { status: 400 }); }
+      if (!label) { await tx.rollback(); return NextResponse.json({ error: "กรุณาตั้งชื่อใบตรวจรับงาน" }, { status: 400 }); }
     }
 
     // เวอร์ชันถัดไปของชนิดงานนั้น — ★ NULL เทียบด้วย = ไม่ได้ ต้องแยกเคสเอง
@@ -96,7 +97,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, id: newId, version: nextV }, { status: 201 });
   } catch (e) {
     await tx.rollback().catch(() => {});
-    return NextResponse.json({ error: e instanceof Error ? e.message : "สร้างใบไม่สำเร็จ" }, { status: 500 });
+    return NextResponse.json({ error: omErrorText(e, "สร้างใบตรวจรับงานไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "POST /api/om/job-forms") }, { status: 500 });
   }
 }
 
@@ -107,12 +108,12 @@ export async function PATCH(req: NextRequest) {
   if (gate.error) return gate.error;
   const b = await req.json().catch(() => ({}));
   const id = Number(b.form_id);
-  if (!id) return NextResponse.json({ error: "ต้องระบุใบ" }, { status: 400 });
+  if (!id) return NextResponse.json({ error: "ไม่พบใบตรวจรับงาน" }, { status: 400 });
 
   const db = await getOmDb();
   const cur = (await db.request().input("id", sql.Int, id)
     .query(`SELECT id, service_type_id, CAST(is_active AS int) is_active FROM om_job_form WHERE id = @id`)).recordset[0];
-  if (!cur) return NextResponse.json({ error: "ไม่พบใบนี้" }, { status: 404 });
+  if (!cur) return NextResponse.json({ error: "ไม่พบใบตรวจรับงานนี้" }, { status: 404 });
 
   const tx = new sql.Transaction(db);
   await tx.begin();
@@ -138,6 +139,6 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ ok: true });
   } catch (e) {
     await tx.rollback().catch(() => {});
-    return NextResponse.json({ error: e instanceof Error ? e.message : "บันทึกไม่สำเร็จ" }, { status: 500 });
+    return NextResponse.json({ error: omErrorText(e, "บันทึกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "PATCH /api/om/job-forms") }, { status: 500 });
   }
 }

@@ -1,5 +1,6 @@
 import { sql } from "@/lib/db";
 import { linkOwnersFromRem, type OwnerLinkResult } from "@/lib/om/rem-owner-link";
+import { formatThaiDate } from "@/lib/utils/formatters";
 
 // เชื่อมทะเบียน REM (staging) กลับเข้าข้อมูลจริง — รันเองหลัง sync ทุกครั้ง
 // แก้ปัญหา "บ้านตัวอย่าง/พร้อมขาย ที่ขายทีหลัง" ให้อัตโนมัติ:
@@ -33,7 +34,9 @@ const SOLD_WITH_SOLAR = `
 // ขั้น 0a — เปิดธงบ้านที่มีในทะเบียนแต่ is_om = 0 (import ตอนยังไม่ขาย แล้วขายทีหลัง)
 // ★ ไม่แตะบ้านที่คนตั้งใจปิด (om_excluded_reason มีค่า — เช่น "ไม่ได้ติดโซลาร์") — คนชนะระบบเสมอ
 async function openSoldHouses(db: sql.ConnectionPool): Promise<number> {
-  const r = await db.request().query(`
+  // ★ 21 ต.ค. 69 แผน 20261021-01: โน้ตขึ้นในหน้าบ้าน — เดิมเขียนชื่องานภายใน [rem_reconcile …] + วันที่ ISO
+  const today = formatThaiDate(new Date(), { timeZone: "Asia/Bangkok" });
+  const r = await db.request().input("d", sql.NVarChar(40), today).query(`
     ;WITH s AS (${SOLD_WITH_SOLAR}),
     tgt AS (
       SELECT h.id
@@ -43,8 +46,8 @@ async function openSoldHouses(db: sql.ConnectionPool): Promise<number> {
       GROUP BY h.id HAVING COUNT(DISTINCT s.contract_id) = 1)
     UPDATE h SET h.is_om = 1, h.has_solar = 1,
                  h.project_map_source = ISNULL(h.project_map_source, N'rem_reconcile'),
-                 h.note = LEFT(CONCAT(ISNULL(h.note, N''), N' [rem_reconcile เปิดเป็นลูกค้า O&M ',
-                                      CONVERT(varchar(10), SYSDATETIMEOFFSET(), 23), N' — REM โอนแล้ว+ของแถมโซลาร์]'), 4000),
+                 h.note = LEFT(CONCAT(ISNULL(h.note, N''), N' [เพิ่มเข้า O&M อัตโนมัติจาก REM ',
+                                      @d, N' — โอนแล้ว + มีของแถมโซลาร์]'), 4000),
                  h.updated_at = SYSDATETIMEOFFSET()
     FROM om_houses h JOIN tgt ON tgt.id = h.id;
     SELECT @@ROWCOUNT n;`);
@@ -66,7 +69,7 @@ async function ensureInstallations(db: sql.ConnectionPool): Promise<number> {
       GROUP BY h.id HAVING COUNT(DISTINCT s.contract_id) = 1)
     INSERT INTO om_installations (house_id, rem_contract_id, rem_transfer_date, rem_contract_status, rem_checked_at, note)
     SELECT house_id, contract_id, transfer_date, N'transferred', SYSDATETIMEOFFSET(),
-           N'สร้างอัตโนมัติจาก REM (rem_reconcile) — บ้านเดิมไม่มีแถวระบบ'
+           N'สร้างอัตโนมัติจาก REM — บ้านเดิมยังไม่มีข้อมูลระบบติดตั้ง'
     FROM tgt;
     SELECT @@ROWCOUNT n;`);
   return r.recordset[0].n as number;
@@ -92,7 +95,7 @@ async function createHousesFromRem(db: sql.ConnectionPool): Promise<number> {
   try {
     const b = await new sql.Request(tx)
       .input("f", sql.NVarChar(200), "REM om_rem_transfers (rem_reconcile)")
-      .input("n", sql.NVarChar(400), "สร้างบ้านอัตโนมัติ — REM โอนแล้ว + ของแถมโซลาร์ แต่ไม่มีในทะเบียน")
+      .input("n", sql.NVarChar(400), "สร้างบ้านอัตโนมัติ — โอนแล้วใน REM + มีของแถมโซลาร์ แต่ยังไม่มีในระบบ")
       .input("c", sql.Int, rows.length)
       .query(`INSERT INTO om_import_batches (source_file, note, row_count) OUTPUT INSERTED.id VALUES (@f, @n, @c)`);
     const batchId = b.recordset[0].id as number;
@@ -104,7 +107,7 @@ async function createHousesFromRem(db: sql.ConnectionPool): Promise<number> {
         .input("pn", sql.NVarChar(300), x.name_th ?? x.project_name ?? null)
         .input("u", sql.NVarChar(100), x.unit_id)
         .input("b", sql.Int, batchId)
-        .input("nt", sql.NVarChar(400), `สร้างอัตโนมัติจาก REM (rem_reconcile) — สัญญา ${x.contract_id}`)
+        .input("nt", sql.NVarChar(400), `เพิ่มเข้า O&M อัตโนมัติจาก REM — สัญญา ${x.contract_id}`)
         .query(`INSERT INTO om_houses (segment, house_number, project_id, project_name, rem_unit_id,
                                        has_solar, is_om, is_vip, project_map_source, source_batch_id, note)
                 OUTPUT INSERTED.id
@@ -116,7 +119,7 @@ async function createHousesFromRem(db: sql.ConnectionPool): Promise<number> {
         .query(`INSERT INTO om_installations (house_id, rem_contract_id, rem_transfer_date, rem_contract_status,
                                               rem_checked_at, source_batch_id, note)
                 VALUES (@h, @ct, @td, N'transferred', SYSDATETIMEOFFSET(), @b,
-                        N'สร้างอัตโนมัติจาก REM (rem_reconcile)')`);
+                        N'สร้างอัตโนมัติจาก REM')`);
     }
     await tx.commit();
     return rows.length;
