@@ -62,7 +62,7 @@ function Chip({ n: num, l, tone, detail, onOpen }: { n: number | string; l: Reac
   const body = (
     <>
       <div className="text-xl font-bold font-mono tabular-nums leading-none">{num}</div>
-      {/* ป้ายยาวขึ้น 2 บรรทัดได้ (ชิปรวมแท็บ ติดต่อไม่ได้ · ไม่เอา · สิทธิ์หมด) */}
+      {/* ป้ายยาวขึ้น 2 บรรทัดได้ (ชิปรวมแท็บ ติดต่อไม่ได้ · ปฏิเสธ · สิทธิ์หมด) */}
       <div className="text-xxs mt-2 leading-tight line-clamp-2 opacity-75">{l}</div>
       {/* รายละเอียดอยู่ใต้ป้าย — ป้ายต้องติดกับเลขที่มันอธิบาย */}
       {detail && <div className="text-xxs font-mono tabular-nums opacity-60 leading-tight truncate">{detail}</div>}
@@ -280,10 +280,10 @@ export default function OmDashboardPage() {
                       <Chip n={n(g("follow"))} l="ต้องโทร" tone={TONE_SOFT.follow} onOpen={open(tabSpec("ต้องโทร", ["follow"]))} />
                       <Chip n={n(d.jobs_total - g("follow") - stuck)} l="ใบงานเปิดอยู่" tone="bg-violet-50 text-violet-700"
                         onOpen={open(tabSpec("ใบงานเปิดอยู่", openKeys))} />
-                      {/* ตัดบรรทัดได้แค่ตรง · — ปล่อยให้เบราว์เซอร์ตัดเองได้ "สิทธิ์ / หมด" · "ไม่ / เอา" */}
+                      {/* ตัดบรรทัดได้แค่ตรง · — ปล่อยให้เบราว์เซอร์ตัดเองได้ "สิทธิ์ / หมด" · "ปฏิ / เสธ" */}
                       <Chip n={n(stuck)} tone="bg-rose-50 text-rose-700"
-                        onOpen={open(tabSpec("ติดต่อไม่ได้ · ไม่เอา · สิทธิ์หมด", STUCK))}
-                        l={["ติดต่อไม่ได้", "ไม่เอา", "สิทธิ์หมด"].map((t, i) => (
+                        onOpen={open(tabSpec("ติดต่อไม่ได้ · ปฏิเสธ · สิทธิ์หมด", STUCK))}
+                        l={["ติดต่อไม่ได้", "ปฏิเสธ", "สิทธิ์หมด"].map((t, i) => (
                           <span key={t}>{i > 0 && " · "}<span className="whitespace-nowrap">{t}</span></span>
                         ))} />
                     </div>

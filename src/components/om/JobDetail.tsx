@@ -502,7 +502,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
         ))}
         {mode === "follow" && oc === "declined" && (
           <div className="mt-3 rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 text-xs leading-relaxed text-gray-600">
-            <b>ไม่สร้างใบงาน</b> ย้ายไปแท็บไม่เอา · <b>สิทธิ์ไม่ถูกตัด</b> ยังใช้ได้ถ้าเปลี่ยนใจ
+            <b>ไม่สร้างใบงาน</b> ย้ายไปแท็บปฏิเสธ · <b>สิทธิ์ไม่ถูกตัด</b> ยังใช้ได้ถ้าเปลี่ยนใจ
           </div>
         )}
 

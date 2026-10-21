@@ -94,7 +94,7 @@ export const TABS = [
   { k: "progress", t: "เข้างาน" },
   { k: "closed", t: "ปิดงาน" },
   { k: "unreachable", t: "ติดต่อไม่ได้" },
-  { k: "declined", t: "ไม่เอา" },
+  { k: "declined", t: "ปฏิเสธ" },
   { k: "noquota", t: "สิทธิ์หมด" },
 ] as const;
 
