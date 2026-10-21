@@ -245,9 +245,8 @@ export const MODULES: AppModule[] = [
       //   — ดูแคตตาล็อกจากเมนูในโมดูลตัวเอง แบบเดียวกับ "แคตตาล็อก" ท้ายเมนู Sales
       { label: "แคตตาล็อก", href: "/om/packages", icon: <I d={D.sun} /> },
       // ── รายงาน ──
-      // ★ เฟส 6 (24 ก.ย. 69): ภาพรวมของ O&M อยู่ในโมดูลตัวเอง ไม่ใช่แท็บใน /dashboard ฝั่งขาย
-      //   ตามที่ผู้ใช้เคาะไว้ว่างาน O&M ให้สมบูรณ์ในการ์ดตัวเองก่อนค่อยไปโผล่การ์ดอื่น
-      { label: "Dashboard", href: "/om/dashboard", icon: <I d={D.chart} /> },
+      // ★ 21 ต.ค. 69 ผู้ใช้สั่งย้าย Dashboard O&M ไปอยู่การ์ด Dashboard (คู่กับ Dashboard I · II · III)
+      //   เดิม (เฟส 6 · 24 ก.ย. 69) อยู่ในโมดูลนี้ตามที่เคยเคาะให้งาน O&M สมบูรณ์ในการ์ดตัวเองก่อน
       // ★ เฟส 4 แผน 20260924-02: รายรับ O&M หน้าเดียวกับในโมดูลบัญชี — ให้หัวหน้าดูผลงาน O&M ได้โดยไม่ต้องสลับโมดูล
       { label: "รายรับ O&M", href: "/report/om", icon: <I d={D.wallet} />, roles: ["admin", "sales_sup", "solar_sup"] },
       // ── ตั้งค่า ──
@@ -313,12 +312,14 @@ export const MODULES: AppModule[] = [
   {
     key: "dashboard", label: "Dashboard", emoji: "📊", tint: "bg-sky-50",
     group: "operation",
-    desc: "Dashboard I · II · III · Lead Tracking",
+    desc: "Dashboard I · II · III · O&M · Lead Tracking",
     roles: ["admin", "sales", "solar", "account", "sales_sup", "solar_sup"],
     menu: [
       { label: "Dashboard I", href: "/dashboard", icon: <I d={D.chart} /> },
       { label: "Dashboard II", href: "/dashboard-dev", icon: <I d={D.chart} /> },
       { label: "Dashboard III", href: "/dashboard-customer", icon: <I d={D.clipboard} /> },
+      // ★ 21 ต.ค. 69 ย้ายมาจากโมดูล O&M (ผู้ใช้สั่ง) — API อ่านได้ทุกคนที่ล็อกอิน · การ์ดมูลค่างานเห็นเฉพาะ OM_MONEY_ROLES
+      { label: "Dashboard O&M", href: "/om/dashboard", icon: <I d={D.chart} /> },
       { label: "Lead Tracking", href: "/lifecycle", icon: <I d={D.checkCircle} /> },
     ],
   },
