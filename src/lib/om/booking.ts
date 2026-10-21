@@ -74,7 +74,7 @@ export const CALL_OUTCOME: Record<string, { t: string; tone: string }> = {
   declined:     { t: "ปฏิเสธไม่รับบริการ", tone: "bg-red-500" },   // 15 ต.ค. 69 ผู้ใช้สั่ง — ชุดเดียวกับปุ่มในขั้น 01 (CALL_ROWS)
   wrong_number: { t: "ข้อมูลติดต่อไม่ถูกต้อง", tone: "bg-rose-500" },   // เดิม "เบอร์ผิด" — ชื่อตามหน้าต่าง Follow-up ฝั่งขาย
   // ★ 1 ต.ค. 69 ปุ่ม Follow-up แบบหน้า lead (OmFollowupModal) — ติดต่อแล้วยังไม่มีข้อสรุป · จดประวัติอย่างเดียว ไม่ย้ายแท็บ
-  informed:     { t: "แจ้งรอบล้างแล้ว",      tone: "bg-emerald-500" },
+  informed:     { t: "แจ้งรอบล้างแผงแล้ว",   tone: "bg-emerald-500" },
   busy:         { t: "ลูกค้าขอให้ติดต่อภายหลัง", tone: "bg-amber-500" },
   other:        { t: "อื่น ๆ",               tone: "bg-gray-400" },
 };
