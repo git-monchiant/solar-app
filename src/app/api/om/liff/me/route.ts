@@ -97,11 +97,11 @@ export async function POST(req: NextRequest) {
 
   const houseId = Number(body?.house_id);
   if (!Number.isInteger(houseId)) {
-    return NextResponse.json({ error: "house_id จำเป็น" }, { status: 400 });
+    return NextResponse.json({ error: "ทำรายการไม่สำเร็จ กรุณาลองใหม่อีกครั้ง" }, { status: 400 });
   }
   const houses = await getLinkedHouses(auth.identity.lineUserId);
   if (!houses.some((h) => h.id === houseId)) {
-    return NextResponse.json({ error: "บ้านนี้ไม่ได้ผูกกับบัญชีของคุณ" }, { status: 403 });
+    return NextResponse.json({ error: "บ้านนี้ไม่ได้อยู่ในบัญชีของคุณ" }, { status: 403 });
   }
 
   const db = await getOmDb();

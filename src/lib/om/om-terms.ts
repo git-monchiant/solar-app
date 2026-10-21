@@ -68,7 +68,7 @@ export function omServiceTitle(kwpList: unknown, inverterList: unknown): string 
   const kw = String(kwpList ?? "").split("+").map((x) => Number(x.trim())).filter((x) => Number.isFinite(x))
     .reduce((a, b) => a + b, 0);
   const brand = String(inverterList ?? "").trim();
-  return ["งานบริการ O&M ระบบโซลาร์เซลล์", brand ? `อินเวอร์เตอร์ ${brand}` : null,
+  return ["งานบริการบำรุงรักษา (O&M) ระบบโซลาร์เซลล์", brand ? `อินเวอร์เตอร์ ${brand}` : null,
     kw > 0 ? `ขนาด ${Number(kw.toFixed(2))} kW` : null].filter(Boolean).join(" ");
 }
 

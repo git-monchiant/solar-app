@@ -49,7 +49,8 @@ export async function sendOtpSms(phone: string, code: string, ref: string):
     method: "POST",
     headers: { "Content-Type": "application/json", api_key: apiKey, secret_key: secret },
     body: JSON.stringify({
-      message: `รหัสยืนยัน SENA Solar: ${code} (อ้างอิง ${ref}) ใช้ได้ ${OTP_TTL_MIN} นาที`,
+      // ★ 21 ต.ค. 69 แผน 20261021-01: เตือนกันมิจฉาชีพ · ยาว 70 ตัวอักษรพอดี = SMS ภาษาไทย 1 ข้อความ (เกิน 70 คิดเป็น 2 ข้อความ)
+      message: `รหัส SENA Solar: ${code} (อ้างอิง ${ref}) ใช้ได้ ${OTP_TTL_MIN} นาที ห้ามบอกผู้อื่น`,
       phone,
       sender,
       ...(process.env.SMSMKT_PROJECT_ID ? { project_id: process.env.SMSMKT_PROJECT_ID } : {}),

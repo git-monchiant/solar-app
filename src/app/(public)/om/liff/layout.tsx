@@ -6,7 +6,6 @@ import { initLiff } from "@/lib/om/liff";
 
 export default function OmLiffLayout({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
-  const [error, setError] = useState<string>("");
 
   useEffect(() => {
     const prevHtmlOverflowY = document.documentElement.style.overflowY;
@@ -24,8 +23,9 @@ export default function OmLiffLayout({ children }: { children: React.ReactNode }
       }
       setStatus("ready");
     })().catch((err) => {
+      // ★ 21 ต.ค. 69 แผน 20261021-01: ลูกค้าไม่เห็น error ดิบ (เช่น "NEXT_PUBLIC_OM_LIFF_ID is not set") — เก็บไว้ดูใน console
+      console.error("LIFF init failed:", err);
       setStatus("error");
-      setError(err instanceof Error ? err.message : String(err));
     });
 
     return () => {
@@ -49,10 +49,9 @@ export default function OmLiffLayout({ children }: { children: React.ReactNode }
     return (
       <div className="flex h-[100dvh] items-center justify-center bg-white p-6">
         <div className="max-w-md text-center">
-          <div className="text-[11px] font-medium uppercase tracking-[0.22em] text-red-600">Error</div>
-          <h1 className="mt-2 text-2xl font-bold tracking-tight">เปิด Mini App ไม่ได้</h1>
-          <p className="mt-3 text-base font-medium text-zinc-600">{error}</p>
-          <p className="mt-4 text-sm font-medium text-zinc-400">กรุณาเปิดผ่าน LINE app จาก Rich Menu ของ LINE OA</p>
+          <div className="text-[11px] font-medium uppercase tracking-[0.22em] text-red-600">เกิดข้อผิดพลาด</div>
+          <h1 className="mt-2 text-2xl font-bold tracking-tight">ไม่สามารถเปิดหน้านี้ได้</h1>
+          <p className="mt-4 text-sm font-medium text-zinc-500">กรุณาเปิดจากเมนูในแชต LINE ของ SENA Solar อีกครั้งค่ะ</p>
         </div>
       </div>
     );

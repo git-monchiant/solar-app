@@ -33,10 +33,10 @@ export const omTierLabel = (p: Pick<OmPackage, "kw_min" | "kw_max" | "max_panels
 export const omTierKey = (p: Pick<OmPackage, "kw_min" | "kw_max" | "max_panels">) =>
   `${p.kw_min}|${p.kw_max}|${p.max_panels ?? ""}`;
 
-/** "รายครั้ง" · "สัญญา 12 เดือน เข้า 2 ครั้ง" */
+/** "รายครั้ง" · "สัญญา 12 เดือน ให้บริการ 2 ครั้ง" (แผน 20261021-01: "เข้า" เป็นภาษาพูด) */
 export const omPlanLabel = (p: Pick<OmPackage, "plan_type" | "contract_months" | "visits">) => {
   if (p.plan_type === "per_visit") return "รายครั้ง";
-  return ["สัญญา", p.contract_months ? `${p.contract_months} เดือน` : null, p.visits ? `เข้า ${p.visits} ครั้ง` : null]
+  return ["สัญญา", p.contract_months ? `${p.contract_months} เดือน` : null, p.visits ? `ให้บริการ ${p.visits} ครั้ง` : null]
     .filter(Boolean).join(" ");
 };
 

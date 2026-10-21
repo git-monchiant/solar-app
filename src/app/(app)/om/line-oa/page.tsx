@@ -42,14 +42,14 @@ const STATUS_STYLE: Record<string, { t: string; c: string }> = {
   failed: { t: "ล้มเหลว", c: "bg-red-50 text-red-700 border-red-200" },
 };
 const EMPTY_CELLS: Cell[] = [
-  { label: "MyHome", kind: "liff", value: "myhome" },
+  { label: "บ้านของฉัน", kind: "liff", value: "myhome" },
   { label: "สินค้า", kind: "liff", value: "shop" },
   { label: "แจ้งซ่อม / นัดบริการ", kind: "liff", value: "booking" },
   { label: "ติดต่อเจ้าหน้าที่", kind: "message", value: "ติดต่อเจ้าหน้าที่" },
   { label: "FAQ", kind: "liff", value: "faq" },
   // ★ ผู้ใช้เคาะ 31 ส.ค.: referral ไม่ทำเป็น LIFF ของเรา — ลิงก์ออกไปหน้าสมัคร agent ตรง ๆ (แบบ ก.)
   //   URL ตั้งค่าได้ที่แท็บ LIFF Apps → "แนะนำเพื่อน" ช่อง "ลิงก์ภายนอก" (om_liff_apps.external_url)
-  { label: "Referral", kind: "url", value: "" },
+  { label: "แนะนำเพื่อน", kind: "url", value: "" },
 ];
 
 export default function OmLineOaPage() {

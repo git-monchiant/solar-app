@@ -44,6 +44,16 @@ const TH_DATE = (iso: string | null | undefined): string => {
   return d.toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "2-digit" });
 };
 
+// ★ 21 ต.ค. 69 แผน 20261021-01: ลูกค้าไม่เห็นรหัส HTTP / error อังกฤษ — ข้อความไทยจาก API (ตั้งใจแจ้งลูกค้า) ผ่านได้
+const LOAD_FAIL = "โหลดข้อมูลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง";
+const customerError = (e: unknown, fallback: string) =>
+  e instanceof Error && /^\s*[ก-๙]/.test(e.message) ? e.message : fallback;
+/** ชื่อ LINE ของลูกค้า + คำนำหน้า "คุณ" — ชื่อที่ขึ้นต้นด้วย "คุณ" อยู่แล้วไม่ซ้ำ · ชื่ออังกฤษเว้นวรรค */
+const greetName = (n: string) => {
+  const s = n.trim().replace(/^คุณ\s*/, "");
+  return /^[ก-๙]/.test(s) ? `คุณ${s}` : `คุณ ${s}`;
+};
+
 function WarrantyRow({ label, years, until }: { label: string; years: number; until: string | null | undefined }) {
   const expired = until ? new Date(until) < new Date() : null;
   return (
@@ -53,10 +63,10 @@ function WarrantyRow({ label, years, until }: { label: string; years: number; un
         <div className="text-xs font-medium text-zinc-400">{years} ปีนับจากวันเริ่มประกัน</div>
       </div>
       {until == null ? (
-        <span className="text-xs font-semibold" style={{ color: ORANGE }}>⚠ ไม่มีวันประกัน</span>
+        <span className="text-xs font-semibold" style={{ color: ORANGE }}>ยังไม่มีข้อมูล กรุณาสอบถามเจ้าหน้าที่</span>
       ) : (
         <div className={`text-sm font-bold ${expired ? "text-red-600" : "text-emerald-600"}`}>
-          {expired ? "หมดแล้ว" : "ถึง " + TH_DATE(until)}
+          {expired ? "สิ้นสุดแล้ว" : "ถึง " + TH_DATE(until)}
         </div>
       )}
     </div>
@@ -73,10 +83,10 @@ export default function OmLiffMyHome() {
   const load = () =>
     liffFetch("/api/om/liff/me")
       .then(async (r) => {
-        if (!r.ok) throw new Error((await r.json()).error || `โหลดไม่สำเร็จ (${r.status})`);
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || LOAD_FAIL);
         setMe(await r.json());
       })
-      .catch((e) => setError(e instanceof Error ? e.message : String(e)));
+      .catch((e) => setError(customerError(e, LOAD_FAIL)));
 
   useEffect(() => {
     getProfile().then((p) => setName(p.displayName)).catch(() => {});
@@ -92,7 +102,7 @@ export default function OmLiffMyHome() {
       setSheetOpen(false);
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(customerError(e, "เปลี่ยนบ้านไม่สำเร็จ กรุณาลองใหม่อีกครั้ง"));
     } finally {
       setSwitching(false);
     }
@@ -107,7 +117,7 @@ export default function OmLiffMyHome() {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/om/sena-solar-logo.svg" alt="SENA Solar Energy" className="h-10 w-auto" />
         <h1 className="mt-5 text-[2.1rem] font-bold leading-[1.05] tracking-tight">บ้านของฉัน</h1>
-        {name && <p className="mt-2 text-base font-medium text-zinc-500">สวัสดี {name}</p>}
+        {name && <p className="mt-2 text-base font-medium text-zinc-500">สวัสดีค่ะ {greetName(name)}</p>}
       </header>
 
       {error && (
@@ -168,9 +178,9 @@ export default function OmLiffMyHome() {
               <div className="mb-2 text-xs font-medium text-zinc-400">เริ่ม {TH_DATE(me.installation.warranty_start)}</div>
             )}
             <div className="border-t border-zinc-200">
-              <WarrantyRow label="ประกันติดตั้ง" years={me.installation?.warranty_install_years ?? 2} until={me.installation?.warranty_install_until} />
-              <WarrantyRow label="ประกัน Inverter" years={5} until={me.installation?.warranty_inverter_until} />
-              <WarrantyRow label="ประกันแผง" years={10} until={me.installation?.warranty_panel_until} />
+              <WarrantyRow label="ประกันงานติดตั้ง" years={me.installation?.warranty_install_years ?? 2} until={me.installation?.warranty_install_until} />
+              <WarrantyRow label="ประกันอินเวอร์เตอร์" years={5} until={me.installation?.warranty_inverter_until} />
+              <WarrantyRow label="ประกันแผงโซลาร์" years={10} until={me.installation?.warranty_panel_until} />
             </div>
           </section>
 
@@ -221,7 +231,7 @@ export default function OmLiffMyHome() {
                     <div className="shrink-0 text-right">
                       {h.is_active && <div className="text-base font-bold" style={{ color: TEAL }}>✓</div>}
                       <div className="text-xs font-bold" style={{ color: h.balance > 0 ? ORANGE : "#a1a1aa" }}>
-                        {h.balance > 0 ? `เหลือ ${h.balance} ครั้ง` : "สิทธิ์หมด"}
+                        {h.balance > 0 ? `คงเหลือ ${h.balance} ครั้ง` : "ใช้สิทธิ์ครบแล้ว"}
                       </div>
                     </div>
                   </button>

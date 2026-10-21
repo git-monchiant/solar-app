@@ -62,11 +62,11 @@ tr { break-inside: avoid; }
   <div class="meta">ใบบริการ ${docs.length} ใบ · สร้างเมื่อ ${esc(now)}</div>
   <table>
     <colgroup><col style="width:5%"/><col style="width:16%"/><col style="width:10%"/><col style="width:25%"/><col style="width:22%"/><col style="width:10%"/><col style="width:7%"/><col style="width:5%"/></colgroup>
-    <thead><tr><th class="c">#</th><th>เลขที่ใบบริการ</th><th>บ้านเลขที่</th><th>ลูกค้า</th><th>โครงการ</th><th class="c">วันปิดงาน</th><th class="c">ผลตรวจ</th><th class="c">หน้า</th></tr></thead>
+    <thead><tr><th class="c">#</th><th>เลขที่ใบบริการ</th><th>บ้านเลขที่</th><th>ลูกค้า</th><th>โครงการ</th><th class="c">วันที่ให้บริการ</th><th class="c">ผลตรวจ</th><th class="c">หน้า</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>
   ${skipped.length ? `<div class="skip">ไม่ได้รวม ${skipped.length} ใบ: ${skipped.map((s) =>
-    `ใบงาน #${s.id}${s.house ? ` (บ้าน ${esc(s.house)})` : ""} — ${esc(s.reason)}`).join(" · ")}</div>` : ""}
+    `ใบงานเลขที่ ${s.id}${s.house ? ` (บ้านเลขที่ ${esc(s.house)})` : ""} — ${esc(s.reason)}`).join(" · ")}</div>` : ""}
 </body></html>`;
 }
 

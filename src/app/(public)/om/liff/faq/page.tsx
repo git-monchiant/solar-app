@@ -18,7 +18,7 @@ export default function OmLiffFaq() {
     fetch("/api/om/liff/faq", { cache: "no-store" })
       .then((r) => r.json())
       .then((d) => { setFaqs(d.faqs || []); setCatOrder(d.categories || []); })
-      .catch(() => setError("โหลดคำถามไม่สำเร็จ"));
+      .catch(() => setError("โหลดคำถามไม่สำเร็จ กรุณาลองใหม่อีกครั้ง"));
   }, []);
 
   const toggle = (id: number) => {
@@ -86,8 +86,8 @@ export default function OmLiffFaq() {
 
       <div className="mt-auto px-5 pb-10">
         <div className="border border-zinc-200 p-5 text-center">
-          <div className="text-base font-bold">ไม่เจอคำตอบที่ต้องการ?</div>
-          <p className="mt-1.5 text-sm font-medium text-zinc-500">ทักแชตหาเจ้าหน้าที่ได้เลย ตอบในเวลาทำการ</p>
+          <div className="text-base font-bold">ไม่พบคำตอบที่ต้องการ?</div>
+          <p className="mt-1.5 text-sm font-medium text-zinc-500">สอบถามเจ้าหน้าที่ทางแชตนี้ได้ค่ะ (ตอบกลับในเวลาทำการ)</p>
           <button type="button" onClick={() => window.close()} style={{ minHeight: 0, background: TEAL }}
             className="mt-3 w-full py-3 text-base font-bold text-white">
             กลับไปแชต

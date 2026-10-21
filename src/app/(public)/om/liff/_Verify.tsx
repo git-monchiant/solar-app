@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { liffFetch } from "@/lib/om/liff";
 
 const TEAL = "#009793";
+const FAIL = "ทำรายการไม่สำเร็จ กรุณาลองใหม่อีกครั้ง";
 interface House { id: number; house_number: string | null; project_name: string | null }
 
 export default function Verify({ onDone }: { onDone: () => void }) {
@@ -27,8 +28,9 @@ export default function Verify({ onDone }: { onDone: () => void }) {
 
   const call = async (body: Record<string, unknown>) => {
     const r = await liffFetch("/api/om/liff/verify", { method: "POST", body: JSON.stringify(body) });
-    const j = await r.json();
-    if (!r.ok) throw new Error(j.error || "ทำรายการไม่สำเร็จ");
+    const j = await r.json().catch(() => ({}));
+    // ★ 21 ต.ค. 69 แผน 20261021-01: ข้อความไทยจาก API ผ่านได้ · อย่างอื่น (เครือข่าย/อังกฤษ) ใช้ข้อความกลาง
+    if (!r.ok) throw new Error(/^s*[ก-๙]/.test(String(j.error ?? "")) ? j.error : FAIL);
     return j;
   };
 
@@ -38,7 +40,7 @@ export default function Verify({ onDone }: { onDone: () => void }) {
       const j = await call({ step: "request", phone });
       if (!j.found) { setStep("queued"); return; }   // เบอร์ไม่อยู่ในทะเบียน → คิวเจ้าหน้าที่
       setRef(j.ref); setDevCode(j.dev_code ?? null); setCode(""); setCool(60); setStep("otp");
-    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+    } catch (e) { setErr(e instanceof Error && /^s*[ก-๙]/.test(e.message) ? e.message : FAIL); }
     finally { setBusy(false); }
   };
 
@@ -49,7 +51,7 @@ export default function Verify({ onDone }: { onDone: () => void }) {
       setHouses(j.houses || []);
       setAnswers({});
       setStep("houses");
-    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+    } catch (e) { setErr(e instanceof Error && /^s*[ก-๙]/.test(e.message) ? e.message : FAIL); }
     finally { setBusy(false); }
   };
 
@@ -62,7 +64,7 @@ export default function Verify({ onDone }: { onDone: () => void }) {
         rejected_ids: houses.filter((h) => answers[h.id] === false).map((h) => h.id),
       });
       onDone();
-    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+    } catch (e) { setErr(e instanceof Error && /^s*[ก-๙]/.test(e.message) ? e.message : FAIL); }
     finally { setBusy(false); }
   };
 
@@ -98,7 +100,7 @@ export default function Verify({ onDone }: { onDone: () => void }) {
             className="text-sm font-bold text-zinc-500">← เปลี่ยนเบอร์</button>
           <div className="mt-2 text-lg font-bold">กรอกรหัส 6 หลัก</div>
           <p className="mt-1 text-sm font-medium text-zinc-500">
-            ส่งไปที่ {phone.replace(/(\d{3})(\d{3})(\d{4})/, "$1-$2-$3")} · Ref: <span className="font-mono">{ref}</span>
+            ส่งไปที่ {phone.replace(/(\d{3})(\d{3})(\d{4})/, "$1-$2-$3")} · รหัสอ้างอิง <span className="font-mono">{ref}</span>
           </p>
           {devCode && (
             <div className="mt-2 border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
@@ -112,15 +114,15 @@ export default function Verify({ onDone }: { onDone: () => void }) {
             className="mt-3 w-full py-3 text-base font-bold text-white disabled:opacity-40">ยืนยัน</button>
           <button type="button" onClick={askCode} disabled={busy || cool > 0} style={{ minHeight: 0 }}
             className="mt-2 w-full border border-zinc-200 py-2.5 text-sm font-bold text-zinc-500 disabled:opacity-40">
-            {cool > 0 ? `ขอรหัสใหม่ได้ใน ${cool} วิ` : "ขอรหัสใหม่"}
+            {cool > 0 ? `ขอรหัสใหม่ได้ใน ${cool} วินาที` : "ขอรหัสใหม่"}
           </button>
         </>
       )}
 
       {step === "houses" && (
         <>
-          <div className="text-lg font-bold">พบบ้านในทะเบียน {houses.length} หลัง</div>
-          <p className="mt-1 text-sm font-medium text-zinc-500">ตรวจสอบทีละหลัง — ใช่บ้านของคุณไหม?</p>
+          <div className="text-lg font-bold">พบบ้านที่ลงทะเบียนด้วยเบอร์นี้ {houses.length} หลัง</div>
+          <p className="mt-1 text-sm font-medium text-zinc-500">กรุณาตรวจสอบทีละหลังว่าเป็นบ้านของคุณหรือไม่</p>
           <div className="mt-3 border-t border-zinc-200">
             {houses.map((h) => (
               <div key={h.id} className={`flex items-center gap-3 border-b border-zinc-100 py-3 ${answers[h.id] === false ? "opacity-50" : ""}`}>
@@ -139,12 +141,12 @@ export default function Verify({ onDone }: { onDone: () => void }) {
           </div>
           {houses.some((h) => answers[h.id] === false) && (
             <div className="mt-3 border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
-              หลังที่ตอบ &quot;ไม่ใช่&quot; จะไม่ถูกผูกกับบัญชี และส่งให้เจ้าหน้าที่ตรวจสอบทะเบียน
+              หลังที่ตอบ &quot;ไม่ใช่&quot; จะไม่แสดงในบัญชีของคุณ เจ้าหน้าที่จะตรวจสอบให้ค่ะ
             </div>
           )}
           <button type="button" onClick={finish} disabled={busy || !allAnswered} style={{ minHeight: 0, background: TEAL }}
             className="mt-3 w-full py-3 text-base font-bold text-white disabled:opacity-40">
-            {!allAnswered ? "ตอบให้ครบทุกหลังก่อน" : nYes > 0 ? `ยืนยัน — บ้านของฉัน ${nYes} หลัง` : "ยืนยัน — ไม่มีบ้านของฉันเลย"}
+            {!allAnswered ? "กรุณาตอบให้ครบทุกหลัง" : nYes > 0 ? `ยืนยัน — บ้านของฉัน ${nYes} หลัง` : "ยืนยัน — ไม่มีบ้านของฉันในรายการ"}
           </button>
         </>
       )}
@@ -154,11 +156,11 @@ export default function Verify({ onDone }: { onDone: () => void }) {
           <div className="text-3xl">🕐</div>
           <div className="mt-2 text-lg font-bold">ส่งเรื่องให้เจ้าหน้าที่แล้ว</div>
           <p className="mt-2 text-sm font-medium leading-relaxed text-zinc-500">
-            เบอร์นี้ยังไม่อยู่ในทะเบียน อาจเพราะเพิ่งเปลี่ยนเบอร์หรือซื้อบ้านต่อจากเจ้าของเดิม<br />
-            เจ้าหน้าที่จะตรวจสอบและติดต่อกลับ
+            ไม่พบเบอร์นี้ในระบบ อาจเนื่องจากเพิ่งเปลี่ยนเบอร์หรือซื้อบ้านต่อจากเจ้าของเดิม<br />
+            เจ้าหน้าที่จะตรวจสอบและติดต่อกลับค่ะ
           </p>
           <button type="button" onClick={() => { setStep("phone"); setErr(""); }} style={{ minHeight: 0 }}
-            className="mt-4 w-full border border-zinc-200 py-2.5 text-sm font-bold text-zinc-500">ลองเบอร์อื่น</button>
+            className="mt-4 w-full border border-zinc-200 py-2.5 text-sm font-bold text-zinc-500">ใช้เบอร์อื่น</button>
         </div>
       )}
     </section>

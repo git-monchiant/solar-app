@@ -144,7 +144,7 @@ export async function grantPurchasedRights(tx: Transaction, v: {
   const grantId = Number(g.recordset[0].id);
   await new sql.Request(tx)
     .input("h", sql.Int, v.houseId).input("i", sql.Int, inst.id).input("r", sql.Int, grantId)
-    .input("q", sql.Int, qty).input("d", sql.NVarChar(400), `เติมสิทธิ์ +${qty} · ${label}`.slice(0, 400))
+    .input("q", sql.Int, qty).input("d", sql.NVarChar(400), `เพิ่มสิทธิ์ +${qty} · ${label}`.slice(0, 400))
     .input("rs", sql.NVarChar(300), reason).input("u", sql.Int, v.actorUserId)
     .query(`INSERT INTO om_entitlement_history
               (house_id, installation_id, kind, [action], ref_id, qty, detail, reason, actor_user_id)
@@ -278,7 +278,7 @@ export function parseOmQuoteInput(body: Record<string, unknown>): OmQuoteInput |
     })
     // รายละเอียดจำนวน 0 ได้ (พิมพ์แค่ชื่อ) · หัวข้อต้องมีจำนวน
     .filter((x) => x.item_name && (x.detail || x.quantity > 0));
-  if (!pkg && !items.some((x) => !x.detail)) return "เลือก Package O&M หรือเพิ่มรายการอย่างน้อย 1 รายการ";
+  if (!pkg && !items.some((x) => !x.detail)) return "กรุณาเลือกแพ็กเกจ O&M หรือเพิ่มรายการอย่างน้อย 1 รายการ";
   if (!pkg && items[0]?.detail) return "รายละเอียดต้องอยู่ใต้หัวข้อ — เพิ่มแพ็กเกจหรืองานเพิ่มก่อน";
   const discount = Math.max(0, Number(body.discount_value) || 0);
   const reason = String(body.discount_reason ?? "").trim().slice(0, 500) || null;
@@ -328,7 +328,7 @@ function omDocumentItems(pkgName: unknown, pkgPrice: number, items: Record<strin
     return qty !== 1 || unit ? { ...it, item_name_snapshot: `${name} ${qty.toLocaleString("th-TH")}${unit ? ` ${unit}` : ""}` } : it;
   };
   const pkgRow = pkgPrice > 0
-    ? [{ source_type: "custom", package_item_id: null, item_name_snapshot: String(pkgName ?? "Package O&M"),
+    ? [{ source_type: "custom", package_item_id: null, item_name_snapshot: String(pkgName ?? "แพ็กเกจ O&M"),
          quantity: 1, unit: null, unit_price: pkgPrice, line_total: pkgPrice, sort_order: 0 }]
     : [];
   return [...pkgRow, ...items.map(withQty)];
@@ -351,13 +351,14 @@ function fillFromHouse(q: Record<string, unknown>, lead: Record<string, unknown>
 const OM_BANK_SETTINGS_SQL = `SELECT [key], value FROM app_settings
      WHERE [key] IN ('bank_account_bank','bank_account_branch','bank_account_number','bank_account_name')`;
 
-/** ชื่อแพ็กเกจบนใบ — อ่านเข้าใจโดยไม่ต้องเปิดแคตตาล็อก */
+/** ชื่อแพ็กเกจบนใบ — อ่านเข้าใจโดยไม่ต้องเปิดแคตตาล็อก
+ *  ★ 21 ต.ค. 69 แผน 20261021-01: "แพ็กเกจ O&M 2–5 kW · สัญญา 12 เดือน (ให้บริการ 2 ครั้ง)" — เดิม "Package O&M 2.00–5.00 kW · … เข้า 2 ครั้ง" */
 export function omPackageLabel(p: { kw_min: number; kw_max: number; plan_type: string; contract_months: number | null; visits: number | null }) {
-  const size = `${Number(p.kw_min).toFixed(2)}–${Number(p.kw_max).toFixed(2)} kW`;
+  const size = `${Number(p.kw_min)}–${Number(p.kw_max)} kW`;
   const plan = p.plan_type === "contract"
-    ? `สัญญา ${p.contract_months ?? 12} เดือน เข้า ${p.visits ?? 2} ครั้ง`
+    ? `สัญญา ${p.contract_months ?? 12} เดือน (ให้บริการ ${p.visits ?? 2} ครั้ง)`
     : "รายครั้ง";
-  return `Package O&M ${size} · ${plan}`;
+  return `แพ็กเกจ O&M ${size} · ${plan}`;
 }
 
 /**
@@ -370,7 +371,7 @@ export async function writeOmQuoteBody(tx: Transaction, quotationId: number, inp
         .query(`SELECT id, kw_min, kw_max, plan_type, contract_months, visits, price, scope
                   FROM om_packages WHERE id = @id AND is_active = 1`)).recordset[0]
     : null;
-  if (input.om_package_id && !pkg) throw new Error("ไม่พบ Package O&M ที่ใช้งานได้");
+  if (input.om_package_id && !pkg) throw new Error("ไม่พบแพ็กเกจ O&M ที่เปิดใช้งาน");
 
   const lines: QuotationInputItem[] = input.items.map(({ detail, ...x }) => ({ ...x, source_type: detail ? "custom_detail" : "custom" }));
   const pkgPrice = pkg ? Number(pkg.price) : 0;
@@ -516,7 +517,7 @@ export async function buildOmPreviewSnapshot(houseId: number, input: OmQuoteInpu
         .query(`SELECT id, kw_min, kw_max, plan_type, contract_months, visits, price, scope
                   FROM om_packages WHERE id = @id AND is_active = 1`)).recordset[0]
     : null;
-  if (input.om_package_id && !pkg) throw new Error("ไม่พบ Package O&M ที่ใช้งานได้");
+  if (input.om_package_id && !pkg) throw new Error("ไม่พบแพ็กเกจ O&M ที่เปิดใช้งาน");
   const pkgPrice = pkg ? Number(pkg.price) : 0;
   const lines: QuotationInputItem[] = input.items.map(({ detail, ...x }) => ({ ...x, source_type: detail ? "custom_detail" : "custom" }));
   const t = calculateQuotation(pkgPrice, lines, "amount", input.discount_value, 0, 7);
@@ -603,6 +604,6 @@ export function validateOmQuoteSnapshot(snap: QuotationDocumentSnapshot): string
   const q = snap.quotation;
   if (!String(snap.lead.full_name ?? "").trim()) errors.push("ไม่พบชื่อลูกค้า");
   if (!String(q.doc_no ?? "").trim()) errors.push("ไม่พบเลขใบเสนอราคา");
-  if (!(Number(q.subtotal_incl_vat) > 0)) errors.push("ยอดใบเสนอราคาเป็น 0 — เลือก Package O&M หรือใส่ราคารายการ");
+  if (!(Number(q.subtotal_incl_vat) > 0)) errors.push("ยอดใบเสนอราคาเป็น 0 — กรุณาเลือกแพ็กเกจ O&M หรือระบุราคารายการ");
   return errors;
 }

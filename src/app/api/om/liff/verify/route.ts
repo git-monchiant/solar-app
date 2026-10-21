@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
   // ── ① ขอรหัส ──────────────────────────────────────────────
   if (step === "request") {
     const phone = normalizePhone(String(body?.phone || ""));
-    if (!phone) return NextResponse.json({ error: "กรอกเบอร์มือถือ 10 หลัก" }, { status: 400 });
+    if (!phone) return NextResponse.json({ error: "กรุณากรอกเบอร์มือถือ 10 หลัก" }, { status: 400 });
 
     // กันกดรัว — ต้องเว้นระยะจากคำขอล่าสุด
     const last = await db.request().input("u", sql.NVarChar(64), lineUserId)
@@ -49,7 +49,11 @@ export async function POST(req: NextRequest) {
 
     const ref = genRef(), code = genCode();
     const sent = await sendOtpSms(phone, code, ref);
-    if (!sent.ok) return NextResponse.json({ error: sent.error }, { status: 502 });
+    // ★ 21 ต.ค. 69 แผน 20261021-01: สาเหตุจริง (ยังไม่ตั้งค่า / รหัสผู้ให้บริการ) อยู่ใน log — ลูกค้าเห็นข้อความกลาง
+    if (!sent.ok) {
+      console.error("OM OTP SMS failed:", sent.error);
+      return NextResponse.json({ error: "ส่ง SMS ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง" }, { status: 502 });
+    }
 
     await db.request()
       .input("ref", sql.NVarChar(10), ref)
@@ -72,7 +76,7 @@ export async function POST(req: NextRequest) {
                      CASE WHEN expires_at < SYSDATETIMEOFFSET() THEN 1 ELSE 0 END expired
               FROM om_otp_requests WHERE ref = @ref AND line_user_id = @u`);
     const otp = r.recordset[0];
-    if (!otp) return NextResponse.json({ error: "ไม่พบคำขอนี้" }, { status: 404 });
+    if (!otp) return NextResponse.json({ error: "ทำรายการไม่สำเร็จ กรุณาเริ่มใหม่อีกครั้ง" }, { status: 404 });
     if (otp.expired) return NextResponse.json({ error: "รหัสหมดอายุแล้ว กรุณาขอใหม่" }, { status: 410 });
     if (otp.attempts >= OTP_MAX_ATTEMPTS) {
       return NextResponse.json({ error: "กรอกผิดครบจำนวนแล้ว กรุณาขอรหัสใหม่" }, { status: 429 });
@@ -81,7 +85,7 @@ export async function POST(req: NextRequest) {
       await db.request().input("id", sql.Int, otp.id)
         .query(`UPDATE om_otp_requests SET attempts = attempts + 1 WHERE id = @id`);
       const left = OTP_MAX_ATTEMPTS - (otp.attempts + 1);
-      return NextResponse.json({ error: `รหัสไม่ถูกต้อง${left > 0 ? ` (เหลือ ${left} ครั้ง)` : ""}` }, { status: 400 });
+      return NextResponse.json({ error: `รหัสไม่ถูกต้อง${left > 0 ? ` (กรอกได้อีก ${left} ครั้ง)` : ""}` }, { status: 400 });
     }
 
     await db.request().input("id", sql.Int, otp.id)
@@ -108,7 +112,7 @@ export async function POST(req: NextRequest) {
       .input("ref", sql.NVarChar(10), ref).input("u", sql.NVarChar(64), lineUserId)
       .query(`SELECT TOP 1 phone, verified_at FROM om_otp_requests WHERE ref = @ref AND line_user_id = @u`);
     const otp = r.recordset[0];
-    if (!otp?.verified_at) return NextResponse.json({ error: "ยังไม่ได้ยืนยันรหัส" }, { status: 403 });
+    if (!otp?.verified_at) return NextResponse.json({ error: "กรุณายืนยันรหัสก่อน" }, { status: 403 });
 
     // ★ ผูกได้เฉพาะบ้านที่เบอร์นี้เป็นเจ้าของจริง — กันส่ง house_id มั่ว
     const allowed = await db.request().input("p", sql.NVarChar(20), otp.phone).query(
@@ -143,5 +147,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, linked, reported: no.length });
   }
 
-  return NextResponse.json({ error: "step ไม่ถูกต้อง" }, { status: 400 });
+  return NextResponse.json({ error: "ทำรายการไม่สำเร็จ กรุณาเริ่มใหม่อีกครั้ง" }, { status: 400 });
 }

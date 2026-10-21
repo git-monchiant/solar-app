@@ -19,7 +19,8 @@ export const CO = {
   nameTh: "บริษัท เสนาโซลาร์ เอนเนอร์ยี่ จำกัด",
   address: "448 RATCHADAPHISEK RD., SAM SEN NOK, HUAI KHWANG, BANGKOK 10310",
   taxId: "0105552041258",
-  phone: "02-541-4642 ต่อ 10303",
+  phone: "02-541-4642",
+  ext: "10303",   // บรรทัดอังกฤษ "ext." · บรรทัดไทย "ต่อ" (แผน 20261021-01)
   hotline: "089-834-3333",
   email: "SERVICES_SSE@SENASOLARENERGY.COM",
 };
@@ -114,8 +115,8 @@ export function renderServiceDocHtml(d: ServiceDocInput): string {
   const info: [string, string][] = [
     ["โครงการ", dash(d.job.project_name)], ["บ้านเลขที่", dash(d.job.house_number)],
     ["ลูกค้า", dash(d.job.customer_name)], ["โทร.", dash(d.job.phone)],
-    ["ประเภทงาน", dash(d.job.service_type)], ["ขนาดติดตั้ง", d.job.kwp_list ? `${esc(d.job.kwp_list)} kW` : "-"],
-    ["วันนัด", formatSlotsRange(d.job.time_slot) && d.job.scheduled_at
+    ["ประเภทงาน", dash(d.job.service_type)], ["ขนาดระบบ", d.job.kwp_list ? `${esc(d.job.kwp_list)} kW` : "-"],
+    ["วันที่ให้บริการ", formatSlotsRange(d.job.time_slot) && d.job.scheduled_at
       ? `${thDate(d.job.scheduled_at)} เวลา ${formatSlotsRange(d.job.time_slot)} น.`   // ช่วงที่จอง (แผน 20261001-01)
       : thDate(d.job.scheduled_at, true)],
   ];
@@ -128,7 +129,7 @@ export function renderServiceDocHtml(d: ServiceDocInput): string {
   let n = 0;
   const body = [
     ...sections.map((s) => sectionHtml(++n, s.sec, s.list, d)),
-    r?.repair_needed === 1 ? `<div class="avoid-break"><div class="sec-title">${++n}. พบงานซ่อม</div>
+    r?.repair_needed === 1 ? `<div class="avoid-break"><div class="sec-title">${++n}. พบจุดที่ต้องซ่อมแซม</div>
       <div class="sec-body" style="white-space:pre-wrap">${esc(r.repair_detail ?? "")}</div></div>` : "",
     `<div class="avoid-break"><div class="label-top">บันทึกเพิ่มเติม</div><div class="notes">${esc(r?.note ?? "")}</div></div>`,
     `<div class="avoid-break result">
@@ -138,20 +139,20 @@ export function renderServiceDocHtml(d: ServiceDocInput): string {
     </div>`,
     // ★ เลิกแสดง "ปิดงานโดย" (2 ต.ค. 69) — กรณีช่างเซ็นแทน ย้ายเหตุผลมาไว้ใต้ลายเซ็นลูกค้าแทน
     `<div class="sigs avoid-break">
-      ${sigBox(proxy ? `ลูกค้า (ช่างเซ็นแทน${r?.proxy_reason ? ` — ${r.proxy_reason}` : ""})` : "ลูกค้า", r?.cust_name ?? d.job.customer_name, r?.cust_sign ?? null)}
+      ${sigBox(proxy ? `ลูกค้า (ช่างลงนามแทน${r?.proxy_reason ? ` — ${r.proxy_reason}` : ""})` : "ลูกค้า", r?.cust_name ?? d.job.customer_name, r?.cust_sign ?? null)}
       ${sigBox("ช่างผู้ปฏิบัติงาน", d.techName, r?.tech_sign ?? null)}
       ${sigBox("ผู้ตรวจสอบ / Q.C.", d.qc.name, r?.qc_sign ?? d.qc.sign)}
     </div>`,
   ].join("");
 
   // รูปแนบ — ขึ้นหน้าใหม่แบบใบส่งมอบฝั่งขาย · ก่อนทำงานแล้วตามด้วยหลังทำงาน
-  const kinds = [["before", "ก่อนทำงาน"], ["after", "หลังทำงาน"]] as const;
+  const kinds = [["before", "ก่อนให้บริการ"], ["after", "หลังให้บริการ"]] as const;
   const photoBlocks = kinds.map(([k, t]) => {
     const list = d.photos.filter((p) => p.kind === k);
     if (!list.length) return "";
     return `<div class="photo-group"><div class="photo-head">${t} · ${list.length} รูป</div><div class="photo-grid">${list.map((p, i) => `
       <div class="photo avoid-break">
-        <div class="photo-img">${p.heic ? `<span class="heic">ไฟล์ HEIC แสดงในเอกสารไม่ได้ — ดูในระบบ</span>` : `<img src="${esc(p.src)}" alt=""/>`}</div>
+        <div class="photo-img">${p.heic ? `<span class="heic">ไม่สามารถแสดงรูปนี้ในเอกสารได้</span>` : `<img src="${esc(p.src)}" alt=""/>`}</div>
         <div class="photo-cap">${t} ${i + 1} / ${list.length}</div>
       </div>`).join("")}</div></div>`;
   }).join("");
@@ -222,8 +223,8 @@ table.doc td { padding: 0; vertical-align: top; }
 <table class="doc">
   <thead><tr><td>
     <div class="strip-header">
-      <div><div class="co-name">${CO.name}</div><div class="co-sub">${CO.address}</div><div class="co-sub">TAX ID: ${CO.taxId} · TEL: ${CO.phone}</div></div>
-      <div class="doc-kind"><div class="en">Service Report</div><div class="th">${esc(d.form?.label_th ?? "ใบตรวจรับงาน / ใบบริการ")}</div></div>
+      <div><div class="co-name">${CO.name}</div><div class="co-sub">${CO.address}</div><div class="co-sub">TAX ID: ${CO.taxId} · TEL: ${CO.phone} ext. ${CO.ext}</div></div>
+      <div class="doc-kind"><div class="en">Service Report</div><div class="th">ใบบริการ</div></div>
     </div>
   </td></tr></thead>
   <tbody><tr><td>
@@ -241,7 +242,7 @@ table.doc td { padding: 0; vertical-align: top; }
     ${photoBlocks ? `<div class="photos content"><div class="sec-title">ภาพหน้างาน · SITE PHOTOS</div>${photoBlocks}</div>` : ""}
   </td></tr></tbody>
   <tfoot><tr><td>
-    <div class="strip-footer">การให้บริการด้านเทคนิค ติดต่อ โทร. ${CO.phone} · สายด่วน ${CO.hotline} · ${CO.email}</div>
+    <div class="strip-footer">ติดต่อฝ่ายบริการด้านเทคนิค โทร. ${CO.phone} ต่อ ${CO.ext} · สายด่วน ${CO.hotline} · ${CO.email}</div>
   </td></tr></tfoot>
 </table>
 </div></body></html>`;

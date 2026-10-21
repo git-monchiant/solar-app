@@ -165,9 +165,10 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     const day = d.toLocaleDateString("th-TH", { timeZone: "Asia/Bangkok", weekday: "long", day: "numeric", month: "long", year: "numeric" });
     const time = d.toLocaleTimeString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" });
     const text = [
-      `แจ้งเลื่อนนัด${cur.service_type ? `${cur.service_type}` : "งานบริการ"} บ้านเลขที่ ${cur.house_number ?? "-"}`,
+      // ★ 21 ต.ค. 69 แผน 20261021-01 (ผู้ใช้เลือกแบบ ก): บอกลูกค้าว่าไม่สะดวกตอบกลับทางไหน · ลงท้าย "ค่ะ"
+      `แจ้งเปลี่ยนวันนัด${cur.service_type ? `${cur.service_type}` : "งานบริการ"} บ้านเลขที่ ${cur.house_number ?? "-"}`,
       `นัดใหม่: ${day} เวลา ${formatSlotsRange(picked.slot) || time} น.`,   // ช่วงที่จอง (แผน 20261001-01)
-      toPending ? "เจ้าหน้าที่จะติดต่อยืนยันนัดอีกครั้ง" : null,
+      toPending ? "เจ้าหน้าที่จะติดต่อยืนยันนัดอีกครั้งค่ะ" : "หากไม่สะดวก ตอบกลับในแชตนี้ได้ค่ะ",
     ].filter(Boolean).join("\n");
     for (const u of lineUsers) {
       const push = await pushLineMessage(u, [{ type: "text", text }]).catch(() => ({ ok: false, status: 0 }));

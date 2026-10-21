@@ -33,9 +33,9 @@ export type Checks = Record<string, QualityValue>;
 export type Measures = Record<string, number | null>;
 
 export const CLOSE_METHOD = {
-  onsite_sign: "ลูกค้าเซ็นที่หน้างาน",
+  onsite_sign: "ลูกค้าลงนามที่หน้างาน",
   line_otp: "ลูกค้ายืนยันทาง LINE + OTP",
-  tech_proxy: "ช่างเซ็นแทน",
+  tech_proxy: "ช่างลงนามแทน",
 } as const;
 
 export const PROXY_REASONS = [
