@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>รวมการ์ด Package</title>
+<style>
+  @font-face { font-family: "DB Heavent"; src: url("../../../public/fonts/db_heavent_v3.2-webfont.woff") format("woff"); font-weight: 400; }
+  @font-face { font-family: "DB Heavent"; src: url("../../../public/fonts/db_heavent_med_v3.2-webfont.woff") format("woff"); font-weight: 500 600; }
+  @font-face { font-family: "DB Heavent"; src: url("../../../public/fonts/db_heavent_bd_v3.2-webfont.woff") format("woff"); font-weight: 700 800; }
+  :root {
+    --gray-100:#f3f4f6; --gray-200:#e5e7eb; --gray-300:#d1d5db; --gray-400:#9ca3af; --gray-500:#6b7280;
+    --gray-600:#4b5563; --gray-700:#374151; --gray-900:#111827;
+    --navy:#1e3a8a; --navy-950:#172554; --blue-100:#dbeafe; --blue-300:#93c5fd;
+    --primary:#1ed0c7; --emerald-600:#059669; --emerald-50:#ecfdf5; --amber-50:#fffbeb; --amber-700:#b45309;
+    --violet-50:#f5f3ff; --orange-50:#fff7ed; --red-500:#ef4444;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { font-family: "DB Heavent", "Noto Sans Thai", -apple-system, "Segoe UI", sans-serif; background: var(--gray-100);
+         color: var(--gray-900); padding: 28px 20px 64px; font-size: 22px; line-height: 1.35; }
+  .wrap { max-width: 1240px; margin: 0 auto; }
+  header.page .meta { font-size: 18px; color: var(--gray-500); }
+  header.page h1 { font-size: 32px; margin: 2px 0 6px; }
+  header.page p { margin: 0; color: var(--gray-600); max-width: 95ch; }
+  section { margin-top: 40px; }
+  h2 { font-size: 18px; text-transform: uppercase; letter-spacing: .08em; color: var(--gray-500); margin: 0 0 2px; }
+  .sub { margin: 0 0 14px; color: var(--gray-600); font-size: 20px; max-width: 95ch; }
+  .n { display: inline-flex; width: 24px; height: 24px; border-radius: 99px; background: var(--emerald-600); color: #fff;
+       font-size: 16px; font-weight: 700; align-items: center; justify-content: center; margin-right: 6px; vertical-align: 2px; }
+  .tag { display: inline-block; font-size: 16px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+         padding: 1px 10px; border-radius: 99px; margin-left: 8px; vertical-align: 3px; }
+  .tag.rec { background: var(--emerald-50); color: var(--emerald-600); }
+  .tag.alt { background: var(--gray-200); color: var(--gray-600); }
+  .tag.old { background: #fee2e2; color: #b91c1c; }
+
+  /* ── hub (/home) ── */
+  .hub { background: var(--navy); border-radius: 16px; padding: 22px 24px 26px; }
+  .hub + .hub { margin-top: 14px; }
+  .hub .cap { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .hub .glabel { font-size: 22px; font-weight: 700; text-transform: uppercase; letter-spacing: .14em; color: var(--blue-300); }
+  .hub .state { font-size: 18px; color: var(--blue-100); opacity: .8; }
+  .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+  .mcard { position: relative; background: #fff; border: 1px solid var(--gray-200); border-radius: 16px; padding: 16px;
+           display: flex; flex-direction: column; }
+  .mcard.hl { outline: 3px solid var(--primary); outline-offset: 3px; }
+  .mcard.gone { opacity: .35; }
+  .mcard .ico { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
+                font-size: 30px; margin-bottom: 10px; }
+  .mcard .lbl { font-size: 28px; font-weight: 700; line-height: 36px; }
+  .mcard .dsc { font-size: 22px; line-height: 30px; color: var(--gray-500); height: 60px; overflow: hidden; margin-top: 2px; }
+  .violet { background: var(--violet-50); } .orange { background: var(--orange-50); } .grayt { background: var(--gray-100); }
+
+  /* ── mobile hub ── */
+  .mrow-wrap { display: flex; gap: 28px; align-items: flex-start; flex-wrap: wrap; }
+  .phone { width: 390px; background: var(--navy); border-radius: 24px; padding: 18px 16px 22px; border: 6px solid #0f172a; }
+  .phone .glabel { font-size: 20px; font-weight: 700; text-transform: uppercase; letter-spacing: .14em; color: var(--blue-300); margin-bottom: 8px; }
+  .mrow { background: #fff; border: 1px solid var(--gray-200); border-radius: 16px; padding: 12px; display: flex; gap: 12px; align-items: center; }
+  .mrow + .mrow { margin-top: 10px; }
+  .mrow .ico { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 26px; flex-shrink: 0; }
+  .mrow .lbl { font-size: 24px; font-weight: 700; line-height: 30px; }
+  .mrow .dsc { font-size: 20px; color: var(--gray-500); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mrow > div:last-child { min-width: 0; flex: 1; }
+  .note { flex: 1; min-width: 300px; font-size: 20px; color: var(--gray-600); }
+  .note ul { margin: 6px 0 0; padding-left: 22px; } .note li { margin: 4px 0; }
+
+  /* ── left menu ── */
+  .menus { display: flex; gap: 28px; align-items: flex-start; flex-wrap: wrap; }
+  .mcol { display: flex; flex-direction: column; gap: 10px; }
+  .mcol .ttl { font-size: 22px; font-weight: 700; }
+  .mcol .why { font-size: 18px; color: var(--gray-600); max-width: 300px; }
+  .side { width: 224px; background: var(--navy); border-right: 1px solid var(--navy-950); border-radius: 12px; overflow: visible;
+          min-height: 470px; position: relative; }
+  .side.rail { width: 56px; }
+  .side .top { height: 64px; border-bottom: 1px solid rgb(255 255 255 / .1); display: flex; align-items: center; justify-content: space-between; padding: 0 12px; }
+  .side.rail .top { justify-content: center; padding: 0 8px; }
+  .side .logo { font-size: 20px; font-weight: 800; color: #fff; letter-spacing: .04em; }
+  .side .logo b { color: #f59e0b; }
+  .side .burger { width: 20px; height: 20px; color: var(--blue-100); }
+  .side nav { padding: 8px 12px; display: flex; flex-direction: column; gap: 2px; }
+  .side.rail nav { padding: 8px 6px; }
+  .it { display: flex; align-items: center; gap: 12px; padding: 6px 12px; border-radius: 8px; font-size: 20px; line-height: 26px;
+        font-weight: 600; color: var(--blue-100); text-transform: uppercase; }
+  .it svg { width: 24px; height: 24px; flex-shrink: 0; }
+  .it.on { background: rgb(255 255 255 / .15); color: #fff; }
+  .it .arw { width: 12px; height: 12px; margin-left: auto; transform: rotate(90deg); }
+  .it.child { padding-left: 36px; gap: 8px; }
+  .it.child i { width: 6px; height: 6px; border-radius: 9px; background: currentColor; opacity: .4; flex-shrink: 0; }
+  .rail .it { justify-content: center; padding: 8px; }
+  .modlabel { padding: 12px 12px 2px; font-size: 18px; font-weight: 700; text-transform: uppercase; letter-spacing: .14em; color: var(--blue-300); }
+  .sep { border-top: 1px solid rgb(255 255 255 / .1); margin: 6px 0; }
+  .tip { position: absolute; left: 66px; background: #fff; color: var(--gray-900); font-size: 20px; font-weight: 600; padding: 4px 12px;
+         border-radius: 8px; box-shadow: 0 6px 16px rgb(0 0 0 / .18); white-space: nowrap; }
+  .tip::before { content: ""; position: absolute; left: -6px; top: 50%; margin-top: -6px; border: 6px solid transparent; border-left: 0; border-right-color: #fff; }
+  .tip small { display: block; font-size: 16px; font-weight: 500; color: var(--gray-500); }
+  .tip.bad { outline: 2px solid var(--red-500); }
+
+  /* ── tables / decisions ── */
+  table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid var(--gray-200); border-radius: 12px; overflow: hidden; font-size: 20px; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--gray-100); vertical-align: top; }
+  th { background: #f9fafb; font-size: 18px; color: var(--gray-500); font-weight: 600; letter-spacing: .04em; }
+  td code, li code { font-size: 18px; background: var(--gray-100); padding: 0 6px; border-radius: 6px; }
+  del { color: var(--gray-400); }
+  .dec { background: #fff; border: 1px solid var(--gray-200); border-radius: 12px; padding: 14px 18px; }
+  .dec + .dec { margin-top: 10px; }
+  .dec .q { font-weight: 700; }
+  code { font-family: inherit; }
+  .dec ol { list-style: none; margin: 6px 0 0; padding-left: 4px; font-size: 20px; color: var(--gray-700); }
+  .dec li { margin: 3px 0; }
+  .dec li > em { font-style: normal; font-weight: 700; color: var(--gray-500); margin-right: 6px; }
+  .warn { background: var(--amber-50); border: 1px solid #fde68a; color: var(--amber-700); border-radius: 12px; padding: 12px 16px; font-size: 20px; }
+  .warn + .warn { margin-top: 10px; }
+
+  @media (max-width: 900px) {
+    .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .phone { width: 100%; max-width: 390px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="page">
+  <div class="meta">แผน 20261022-01 · 22 ต.ค. 69 · ออกแบบอย่างเดียว ยังไม่แก้โค้ด</div>
+  <h1>รวมการ์ด Package + แพ็กเกจ O&amp;M เป็นใบเดียว</h1>
+  <p>ทั้งสองการ์ดอยู่หมวด SETUP เห็นเฉพาะ admin และไม่มีตัวเลข badge — รวมแล้วสิทธิ์และตัวเลขของใครไม่เปลี่ยน
+     ทีมอื่นที่ดูแคตตาล็อกจากเมนูในโมดูลตัวเอง (Sales / Seeker → แพ็กเกจ Solar · O&amp;M → แพ็กเกจ O&amp;M) ไม่กระทบ
+     · แก้ที่ทะเบียนเมนู <code>src/lib/modules.tsx</code> ที่เดียว ไม่สร้างหน้าใหม่</p>
+</header>
+
+<!-- ───────────── 1. HOME ───────────── -->
+<section>
+  <h2><span class="n">1</span>หน้า Home — หมวด Setup (จอคอม)</h2>
+  <p class="sub">การ์ดใบเดียวชื่อเดิม “Package” 📦 · คำอธิบายบอกว่ามีทั้งแพ็กเกจ Solar และ O&amp;M · การ์ดสูงเท่าใบอื่น (คำอธิบายจองไว้ 2 บรรทัดอยู่แล้ว)</p>
+
+  <div class="hub">
+    <div class="cap"><span class="glabel">Setup</span><span class="state">ตอนนี้ — 3 ใบ</span></div>
+    <div class="grid">
+      <div class="mcard hl"><div class="ico violet">📦</div><div class="lbl">Package</div><div class="dsc">แคตตาล็อก · จัดการแพ็คเกจ</div></div>
+      <div class="mcard hl"><div class="ico orange">📋</div><div class="lbl">แพ็กเกจ O&amp;M</div><div class="dsc">แพ็กเกจบริการ O&amp;M · สัญญา</div></div>
+      <div class="mcard"><div class="ico grayt">⚙️</div><div class="lbl">Setup</div><div class="dsc">ตั้งค่า · ผู้ใช้ · LINE · Export</div></div>
+    </div>
+  </div>
+
+  <div class="hub">
+    <div class="cap"><span class="glabel">Setup</span><span class="state">หลังรวม — 2 ใบ</span></div>
+    <div class="grid">
+      <div class="mcard hl"><div class="ico violet">📦</div><div class="lbl">Package</div><div class="dsc">แพ็กเกจ Solar · O&amp;M · แคตตาล็อก · จัดการ</div></div>
+      <div class="mcard"><div class="ico grayt">⚙️</div><div class="lbl">Setup</div><div class="dsc">ตั้งค่า · ผู้ใช้ · LINE · Export</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────── 2. MOBILE ───────────── -->
+<section>
+  <h2><span class="n">2</span>หน้า Home — มือถือ</h2>
+  <p class="sub">มือถือเป็นแถวแนวนอน คำอธิบายบรรทัดเดียวตัดท้าย — คำอธิบายจึงขึ้นต้นด้วย “แพ็กเกจ Solar · O&amp;M” ให้เห็นก่อนส่วนที่ถูกตัด</p>
+  <div class="mrow-wrap">
+    <div class="phone">
+      <div class="glabel">Setup</div>
+      <div class="mrow"><div class="ico violet">📦</div><div><div class="lbl">Package</div><div class="dsc">แพ็กเกจ Solar · O&amp;M · แคตตาล็อก · จัดการ</div></div></div>
+      <div class="mrow"><div class="ico grayt">⚙️</div><div><div class="lbl">Setup</div><div class="dsc">ตั้งค่า · ผู้ใช้ · LINE · Export</div></div></div>
+    </div>
+    <div class="note">
+      <b>สิ่งที่ไม่เปลี่ยน</b>
+      <ul>
+        <li>กดการ์ดแล้วลง <b>แคตตาล็อก Solar</b> (<code>/packages</code>) เหมือนการ์ด Package ตอนนี้</li>
+        <li>แถบล่างมือถือผูกกับ role ไม่ใช่โมดูล — ไม่กระทบ</li>
+        <li>หัวหน้าของทั้ง 4 หน้าคงเดิม</li>
+        <li>เมนู “แคตตาล็อก” ในโมดูล Sales / Seeker / O&amp;M คงเดิม</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────── 3. LEFT MENU ───────────── -->
+<section>
+  <h2><span class="n">3</span>เมนูซ้ายหลังกดการ์ด</h2>
+  <p class="sub">แบบ A ใช้กลุ่มพับได้แบบเดียวกับ “ใบเสนอราคา” / “ติดตั้ง” ในโมดูล Sales — กางค้างทั้ง 2 กลุ่มตั้งแต่เปิด (แบบโมดูลบัญชี) ผู้ใช้กดหุบเองได้</p>
+
+  <div class="menus">
+    <!-- A expanded -->
+    <div class="mcol">
+      <div class="ttl">แบบ A — แยก 2 กลุ่ม<span class="tag rec">แนะนำ</span></div>
+      <div class="side">
+        <div class="top"><span class="logo">SENA <b>SOLAR</b></span>
+          <svg class="burger" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"/></svg></div>
+        <nav>
+          <div class="it"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955a1.126 1.126 0 011.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg>Home</div>
+          <div class="modlabel">Package</div>
+          <div class="it"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z"/></svg>Solar Rooftop
+            <svg class="arw" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg></div>
+          <div class="it child on"><i></i>แคตตาล็อก</div>
+          <div class="it child"><i></i>จัดการแพ็กเกจ</div>
+          <div class="it"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11.42 15.17l-5.658-5.66a2.122 2.122 0 010-3l1.532-1.532a2.122 2.122 0 013 0L15.953 10.637a2.122 2.122 0 010 3l-1.532 1.532a2.122 2.122 0 01-3 0z"/></svg>O&amp;M
+            <svg class="arw" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg></div>
+          <div class="it child"><i></i>แคตตาล็อก</div>
+          <div class="it child"><i></i>จัดการแพ็กเกจ</div>
+        </nav>
+      </div>
+      <div class="why">หัวกลุ่มบอกประเภท ชื่อเมนูข้างในจึงสั้นและเหมือนกันทั้ง 2 กลุ่ม · มีแพ็กเกจประเภทใหม่ (เช่น B2B) ก็เพิ่มกลุ่มต่อได้</div>
+    </div>
+
+    <!-- A collapsed rail -->
+    <div class="mcol">
+      <div class="ttl">แบบ A — ตอนย่อเมนู</div>
+      <div class="side rail">
+        <div class="top"><svg class="burger" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"/></svg></div>
+        <nav>
+          <div class="it"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955a1.126 1.126 0 011.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg></div>
+          <div class="sep"></div>
+          <div class="it on"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z"/></svg></div>
+          <div class="it"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 11.25v8.25a1.5 1.5 0 01-1.5 1.5H5.25a1.5 1.5 0 01-1.5-1.5v-8.25M12 4.875A2.625 2.625 0 109.375 7.5H12m0-2.625V7.5m0-2.625A2.625 2.625 0 1114.625 7.5H12m0 0V21m-8.625-9.75h18c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125h-18c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/></svg></div>
+          <div class="it"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11.42 15.17l-5.658-5.66a2.122 2.122 0 010-3l1.532-1.532a2.122 2.122 0 013 0L15.953 10.637a2.122 2.122 0 010 3l-1.532 1.532a2.122 2.122 0 01-3 0z"/></svg></div>
+          <div class="it"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z"/></svg></div>
+        </nav>
+        <div class="tip bad" style="top: 128px">แคตตาล็อก<small>ตอนนี้ — ซ้ำกับอีกอัน</small></div>
+        <div class="tip" style="top: 224px">O&amp;M · แคตตาล็อก<small>เสนอ (D3 ข้อ ก)</small></div>
+      </div>
+      <div class="why">ย่อเมนูแล้วกลุ่มกลายเป็นไอคอนเรียงกัน 4 อัน → ให้ไอคอนไม่ซ้ำกัน (☀ / กล่อง · ประแจ / คลิปบอร์ด)
+        แต่ป้ายตอนชี้ใช้ชื่อเมนูอย่างเดียว “แคตตาล็อก” จะขึ้นซ้ำ 2 อัน → ดู D3</div>
+    </div>
+
+    <!-- B flat -->
+    <div class="mcol">
+      <div class="ttl">แบบ B — เมนูเรียบ 4 บรรทัด<span class="tag alt">ทางเลือก</span></div>
+      <div class="side">
+        <div class="top"><span class="logo">SENA <b>SOLAR</b></span>
+          <svg class="burger" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"/></svg></div>
+        <nav>
+          <div class="it"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955a1.126 1.126 0 011.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg>Home</div>
+          <div class="modlabel">Package</div>
+          <div class="it on"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z"/></svg>แคตตาล็อก Solar</div>
+          <div class="it"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 11.25v8.25a1.5 1.5 0 01-1.5 1.5H5.25a1.5 1.5 0 01-1.5-1.5v-8.25M12 4.875A2.625 2.625 0 109.375 7.5H12m0-2.625V7.5m0-2.625A2.625 2.625 0 1114.625 7.5H12m0 0V21m-8.625-9.75h18c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125h-18c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/></svg>จัดการแพ็กเกจ Solar</div>
+          <div class="it"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11.42 15.17l-5.658-5.66a2.122 2.122 0 010-3l1.532-1.532a2.122 2.122 0 013 0L15.953 10.637a2.122 2.122 0 010 3l-1.532 1.532a2.122 2.122 0 01-3 0z"/></svg>แคตตาล็อก O&amp;M</div>
+          <div class="it"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z"/></svg>จัดการแพ็กเกจ O&amp;M</div>
+        </nav>
+      </div>
+      <div class="why">แก้น้อยที่สุด ตอนย่อเมนูไม่มีปัญหาป้ายซ้ำ · แต่คำ “แคตตาล็อก / จัดการแพ็กเกจ” ซ้ำทุกบรรทัด ต้องอ่านท้ายคำถึงรู้ว่าประเภทไหน</div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────── 4. CHANGES ───────────── -->
+<section>
+  <h2><span class="n">4</span>สิ่งที่เปลี่ยนในทะเบียนเมนู (แบบ A)</h2>
+  <p class="sub">ไฟล์ <code>src/lib/modules.tsx</code> — หน้า / API / สิทธิ์ของทั้ง 4 หน้าไม่แตะ</p>
+  <table>
+    <tr><th style="width:22%">ส่วน</th><th style="width:39%">ตอนนี้</th><th>หลังรวม</th></tr>
+    <tr><td>การ์ด</td><td><code>package</code> “Package” + <code>om_package</code> “แพ็กเกจ O&amp;M”</td><td><code>package</code> “Package” ใบเดียว · ลบ <code>om_package</code> ออกจากทะเบียนและ <code>ModuleKey</code></td></tr>
+    <tr><td>คำอธิบาย</td><td>แคตตาล็อก · จัดการ<b>แพ็คเกจ</b><br>แพ็กเกจบริการ O&amp;M · สัญญา</td><td>แพ็กเกจ Solar · O&amp;M · แคตตาล็อก · จัดการ <span style="color:var(--gray-500)">(สะกด “แพ็กเกจ” ตามทั้งระบบ)</span></td></tr>
+    <tr><td>เมนู</td><td>แคตตาล็อก · จัดการ Package<br>แคตตาล็อก · จัดการแพ็กเกจ O&amp;M</td><td>กลุ่ม <b>Solar Rooftop</b>: แคตตาล็อก <code>/packages</code> · จัดการแพ็กเกจ <code>/packages/manage</code><br>กลุ่ม <b>O&amp;M</b>: แคตตาล็อก <code>/om/packages</code> · จัดการแพ็กเกจ <code>/om/packages/manage</code><br>ทั้ง 2 กลุ่ม <code>defaultOpen</code></td></tr>
+    <tr><td>กดการ์ดแล้วไปหน้า</td><td><code>/packages</code></td><td><code>/packages</code> — ไม่ต้องตั้ง <code>defaultHref</code> เพราะหน้า Home หาเมนูลูกตัวแรกของกลุ่มให้อยู่แล้ว</td></tr>
+    <tr><td>สิทธิ์ / badge</td><td>admin · ไม่มี badge</td><td>เหมือนเดิม</td></tr>
+  </table>
+</section>
+
+<!-- ───────────── 5. GOTCHAS ───────────── -->
+<section>
+  <h2><span class="n">5</span>จุดที่ต้องกันไว้ตอนลงมือ</h2>
+  <div class="warn"><b>admin ที่กดการ์ด O&amp;M ไว้ล่าสุด</b> — เครื่องยังจำโมดูล <code>om_package</code> ไว้ พอเลิกใช้ key นี้ เมนูซ้ายจะตกไปโมดูลแรก (Seeker) ทั้งที่อยู่หน้าจัดการแพ็กเกจ O&amp;M
+    → ให้ <code>getModule()</code> แปลง <code>om_package</code> เป็น <code>package</code> (บรรทัดเดียว)</div>
+  <div class="warn"><b>ไอคอนตอนย่อเมนู</b> — ลูกในกลุ่มแสดงเป็นไอคอนเรียงกัน ไอคอน 4 อันต้องไม่ซ้ำกัน (☀ / กล่อง · ประแจ / คลิปบอร์ด)</div>
+</section>
+
+<!-- ───────────── 6. DECISIONS ───────────── -->
+<section>
+  <h2><span class="n">6</span>ให้เคาะ</h2>
+  <div class="dec"><div class="q">D1 · เมนูซ้าย</div>
+    <ol><li><em>ก)</em><b>แยก 2 กลุ่มพับได้ Solar Rooftop / O&amp;M</b> (แนะนำ)</li><li><em>ข)</em>เมนูเรียบ 4 บรรทัด</li></ol></div>
+  <div class="dec"><div class="q">D2 · ชื่อและคำอธิบายการ์ด</div>
+    <ol><li><em>ก)</em><b>“Package” · “แพ็กเกจ Solar · O&amp;M · แคตตาล็อก · จัดการ”</b> (แนะนำ — ชื่อภาษาอังกฤษแบบการ์ดอื่น)</li><li><em>ข)</em>“แพ็กเกจ” · คำอธิบายเดียวกัน</li></ol></div>
+  <div class="dec"><div class="q">D3 · ป้ายตอนชี้ไอคอนในเมนูที่ย่อ (เฉพาะแบบ A)</div>
+    <ol><li><em>ก)</em><b>ใส่ชื่อกลุ่มนำหน้า เช่น “O&amp;M · แคตตาล็อก”</b> (แนะนำ) — ใช้กับทุกโมดูลที่มีกลุ่ม เช่น Sales จะขึ้น “ติดตั้ง · รอติดตั้ง” แก้ BottomNav จุดเดียว</li>
+      <li><em>ข)</em>ไม่แก้ ใช้ไอคอนต่างกันพอ</li></ol></div>
+  <div class="dec"><div class="q">D4 · กดการ์ดแล้วลงหน้า</div>
+    <ol><li><em>ก)</em><b>แคตตาล็อก Solar</b> (แนะนำ — เหมือนการ์ด Package ตอนนี้)</li><li><em>ข)</em>จัดการแพ็กเกจ Solar (การ์ดนี้ admin ใช้แก้ราคาเป็นหลัก)</li></ol></div>
+</section>
+
+</div>
+</body>
+</html>

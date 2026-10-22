@@ -43,7 +43,7 @@ const D = {
 export type ModuleKey =
   | "seeker" | "sales" | "install" | "warranty" | "om"
   | "quotation"
-  | "account" | "package" | "om_package" | "dashboard" | "setup";
+  | "account" | "package" | "dashboard" | "setup";
 
 export type ModuleMenuItem = {
   label: string;
@@ -145,7 +145,7 @@ export const MODULES: AppModule[] = [
   {
     // กระบวนการใบเสนอราคาครบวงจร สำหรับฝั่ง solar (ไม่เห็นโมดูล Sales)
     // — solar ปกติดู list ได้ · เมนูอนุมัติเห็นเฉพาะ Manager/Admin
-    // 📄 ไม่ใช่ 🧾 — เหตุผลเดียวกับการ์ด Package O&M (emoji รุ่นใหม่ ฟอนต์ Windows บางเครื่องไม่มี)
+    // 📄 ไม่ใช่ 🧾 — 🧾 เป็น emoji รุ่นใหม่ ฟอนต์ Windows บางเครื่องไม่มี ขึ้นเป็นกล่องเปล่า
     key: "quotation", label: "Quotation", emoji: "📄", tint: "bg-rose-50",
     group: "operation",
     desc: "อนุมัติ · รอใบเสนอราคา · รอชำระเงิน",
@@ -257,24 +257,28 @@ export const MODULES: AppModule[] = [
   {
     key: "package", label: "Package", emoji: "📦", tint: "bg-violet-50",
     group: "setup",
-    desc: "แคตตาล็อก · จัดการแพ็คเกจ",
+    desc: "แพ็กเกจ Solar · O&M · แคตตาล็อก · จัดการ",
     // ทั้งหมวด SETUP = admin เท่านั้น — ทีมอื่นดูแคตตาล็อกจากเมนูในโมดูลของตัวเอง
     roles: ["admin"],
+    // ★ 22 ต.ค. 69 รวมการ์ด "แพ็กเกจ O&M" (key om_package) เข้าการ์ดนี้ (ผู้ใช้สั่ง · แผน 20261022-01)
+    //   แยกกลุ่มตามประเภทแพ็กเกจ แต่ละกลุ่ม = แคตตาล็อก (ดูราคา) + จัดการ (แก้ราคา/เงื่อนไข)
+    //   ไอคอนลูกห้ามซ้ำกัน — ตอนย่อเมนู ลูกในกลุ่มขึ้นเป็นไอคอนเรียงกัน
+    //   กดการ์ดแล้วลง /packages เหมือนเดิม (หน้า Home หาเมนูลูกตัวแรกให้เอง ไม่ต้องตั้ง defaultHref)
     menu: [
-      { label: "แคตตาล็อก", href: "/packages", icon: <I d={D.sun} /> },
-      { label: "จัดการ Package", href: "/packages/manage", icon: <I d={D.archive} />, roles: ["admin"] },
-    ],
-  },
-  {
-    // 📋 ไม่ใช่ 🧰 — 🧰 เป็น emoji รุ่นใหม่ ฟอนต์ Windows บางเครื่องไม่มี ขึ้นเป็นกล่องเปล่า
-    key: "om_package", label: "แพ็กเกจ O&M", emoji: "📋", tint: "bg-orange-50",
-    group: "setup",
-    desc: "แพ็กเกจบริการ O&M · สัญญา",
-    roles: ["admin"],
-    // เมนูชุดเดียวกับการ์ด Package — แคตตาล็อก (ดูราคา) + จัดการ (แก้ราคา/เงื่อนไข)
-    menu: [
-      { label: "แคตตาล็อก", href: "/om/packages", icon: <I d={D.sun} /> },
-      { label: "จัดการแพ็กเกจ O&M", href: "/om/packages/manage", icon: <I d={D.archive} />, roles: ["admin"] },
+      {
+        label: "Solar Rooftop", icon: <I d={D.sun} />, defaultOpen: true,
+        children: [
+          { label: "แคตตาล็อก", href: "/packages", icon: <I d={D.sun} /> },
+          { label: "จัดการแพ็กเกจ", href: "/packages/manage", icon: <I d={D.archive} />, roles: ["admin"] },
+        ],
+      },
+      {
+        label: "O&M", icon: <I d={D.wrench} />, defaultOpen: true,
+        children: [
+          { label: "แคตตาล็อก", href: "/om/packages", icon: <I d={D.wrench} /> },
+          { label: "จัดการแพ็กเกจ", href: "/om/packages/manage", icon: <I d={D.clipboard} />, roles: ["admin"] },
+        ],
+      },
     ],
   },
   {
@@ -343,9 +347,15 @@ export function modulesForRoles(activeRoles: Role[]): AppModule[] {
   return MODULES.filter((m) => !m.roles || hasRole(activeRoles, ...m.roles));
 }
 
+// key ของโมดูลที่ถูกรวมไปแล้ว → โมดูลใหม่ (เครื่องที่ยังจำ key เก่าใน localStorage ไม่ตกไปโมดูลแรก)
+const MODULE_ALIASES: Record<string, ModuleKey> = {
+  om_package: "package", // 22 ต.ค. 69 รวมการ์ดแพ็กเกจ O&M เข้าการ์ด Package
+};
+
 export function getModule(key: string | null | undefined): AppModule | null {
   if (!key) return null;
-  return MODULES.find((m) => m.key === key) ?? null;
+  const k = MODULE_ALIASES[key] ?? key;
+  return MODULES.find((m) => m.key === k) ?? null;
 }
 
 /** href ของเมนูตรงกับตำแหน่งปัจจุบันไหม — path ต้องตรงเป๊ะ และ query ใน href

@@ -342,11 +342,12 @@ export default function BottomNav({ collapsed = false, onToggle }: BottomNavProp
                 // จุดเริ่มของเมนูงานประจำตัวที่ inject มา → มีเส้นคั่นจากเมนูโมดูล
                 const injectedStart = idx === moduleMenuBase.length && injected.length > 0;
                 // กลุ่มพับได้ (มี children) — rail ย่อไม่มีที่ให้หัวข้อ → โชว์ลูกเป็นไอคอนตรงๆ
+                // ป้ายตอนชี้ใส่ชื่อกลุ่มนำหน้า ("O&M · แคตตาล็อก") — ไม่มีหัวกลุ่มให้เห็น ชื่อลูกอย่างเดียวซ้ำข้ามกลุ่มได้
                 if (mi.children) {
                   if (collapsed) {
                     return mi.children.map((c) => (
                       <Link key={c.href} href={c.href!}
-                        onMouseEnter={(e) => showHover(e, c.label, c.href!)}
+                        onMouseEnter={(e) => showHover(e, `${mi.label} · ${c.label}`, c.href!)}
                         onMouseLeave={scheduleHide}
                         className={`flex items-center justify-center px-2 py-2 rounded-lg transition-colors ${isModuleItemActive(c.href!) ? "bg-white/15 text-white" : "text-blue-100 hover:bg-white/10"}`}>
                         {c.icon}
