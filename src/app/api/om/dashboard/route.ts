@@ -92,11 +92,12 @@ export async function GET(req: NextRequest) {
     --   ★ ต้องมีขอบบน: ปิดงานก่อนถึงวันนัดได้ แล้ว service_date = วันนัด
     --     (14 ต.ค. 69 มีแท่ง พ.ย. 69 โผล่ท้ายกราฟ จากใบงาน #129 ที่นัด 10 พ.ย.)
     --   เกณฑ์เดียวกับรายชื่อแท่ง (/api/om/dashboard/rows kind=washed) — รวมทั้งสองขอบ
-    SELECT FORMAT(rd.service_date, 'yyyy-MM') ym, COUNT(*) n
+    --   ★ 22 ต.ค. 69 นับรายวัน แล้วรวมเป็นรายเดือนฝั่ง JS (ช่วงสั้นใช้แท่งรายวัน)
+    SELECT CONVERT(char(10), rd.service_date, 23) d, COUNT(*) n
       FROM om_redemptions rd
      WHERE rd.status <> 'void' AND ${isCleaning("rd")}
        AND rd.service_date >= @from AND rd.service_date <= @to
-     GROUP BY FORMAT(rd.service_date, 'yyyy-MM');`);
+     GROUP BY CONVERT(char(10), rd.service_date, 23);`);
 
   // แจ้งเตือนที่ยังไม่อ่านของคนที่เปิดหน้านี้ — กล่องของ O&M เอง ไม่ใช่กระดิ่งกลางของฝั่งขาย
   const unread = await countOmUnread(db, gate.userId);
@@ -109,7 +110,16 @@ export async function GET(req: NextRequest) {
 
   const houses = rs[4][0] ?? {};
   const quota = rs[5][0] ?? {};
-  const washed = new Map(rs[6].map((x) => [String(x.ym), num(x.n)]));
+  const washedDay = new Map(rs[6].map((x) => [String(x.d), num(x.n)]));
+  const washed = new Map<string, number>();
+  for (const [d, c] of washedDay) washed.set(d.slice(0, 7), (washed.get(d.slice(0, 7)) ?? 0) + c);
+  // ★ 22 ต.ค. 69 ช่วงไม่เกิน 31 วัน (เช่นกรองเดือนเดียว) กราฟเป็นรายวัน — รายเดือนเหลือแท่งเดียวกางเต็มกรอบ อ่านอะไรไม่ได้
+  //   วันที่ไม่มีงานขึ้นเป็น 0 เหมือนเดือนว่าง · เกิน 31 วัน = null (ใช้ months)
+  const dayKeys: string[] = [];
+  for (let t = Date.parse(`${range.from}T00:00:00Z`), end = Date.parse(`${range.to}T00:00:00Z`); t <= end && dayKeys.length <= 31; t += 86_400_000) {
+    dayKeys.push(new Date(t).toISOString().slice(0, 10));
+  }
+  const days = dayKeys.length <= 31 ? dayKeys.map((d) => ({ d, n: washedDay.get(d) ?? 0 })) : null;
 
   // มูลค่างาน O&M (แผน 20261015-02) — เห็นเฉพาะ OM_MONEY_ROLES (ชุดรายรับ O&M + sales · ไม่มี solar) · คนอื่นได้ null (การ์ดไม่ขึ้น)
   //   มูลค่า/รับแล้ว = ใบที่ลูกค้ารับในช่วง · ค้างรับ = ทุกใบไม่จำกัดช่วง แบบ "ยังค้างรับ (ทั้งหมด)" ของ Dashboard I
@@ -157,5 +167,6 @@ export async function GET(req: NextRequest) {
     })),
     teams: rs[3].map((x) => ({ team_id: num(x.team_id), team_name: String(x.team_name), n: num(x.n) })),
     months: ymKeys.map((ym) => ({ ym, n: washed.get(ym) ?? 0 })),
+    days,
   });
 }

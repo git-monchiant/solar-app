@@ -32,7 +32,12 @@ type Data = {
   quota: { granted: number; used: number; left: number };
   projects: { project_id: string | null; project_name: string | null; total: number; follow: number }[];
   months: { ym: string; n: number }[];
+  /** ช่วงไม่เกิน 31 วัน = แท่งรายวัน · เกิน = null (ใช้ months) */
+  days: { d: string; n: number }[] | null;
 };
+
+/** แท่งหนึ่งแท่งของกราฟงานล้าง — รายเดือนหรือรายวันใช้เปลือกเดียวกัน */
+type WashBar = { key: string; n: number; from: string; to: string; current: boolean; label: React.ReactNode; mark?: string; sunday?: boolean; tick?: boolean };
 
 const n = (v: number) => v.toLocaleString("th-TH");
 const fmtBaht = (v: number) => `฿${formatTHB(Math.round(v))}`;
@@ -149,8 +154,33 @@ export default function OmDashboardPage() {
     }
   };
 
-  const peak = Math.max(1, ...(d?.months ?? []).map((m) => m.n));
-  const nowYm = (d?.range.today ?? "").slice(0, 7);
+  // กราฟงานล้าง — ช่วงไม่เกิน 31 วัน (เช่นกรองเดือนเดียว) เป็นรายวัน ไม่งั้นรายเดือน
+  const daily = !!d?.days;
+  const today = d?.range.today ?? "";
+  const bars: WashBar[] = !d ? [] : d.days
+    ? d.days.map((x, i) => {
+      const [y, m, day] = x.d.split("-").map(Number);
+      const dt = new Date(y, m - 1, day);
+      return {
+        key: x.d, n: x.n, from: x.d, to: x.d, current: x.d === today, label: day,
+        // ป้ายเดือนใต้วันแรกของกราฟ และวันที่ 1 ของเดือนถัดไป (ช่วงคร่อมเดือน)
+        mark: i === 0 || day === 1 ? `${dt.toLocaleDateString("th-TH", { month: "short" })} ${String((y + 543) % 100).padStart(2, "0")}` : undefined,
+        sunday: dt.getDay() === 0,
+        // มือถือแท่งแคบ ~9px ใส่เลขวันทุกแท่งไม่ได้ — เหลือวันแรก + ทุก 5 วัน
+        tick: i === 0 || day === 1 || day % 5 === 0,
+      };
+    })
+    : d.months.map((m, i) => {
+      // เดือนนี้ตัดด้วยช่วงวันที่ — แท่งแรก/แท่งท้ายอาจไม่เต็มเดือน
+      const mFrom = `${m.ym}-01` < from ? from : `${m.ym}-01`;
+      const mEnd = ymd(new Date(Number(m.ym.slice(0, 4)), Number(m.ym.slice(5, 7)), 0));
+      return {
+        key: m.ym, n: m.n, from: mFrom, to: mEnd > to ? to : mEnd, current: m.ym === today.slice(0, 7),
+        label: <MonthLabel ym={m.ym} withYear={i === 0 || m.ym.endsWith("-01")} />,
+      };
+    });
+  const peak = Math.max(1, ...bars.map((b) => b.n));
+  const washedTotal = bars.reduce((s, b) => s + b.n, 0);
 
   return (
     <div>
@@ -385,40 +415,56 @@ export default function OmDashboardPage() {
               </div>
 
               <div className="rounded-2xl bg-white border border-gray-200 p-4 flex flex-col">
-                <div className="text-sm font-bold text-gray-500 mb-3">
-                  จำนวนงานล้างแผงรายเดือน <span className="font-normal text-gray-400">· {periodLabel}</span>
+                <div className="flex items-baseline justify-between gap-2 mb-3">
+                  <span className="text-sm font-bold text-gray-500">
+                    จำนวนงานล้างแผง{daily ? "รายวัน" : "รายเดือน"} <span className="font-normal text-gray-400 whitespace-nowrap">· {periodLabel}</span>
+                  </span>
+                  {washedTotal > 0 && (
+                    <button type="button" title="ดูรายชื่องานล้างทั้งช่วง"
+                      onClick={open({ title: `งานล้างที่ทำจริง ${periodLabel}`, kind: "washed", params: { from, to } })}
+                      className="shrink-0 text-xs font-semibold text-gray-500 cursor-pointer hover:underline">
+                      รวม <span className="font-mono tabular-nums text-gray-900">{n(washedTotal)}</span> งาน
+                    </button>
+                  )}
                 </div>
                 {/* ★ 14 ต.ค. 69 แท่งไม่ขึ้นเลย — คอลัมน์สูงตามเนื้อหา height % ของแท่งเลยเป็น 0
                     ⇒ คอลัมน์ยืดเต็มความสูงกราฟ แท่งเป็น absolute ในราง flex-1 (absolute คิด % จากความสูงจริงเสมอ)
                     API เติมเดือนที่ไม่มีงานเป็น 0 ให้ครบ · แท่งเดือนนี้ = ยังไม่จบเดือน จึงสีอ่อน
-                    ★ 15 ต.ค. 69 แท่งตามช่วงวันที่ (สูงสุด 24 เดือน) · กดแท่งดูรายชื่องานล้างของเดือนนั้น */}
-                {d.months.every((m) => m.n === 0) ? <div className="text-sm text-gray-400 py-6 text-center">ยังไม่มีข้อมูล</div> : (
+                    ★ 15 ต.ค. 69 แท่งตามช่วงวันที่ (สูงสุด 24 เดือน) · กดแท่งดูรายชื่องานล้างของเดือนนั้น
+                    ★ 22 ต.ค. 69 กรองเดือนเดียวได้แท่งเดียวกางเต็มกรอบ ⇒ ช่วงไม่เกิน 31 วันเป็นแท่งรายวัน
+                      + ราง max-w-16 แท่งน้อย (2–3 เดือน) ไม่บานเต็มช่อง */}
+                {washedTotal === 0 ? <div className="text-sm text-gray-400 py-6 text-center">ยังไม่มีข้อมูล</div> : (
                   <>
-                    <div className="flex-1 min-h-56 flex gap-1.5 pt-6">
-                      {d.months.map((m, i) => {
-                        const now = m.ym === nowYm;
-                        // เดือนนี้ตัดด้วยช่วงวันที่ — แท่งแรก/แท่งท้ายอาจไม่เต็มเดือน
-                        const mFrom = `${m.ym}-01` < from ? from : `${m.ym}-01`;
-                        const mEnd = ymd(new Date(Number(m.ym.slice(0, 4)), Number(m.ym.slice(5, 7)), 0));
-                        const mTo = mEnd > to ? to : mEnd;
-                        return (
-                          <button key={m.ym} type="button" disabled={!m.n} title={m.n ? "ดูรายชื่องานล้างเดือนนี้" : undefined}
-                            onClick={open({ title: `งานล้างที่ทำจริง ${fmtThai(mFrom)} – ${fmtThai(mTo)}`, kind: "washed", params: { from: mFrom, to: mTo } })}
-                            className="group flex-1 min-w-0 flex flex-col items-center gap-1 enabled:cursor-pointer">
-                            <div className="relative flex-1 w-full">
-                              <div className={`absolute inset-x-0 bottom-0 rounded-t group-enabled:group-hover:brightness-90 ${now ? "bg-teal-500/35" : "bg-teal-500/80"}`}
-                                style={{ height: m.n ? `${Math.max(2, Math.round((m.n / peak) * 100))}%` : 0 }}>
-                                <span className={`absolute inset-x-0 bottom-full mb-0.5 text-center text-xxs font-mono tabular-nums leading-none ${m.n ? "text-gray-600" : "text-gray-300"}`}>{n(m.n)}</span>
-                              </div>
+                    <div className={`flex-1 min-h-56 flex pt-6 ${daily ? "gap-1 max-sm:gap-0.5" : "gap-1.5"}`}>
+                      {bars.map((b) => (
+                        <button key={b.key} type="button" disabled={!b.n}
+                          title={b.n ? `ดูรายชื่องานล้าง ${b.from === b.to ? fmtThai(b.from) : `${fmtThai(b.from)} – ${fmtThai(b.to)}`}` : undefined}
+                          onClick={open({ title: `งานล้างที่ทำจริง ${b.from === b.to ? fmtThai(b.from) : `${fmtThai(b.from)} – ${fmtThai(b.to)}`}`, kind: "washed", params: { from: b.from, to: b.to } })}
+                          className="group flex-1 min-w-0 flex flex-col items-center gap-1 enabled:cursor-pointer">
+                          {/* เส้นฐานใต้ทุกช่อง — วัน/เดือนที่เป็น 0 ยังเห็นว่ามีช่องอยู่ ไม่ใช่ช่องหาย */}
+                          <div className="relative flex-1 w-full max-w-16 border-b border-gray-200">
+                            <div className={`absolute inset-x-0 bottom-0 rounded-t group-enabled:group-hover:brightness-90 ${b.current ? "bg-teal-500/35" : "bg-teal-500/80"}`}
+                              style={{ height: b.n ? `${Math.max(2, Math.round((b.n / peak) * 100))}%` : 0 }}>
+                              {/* รายวัน: ไม่ใส่ 0 (31 ตัวรกจนอ่านไม่ออก) */}
+                              {(!daily || b.n > 0) && (
+                                <span className={`absolute inset-x-0 bottom-full mb-0.5 text-center text-xxs font-mono tabular-nums leading-none ${b.n ? "text-gray-600" : "text-gray-300"}`}>{n(b.n)}</span>
+                              )}
                             </div>
-                            <span className="text-xxs max-sm:text-[11px] text-gray-400 truncate w-full text-center leading-none">
-                              <MonthLabel ym={m.ym} withYear={i === 0 || m.ym.endsWith("-01")} />
-                            </span>
-                          </button>
-                        );
-                      })}
+                          </div>
+                          <span className={`text-xxs max-sm:text-[11px] truncate w-full text-center leading-none ${b.sunday ? "text-rose-400" : "text-gray-400"} ${daily && !b.tick ? "max-sm:invisible" : ""}`}>
+                            {b.label}
+                          </span>
+                          {/* ป้ายเดือนของแกนรายวัน — แถวสูงคงที่ทุกแท่ง (ฐานแท่งตรงกัน) · ชิดซ้ายแล้วล้นไปทางขวาได้ */}
+                          {daily && (
+                            <span className="self-start h-3 text-xxs text-gray-400 leading-none whitespace-nowrap">{b.mark}</span>
+                          )}
+                        </button>
+                      ))}
                     </div>
-                    <div className="mt-2 text-xxs text-gray-400">แท่งสีอ่อนคือเดือนปัจจุบัน (ยังไม่ครบเดือน) · กดที่แท่งเพื่อดูรายชื่อ</div>
+                    <div className="mt-2 text-xxs text-gray-400">
+                      {bars.some((b) => b.current && b.n > 0) && (daily ? "แท่งสีอ่อนคือวันนี้ (ยังไม่จบวัน) · " : "แท่งสีอ่อนคือเดือนปัจจุบัน (ยังไม่ครบเดือน) · ")}
+                      {daily && "วันอาทิตย์ตัวเลขสีแดง · "}กดที่แท่งเพื่อดูรายชื่อ
+                    </div>
                   </>
                 )}
               </div>
