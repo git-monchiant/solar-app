@@ -56,6 +56,15 @@ export const failCount = (
 ): number =>
   !c ? 0 : items.filter((i) => i.kind === "bool" && i.required && c[i.code]?.pass === false).length;
 
+/** ★ 22 ต.ค. 69 ผู้ใช้สั่ง "บังคับใส่รูป" (เดิม 16 ก.ย. 69 เคาะไม่บังคับ) — ปิดงานต้องมีรูปก่อนและหลังทำงานอย่างน้อยอย่างละ 1 รูป
+ *  คืนชื่อกล่องที่ยังไม่มีรูป ([] = ครบ) · หน้าจอ (ขั้นรูป → ส่งมอบ / ปุ่มปิดงาน) กับ API ปิดงานใช้ชุดเดียวกัน */
+export const PHOTO_REQUIRED = [
+  { kind: "before", label: "รูปก่อนทำงาน" },
+  { kind: "after", label: "รูปหลังทำงาน" },
+] as const;
+export const missingPhotos = (photos: readonly { kind: string }[]): string[] =>
+  PHOTO_REQUIRED.filter((r) => !photos.some((p) => p.kind === r.kind)).map((r) => r.label);
+
 /** เลขใบงานที่พิมพ์บนใบตรวจรับงาน — แทนเลขเล่ม/เลขที่ของกระดาษ */
 export const jobNo = (id: number, at: Date = new Date()) =>
   `OM-${String((at.getFullYear() + 543) % 100).padStart(2, "0")}${String(at.getMonth() + 1).padStart(2, "0")}-${String(id).padStart(4, "0")}`;

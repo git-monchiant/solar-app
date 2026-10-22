@@ -11,6 +11,8 @@ import { notifyOmUser, resolveOmNotifications } from "@/lib/om/notifications";
 import { getSettings } from "@/lib/om/settings";
 import { OM_BOOKING_PAID_SQL } from "@/lib/om/om-quotation";
 import { omErrorText } from "@/lib/om/api-error";
+import { missingPhotos } from "@/lib/om/job-form";
+import { parsePhotos } from "@/lib/om/photo-store";
 
 // งานบริการรายชิ้น — ดูรายละเอียด + ประวัติ · เปลี่ยนสถานะ/วันนัด/ทีม/ลำดับคิว
 // ★ ทุกการเปลี่ยนต้องลง om_booking_history ในทรานแซกชันเดียวกัน (booking-log.ts)
@@ -97,11 +99,15 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   //    ทีมสำรวจกับทีมล้างเป็นชุดเดียวกัน ไม่มีขั้นจ่ายทีมแล้ว (แผน 20261001-01 เฟส 4)
   //    ถ้ายังกันไว้ ใบงานใหม่ (ไม่มีทีม) จะกด "ช่างถึงหน้างานแล้ว" และปิดงานจากใบตรวจไม่ได้
   // 3) ปิดงานต้องมีใบตรวจรับงานแล้ว — ทางปิดงานทางเดียวคือปุ่มท้ายใบตรวจ (บันทึกใบก่อนแล้วค่อยเปลี่ยนสถานะ)
+  //    ★ 22 ต.ค. 69 + ต้องมีรูปก่อน/หลังทำงานอย่างละ 1 รูป (ด่านสุดท้าย — PUT /report ตอนลงผลตรวจกันไว้ก่อนแล้ว)
   if (newStatus === "closed" && newStatus !== cur.status) {
     const rep = (await db.request().input("id", sql.Int, id)
-      .query(`SELECT TOP 1 id FROM om_job_report WHERE booking_id = @id`)).recordset[0];
+      .query(`SELECT TOP 1 id, photos FROM om_job_report WHERE booking_id = @id`)).recordset[0];
     if (!rep)
       return NextResponse.json({ error: "ยังไม่มีใบตรวจรับงาน — กรุณากรอกใบตรวจรับงาน แล้วกดปิดงานท้ายใบ" }, { status: 400 });
+    const noPhoto = missingPhotos(parsePhotos(rep.photos));
+    if (noPhoto.length)
+      return NextResponse.json({ error: `ยังไม่มี${noPhoto.join("และ")} — กรุณาแนบรูปอย่างน้อยอย่างละ 1 รูปก่อนปิดงาน` }, { status: 400 });
   }
 
   if (newStatus && newStatus !== cur.status) {

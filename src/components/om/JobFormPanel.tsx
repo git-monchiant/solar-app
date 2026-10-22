@@ -20,7 +20,7 @@ import ServiceDocButton from "@/components/om/ServiceDocButton";
 import {
   CameraIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, DocumentIcon, PlusIcon, UserIcon,
 } from "@/components/ui/icons";
-import { PROXY_REASONS, failCount, type Checks, type FormItem, type JobForm } from "@/lib/om/job-form";
+import { PHOTO_REQUIRED, PROXY_REASONS, failCount, missingPhotos, type Checks, type FormItem, type JobForm } from "@/lib/om/job-form";
 import { statusLabel } from "@/lib/om/booking";
 import { OM_REPAIR_ENABLED, thAppt } from "@/lib/om/service-view";
 
@@ -224,7 +224,7 @@ function ItemRow({ it, n, disabled, value, num, onPass, onFix, onNum }: {
  *  เพราะไฟล์นั้นดึง fs/promises เข้ามา ใช้ในไฟล์ "use client" ไม่ได้ */
 type JobPhoto = { file: string; kind: string; at: string; size: number };
 
-/** กล่องรูปก่อน/หลัง — ★ ไม่บังคับ (ผู้ใช้เคาะ 16 ก.ย. 69) ปิดงานได้โดยไม่มีรูป
+/** กล่องรูปก่อน/หลัง — ★ 22 ต.ค. 69 บังคับอย่างน้อยกล่องละ 1 รูป (missingPhotos ใน job-form.ts · เดิม 16 ก.ย. ไม่บังคับ)
  *  ★ รูปเก็บนอก public/ ทางเข้าเดียวคือ /api/om/jobs/<id>/photos/<file> ที่ตรวจสิทธิ์ก่อนเสมอ
  *  หน้าตาแบบ HANDOVER PHOTOS ของ InstallStep: ว่าง = กล่องประให้แตะ · มีรูป = รูปจัตุรัส + ช่อง + */
 function PhotoBox({ jobId, kind, label, photos, disabled, onChanged }: {
@@ -272,7 +272,7 @@ function PhotoBox({ jobId, kind, label, photos, disabled, onChanged }: {
   return (
     <div className={SUB_CARD}>
       <div className={SUB_TITLE}>
-        {label}
+        {label} {!disabled && <span className="text-red-500">*</span>}
         {mine.length > 0 && <span className="ml-1 font-normal normal-case text-gray-400">· {mine.length} รูป</span>}
       </div>
       {err && <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-1.5 text-xs text-red-700">{err}</div>}
@@ -472,6 +472,8 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
     ? [...missingChecks.slice(0, 8).map((it) => it.label_th.replace(/,/g, " ")),
        ...(missingChecks.length > 8 ? [`และอีก ${missingChecks.length - 8} ข้อ`] : [])].join(",")
     : null;
+  // ★ 22 ต.ค. 69 บังคับรูปก่อน/หลัง — ขั้นรูป · บันทึก ไปส่งมอบไม่ได้ · API ปิดงานกันอีกชั้น (report PUT + bookings PATCH)
+  const photoText = missingPhotos(photos).join(",") || null;
 
   // ประตูเดียวกับปุ่มถัดไป + แท็บขั้นย่อย (แบบ onSubStepChange ของ InstallStep)
   // ★ ข้อมูลที่กรอกไม่หายตอนสลับขั้นย่อย (state อยู่ที่ใบ) · ไม่บันทึกอัตโนมัติ เพราะ PUT เขียน Activity log ทุกครั้ง
@@ -484,6 +486,7 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
     }
     // ขั้นตรวจยังไม่ครบ — ไปขั้นรูป · บันทึก / ส่งมอบ ไม่ได้ (ทั้งปุ่มถัดไปและกดแถบขั้นย่อยข้ามไป)
     if (!closed && n > subStep && n - off >= 1 && missingText) { setNextError(missingText); return; }
+    if (!closed && n > subStep && n - off > 1 && photoText) { setNextError(photoText); return; }
     if (!closed && n > subStep && n - off > 1 && repair && !repairDetail.trim()) {
       setNextError("กรุณาระบุอาการ / สิ่งที่ต้องซ่อม (เลือก “พบ ต้องซ่อม” ไว้)"); return;
     }
@@ -522,6 +525,7 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
       return;
     }
     if (missingText) { setNextError(missingText); return; }   // ใบตรวจไม่ครบ (เช่นใบที่จำขั้นย่อยส่งมอบไว้ก่อนมีกติกานี้)
+    if (photoText) { setNextError(photoText); return; }       // ใบที่จำขั้นย่อยส่งมอบไว้ก่อนบังคับรูป
     const missing = method === "onsite_sign" && !custSign ? "ลายเซ็นลูกค้า"
       : method === "tech_proxy" && !techSign ? "ลายเซ็นช่าง (เซ็นแทนลูกค้า)" : null;
     if (missing) { setNextError(missing); return; }
@@ -663,13 +667,14 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
             {/* ── ขั้นย่อย 2: รูป · บันทึก ── */}
             {inner === 1 && (
               <>
-                {/* รูปก่อน / หลัง — แยกสองกล่องตามที่ผู้ใช้สั่ง · ★ ไม่บังคับ ปิดงานได้โดยไม่มีรูป
+                {/* รูปก่อน / หลัง — แยกสองกล่องตามที่ผู้ใช้สั่ง · ★ 22 ต.ค. 69 บังคับอย่างน้อยกล่องละ 1 รูป
                     ชื่อกล่องเป็นกลาง ไม่ผูกกับงานล้าง เพราะใบนี้ใช้กับงาน O&M ทุกชนิด */}
                 <div className={SECTION}>
-                  <SectionHead icon={<CameraIcon className="w-4 h-4" />} en="Photos" th="รูปก่อน / หลังทำงาน · ไม่บังคับ" />
+                  <SectionHead icon={<CameraIcon className="w-4 h-4" />} en="Photos" th="รูปก่อน / หลังทำงาน · อย่างน้อยอย่างละ 1 รูป" />
                   <div className="grid gap-3 md:grid-cols-2">
-                    <PhotoBox jobId={id} kind="before" label="รูปก่อนทำงาน" photos={photos} disabled={closed} onChanged={setPhotos} />
-                    <PhotoBox jobId={id} kind="after" label="รูปหลังทำงาน" photos={photos} disabled={closed} onChanged={setPhotos} />
+                    {PHOTO_REQUIRED.map((p) => (
+                      <PhotoBox key={p.kind} jobId={id} kind={p.kind} label={p.label} photos={photos} disabled={closed} onChanged={setPhotos} />
+                    ))}
                   </div>
                 </div>
 

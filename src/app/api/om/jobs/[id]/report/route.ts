@@ -3,7 +3,8 @@ import { requireAnyRole, requireAuth } from "@/lib/auth";
 import { OM_WORK_ROLES } from "@/lib/om/om-roles";
 import { sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
-import { failCount, jobNo, type Checks } from "@/lib/om/job-form";
+import { failCount, jobNo, missingPhotos, type Checks } from "@/lib/om/job-form";
+import { parsePhotos } from "@/lib/om/photo-store";
 import { loadForm, loadJobReport, loadQcSigner, qcSignerId } from "@/lib/om/job-report";
 import { logBooking } from "@/lib/om/booking-log";
 import { omErrorText } from "@/lib/om/api-error";
@@ -45,7 +46,8 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
 
   const db = await getOmDb();
   const cur = (await db.request().input("id", sql.Int, id)
-    .query(`SELECT id, status FROM om_bookings WHERE id = @id`)).recordset[0];
+    .query(`SELECT b.id, b.status, r.photos FROM om_bookings b
+              LEFT JOIN om_job_report r ON r.booking_id = b.id WHERE b.id = @id`)).recordset[0];
   if (!cur) return NextResponse.json({ error: "ไม่พบใบงานนี้" }, { status: 404 });
 
   // ใบไหน + ข้อไหนบ้าง — ต้องรู้ก่อนถึงคิด fail_count ได้ และเก็บ form_id ลงใบงานด้วย
@@ -62,6 +64,10 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
       : false));
     if (miss.length)
       return NextResponse.json({ error: `ใบตรวจรับงานยังกรอกไม่ครบ ${miss.length} ข้อ — ${miss.slice(0, 5).map((it) => it.label_th).join(" · ")}${miss.length > 5 ? " …" : ""}` }, { status: 400 });
+    // ★ 22 ต.ค. 69 บังคับรูปก่อน/หลัง — รูปอัปผ่าน /photos ไว้ก่อนแล้ว อ่านจากฐาน (ส่ง photos มาด้วย = ใช้ชุดที่ส่งมา)
+    const noPhoto = missingPhotos(parsePhotos(Object.prototype.hasOwnProperty.call(b, "photos") ? b.photos : cur.photos));
+    if (noPhoto.length)
+      return NextResponse.json({ error: `ยังไม่มี${noPhoto.join("และ")} — กรุณาแนบรูปอย่างน้อยอย่างละ 1 รูปก่อนปิดงาน` }, { status: 400 });
   }
   // ★ 15 ต.ค. 69 ผลตรวจคิดจากข้อที่ติ๊ก ไม่เชื่อค่าที่ส่งมา (เอาปุ่มผ่าน/ไม่ผ่านของขั้นส่งมอบออกแล้ว)
   //   มีข้อผ่าน/ไม่ผ่านที่ติ๊ก "ไม่ผ่าน" แม้ข้อเดียว = ไม่ผ่าน · ส่ง result มา = กำลังลงผล (ปิดงาน) · ไม่ส่ง = บันทึกร่าง
