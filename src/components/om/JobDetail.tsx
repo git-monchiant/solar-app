@@ -288,7 +288,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
         }),
       });
       if (confirm) { setSchedNow(false); go(4); }
-      onSaved(confirm ? "ยืนยันนัดแล้ว" : "บันทึกการโทรแล้ว"); onDone();
+      onSaved(confirm ? "ยืนยันนัดหมายแล้ว" : "บันทึกการโทรแล้ว"); onDone();
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   };
@@ -541,9 +541,10 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
           <button type="button" disabled={busy || !oc || needSlot} onClick={() => saveCall(oc, schedule)}
             className="flex-[2] h-11 rounded-lg text-sm font-bold text-white bg-active hover:bg-active-dark disabled:opacity-40 disabled:cursor-not-allowed shadow-sm shadow-active/30 flex items-center justify-center gap-2 cursor-pointer">
             {/* ★ 1 ต.ค. 69 ผู้ใช้ตั้งชื่อปุ่มขั้น 04 = "ยืนยันและเข้างาน" ทุกสถานะ (ยังไม่เลือกช่วงเวลา = ปุ่มจาง กดไม่ได้)
+                → 22 ต.ค. 69 "ยืนยันนัดหมาย" ตรงกับชื่อสถานะที่ได้หลังกด (ขั้น 05 เปลี่ยนชื่อเป็นปฏิบัติงาน)
                 ขั้น 01 (ปฏิเสธ) ยังเป็นบันทึกการโทร */}
             {busy ? "กำลังบันทึก…" : !oc ? "เลือกผลการโทร" : (
-              <><CheckIcon className="w-4 h-4" strokeWidth={2.5} />{schedule ? "ยืนยันและเข้างาน" : "บันทึกการโทร"}</>
+              <><CheckIcon className="w-4 h-4" strokeWidth={2.5} />{schedule ? "ยืนยันนัดหมาย" : "บันทึกการโทร"}</>
             )}
           </button>
         )}
@@ -915,9 +916,10 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
               ) : null}
             </StepCard>
 
-            {/* ★ 28 ก.ย. 69 ตัดขั้น "รอปิด" — เข้างานเป็นขั้นสุดท้ายก่อนปิด: กรอกใบ + ลูกค้าเซ็น → กดปิดงานท้ายใบจบเลย */}
-            <StepCard n={4} className={cardWrap(4)} state={stepState(4)} doneTitle="เข้างานเสร็จ" onHeaderClick={() => toggleDone(4)}
-              title={cur === "pending" || cur === "confirmed" ? "เข้างาน — รอถึงวันนัด · ช่างถึงหน้างาน" : "เข้างาน — ช่างทำงาน · ลูกค้าเซ็นรับ"}>
+            {/* ★ 28 ก.ย. 69 ตัดขั้น "รอปิด" — เข้างานเป็นขั้นสุดท้ายก่อนปิด: กรอกใบ + ลูกค้าเซ็น → กดปิดงานท้ายใบจบเลย
+                ★ 22 ต.ค. 69 ชื่อขั้น เข้างาน → ปฏิบัติงาน (ตาม FLOW) */}
+            <StepCard n={4} className={cardWrap(4)} state={stepState(4)} doneTitle="ปฏิบัติงานเสร็จ" onHeaderClick={() => toggleDone(4)}
+              title={cur === "pending" || cur === "confirmed" ? "ปฏิบัติงาน — รอถึงวันนัด · ช่างถึงหน้างาน" : "ปฏิบัติงาน — ช่างอยู่หน้างาน · ลูกค้าเซ็นรับ"}>
               {stepState(4) === "done" && item.booking_id ? doneView(4,
                 <DoneHead text={<>
                   {report?.result === "pass" ? "ผลตรวจ ผ่าน" : report?.result === "fail" ? "ผลตรวจ ไม่ผ่าน" : "ตรวจงานเสร็จ"}
@@ -932,7 +934,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
               ) : item.booking_id && viewOnly ? (
                 // Account อ่านอย่างเดียว — ใบตรวจ/เลื่อนนัด/ช่างถึงหน้างาน เป็นงานทีมช่าง (แผน 20261014-06)
                 waitNote(cur === "pending" || cur === "confirmed"
-                  ? <>นัด <b>{thAppt(item.scheduled_at, item.time_slot)}</b> — รอทีมช่างเข้างาน</>
+                  ? <>นัด <b>{thAppt(item.scheduled_at, item.time_slot)}</b> — รอทีมช่างเข้าปฏิบัติงาน</>
                   : "ทีมช่างกำลังทำงาน — รอปิดงาน")
               ) : item.booking_id ? (
                 // ★ เฟส 3: ใบตรวจรับงานฝังมาเลย ไม่ต้องเด้งออกไปหน้าอื่นแล้ว

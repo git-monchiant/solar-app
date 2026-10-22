@@ -521,7 +521,7 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
     //   เดิมกดได้จากทุกสถานะ แล้วหน้าเว็บเดินสถานะให้ทีละขั้นจนปิด (ข้ามการยืนยันนัด/จ่ายทีม)
     //   API กันซ้ำอีกชั้น: ปิดงานต้องมีใบตรวจแล้ว (เริ่มงานต้องจ่ายทีม — เลิกแล้ว 1 ต.ค. 69)
     if (!["confirmed", "progress", "checked"].includes(job.status)) {
-      setErr(`ใบงานยังไม่ถึงขั้นเข้างาน (สถานะปัจจุบัน "${statusLabel(job.status)}") — กรุณายืนยันนัดที่ขั้นนัดหมายก่อน`);
+      setErr(`ใบงานยังไม่ถึงขั้นปฏิบัติงาน (สถานะปัจจุบัน "${statusLabel(job.status)}") — กรุณายืนยันนัดที่ขั้นนัดหมายก่อน`);
       return;
     }
     if (missingText) { setNextError(missingText); return; }   // ใบตรวจไม่ครบ (เช่นใบที่จำขั้นย่อยส่งมอบไว้ก่อนมีกติกานี้)
