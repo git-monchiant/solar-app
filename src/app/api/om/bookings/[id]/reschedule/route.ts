@@ -103,7 +103,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   const cur = await load(db, id);
   if (!cur) return NextResponse.json({ error: "ไม่พบใบงานนี้" }, { status: 404 });
   if (!OPEN.includes(cur.status))
-    return NextResponse.json({ error: "เลื่อนนัดได้เฉพาะใบงานที่ยังไม่เริ่มงาน (รอยืนยันนัด / นัดแล้ว)" }, { status: 400 });
+    return NextResponse.json({ error: "เลื่อนนัดได้เฉพาะใบงานที่ยังไม่เริ่มงาน (รอยืนยันนัด / ยืนยันนัดหมาย)" }, { status: 400 });
 
   const picked = await omSlotsFor(db, b.scheduled_at, b.time_slot);
   if ("error" in picked) return NextResponse.json({ error: picked.error }, { status: 400 });

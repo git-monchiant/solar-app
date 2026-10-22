@@ -109,7 +109,7 @@ export default function JobCard({ r, onOpen }: { r: Item; onOpen: () => void }) 
               ยังต้องเสนอราคาก่อนนัดเหมือนสิทธิ์หมด — กติกานั้นดู balance ไม่ใช่ป้ายนี้ */}
           {r.balance > 0
             ? <span className="px-2 py-0.5 rounded-md bg-teal-50 text-gray-700">สิทธิ์คงเหลือ <b className="text-primary-dark">{r.balance}</b> ครั้ง</span>
-            : <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 font-bold">{r.new_manual ? "ลูกค้าทั่วไป" : "สิทธิ์หมด"}</span>}
+            : <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 font-bold">{r.new_manual ? "ลูกค้าทั่วไป" : "ไม่มีสิทธิ์คงเหลือ"}</span>}
           {r.last_wash
             ? <span className="px-2 py-0.5 rounded-md bg-gray-100 text-gray-700">ล้างล่าสุด <b>{thD(r.last_wash)}</b> <span className="text-gray-400">({m} เดือน)</span></span>
             : <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 font-bold">ยังไม่เคยล้าง</span>}

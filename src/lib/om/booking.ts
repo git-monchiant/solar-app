@@ -12,8 +12,9 @@ export const BOOKING_STATUS = [
   //   "เก็บค่าบริการก่อนนัดหมาย" — ตกลงนัดได้ก็ต่อเมื่อ Account ยืนยันรับเงินแล้ว
   { k: "payment",   t: "ชำระเงิน",    onCal: false, tone: "bg-fuchsia-600" },
   { k: "pending",   t: "รอยืนยันนัด", onCal: true,  tone: "bg-amber-500" },
-  { k: "confirmed", t: "นัดแล้ว",     onCal: true,  tone: "bg-blue-600" },
-  { k: "progress",  t: "เข้างาน",     onCal: true,  tone: "bg-violet-600" },
+  // ★ 22 ต.ค. 69 คำทางการตามแท็บหน้ารายการ (เดิม นัดแล้ว · เข้างาน)
+  { k: "confirmed", t: "ยืนยันนัดหมาย",  onCal: true,  tone: "bg-blue-600" },
+  { k: "progress",  t: "กำลังดำเนินงาน", onCal: true,  tone: "bg-violet-600" },
   // ★ 28 ก.ย. 69: ไม่มีขั้นบนแถบ/แท็บแล้ว ปุ่มปิดงานไม่ผ่านสถานะนี้ — สงวนไว้ (ยืนยันทาง LINE / Q.C. ในอนาคต)
   { k: "checked",   t: "รอปิด",       onCal: true,  tone: "bg-teal-600" },
   { k: "closed",    t: "ปิดงาน",      onCal: true,  tone: "bg-emerald-600" },
