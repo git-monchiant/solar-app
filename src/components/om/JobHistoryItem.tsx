@@ -74,10 +74,12 @@ const formatThaiDate = (d: string) => new Date(String(d).slice(0, 10) + "T12:00:
   .toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
 const jsonStr = (json: string | null | undefined, key: string) =>
   new RegExp(`"${key}"\\s*:\\s*"([^"]*)"`).exec(json ?? "")?.[1] ?? null;
-const chipTone = (s: string) =>
-  s === "cancelled" || s === "no_show" ? "bg-red-50 text-red-700 border-red-200"
-  : s === "closed" ? "bg-teal-50 text-teal-700 border-teal-200"
-  : "bg-gray-50 text-gray-700 border-gray-200";
+// ★ 23 ต.ค. 69 ผู้ใช้สั่ง "ไม่ต้องใส่กรอบ เรียงมาแบบง่าย ๆ" — สถานะเดิม → ใหม่ เป็นข้อความบรรทัดเดียว (เดิมป้ายกรอบมน)
+//   สีตัวอักษรอย่างเดียว: ยกเลิก/ไม่อยู่บ้าน แดง · ปิดงาน เขียวน้ำทะเล · อื่น ๆ เทาเข้ม
+const statusTone = (s: string) =>
+  s === "cancelled" || s === "no_show" ? "text-red-600"
+  : s === "closed" ? "text-teal-700"
+  : "text-gray-700";
 
 export default function JobHistoryItem({ h, isLast }: { h: HistoryRow; isLast?: boolean }) {
   const channel = h.action === "call" ? jsonStr(h.to_json, "channel") : null;
@@ -116,12 +118,10 @@ export default function JobHistoryItem({ h, isLast }: { h: HistoryRow; isLast?: 
           </span>
         )}
         {fromStatus && toStatus && fromStatus !== toStatus && (
-          <div className="flex items-center gap-1.5 mt-1 text-xs">
-            <span className={`px-2 py-0.5 rounded-full border font-semibold ${chipTone(fromStatus)}`}>{statusLabel(fromStatus)}</span>
-            <svg className="w-3 h-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3" />
-            </svg>
-            <span className={`px-2 py-0.5 rounded-full border font-semibold ${chipTone(toStatus)}`}>{statusLabel(toStatus)}</span>
+          <div className="mt-1 text-xs text-gray-500">
+            <span className={statusTone(fromStatus)}>{statusLabel(fromStatus)}</span>
+            <span className="mx-1 text-gray-400">→</span>
+            <span className={`font-semibold ${statusTone(toStatus)}`}>{statusLabel(toStatus)}</span>
           </div>
         )}
         {h.reason && (

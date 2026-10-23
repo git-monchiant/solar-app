@@ -67,6 +67,8 @@ const INFO_LABEL: Record<string, string> = { survey: "สำรวจ", install:
 // ทีมสำรวจกับทีมล้างเป็นชุดเดียวกัน (แผน 20261001-01) — นัดสองแบบนี้หักช่องว่าง และนับว่า "ทีมเข้าโครงการแล้ว"
 //   ติดตั้งเป็นคนละทีม (จองทั้งวัน) ไม่หัก/ไม่นับ — ผู้ใช้เคาะ 21 ต.ค. 69 (แผน 20261021-02 ข้อ 1)
 const SAME_TEAM = ["om", "survey"];
+// ★ 23 ต.ค. 69 แผน 20261023-02 (โหมด shared · O&M): ปิดช่อง (calendar_blocks) = ลายทแยงเทา แยกจากช่องที่ทีมติดนัด
+const HATCH: React.CSSProperties = { backgroundImage: "repeating-linear-gradient(135deg, #f3f4f6 0 6px, #e5e7eb 6px 8px)" };
 type Info = {
   kind: string; label: string; slots: string[] | null;   // slots null = ทั้งวัน
   /** อยู่โครงการเดียวกับบ้านที่กำลังนัด (เฉพาะ SAME_TEAM) */
@@ -403,13 +405,17 @@ export default function CalendarPicker({
                             : pastBlocks
                             ? "text-gray-300 cursor-not-allowed"
                             : teamFull
-                            ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                            // แผน 20261023-02: ทีมติดนัดครบ = ขีดฆ่าเลข (แยกจากวันที่ผ่านแล้ว/เกินช่วงจอง)
+                            ? "bg-gray-100 text-gray-400 line-through cursor-not-allowed"
                             : bookedClass || bookedStyle
                             ? `${bookedClass}${isFull ? " cursor-not-allowed" : " hover:brightness-95"}`
                             : sameDay
                             ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
                             : isToday
-                            ? "bg-active-light text-active ring-1 ring-active/30 hover:bg-active hover:text-white"
+                            // แผน 20261023-02 (O&M): วันนี้ = วงเส้นม่วงอย่างเดียว ไม่มีพื้น — ไม่ให้คล้ายวันที่เลือก (ม่วงทึบ)
+                            ? shared
+                              ? "text-active ring-[1.5px] ring-active hover:bg-active-light"
+                              : "bg-active-light text-active ring-1 ring-active/30 hover:bg-active hover:text-white"
                             : isPast
                             ? "text-gray-500 hover:bg-active-light hover:text-active"
                             : `${isWeekend ? "text-red-500" : "text-gray-700"} hover:bg-active-light hover:text-active`
@@ -452,15 +458,20 @@ export default function CalendarPicker({
               const selected = selectedSlots.includes(s);
               const dayBooked = date && showSurveySlots ? bookedSlotsByDate[date] : null;
               // ปิดช่อง / ช่องที่คนเรียกปิดเพิ่ม (เช่น เลยเวลาแล้ว) — ช่องที่เลือกอยู่ยังกดเอาออกได้
-              const blocked = (!!dayBooked && dayBooked.has(s) && !selected)
-                || (!!date && !selected && !!slotDisabled?.(date, s));
+              const closed = !!dayBooked && dayBooked.has(s) && !selected;
+              const late = !!date && !selected && !!slotDisabled?.(date, s);
+              const blocked = closed || late;
               // โหมด shared: ทีมมีนัด O&M / สำรวจช่วงนี้แล้ว = ล็อก (นัดทับเวลาไม่ได้ · 21 ต.ค. 69)
               const team = date && shared && !blocked ? teamAt(date, s) : [];
               const taken = blocked || (team.length > 0 && !selected);
-              // ③ โครงการเดียวกัน = พื้นเขียว + บ้านเลขที่ (ล็อก · แผน 20261021-02)
+              // ③ โครงการเดียวกัน = บ้านเลขที่สีเขียว (ล็อก · แผน 20261021-02)
+              //   ★ 23 ต.ค. 69 แผน 20261023-02: พื้นเทาแบบไม่ว่าง + แถบเขียวซ้าย (เดิมพื้นเขียว — อ่านเหมือนว่าง)
               //   มือถือช่องแคบ: ไม่มีคำ เหลือจุดเขียว — บ้านเลขที่ดูในรายการนัดข้างล่าง
               const same = team.filter(i => i.same);
-              const kinds = date && !blocked ? kindsAt(date, s, true) : [];
+              // ทีมติดนัดโครงการอื่น — บ้านเลขที่สีเทาแทนจุดสีทีม (แผน 20261023-02)
+              const other = team.filter(i => !i.same);
+              // จุดสีทีม = งานที่เห็นแต่ไม่ล็อก (ติดตั้ง) · โหมด shared นัดทีมเดียวกันขึ้นเป็นบ้านเลขที่แล้ว ไม่ซ้ำเป็นจุด
+              const kinds = (date && !blocked ? kindsAt(date, s, true) : []).filter(k => !shared || !SAME_TEAM.includes(k));
               const tip = same.length
                 ? `ทีมติดนัดโครงการเดียวกัน: ${same.map(i => i.label).join(", ")} — นัดทับเวลาไม่ได้`
                 : team.length ? `ทีมติดนัด ${team.map(i => `${INFO_LABEL[i.kind]} ${i.label}`).join(", ")} — นัดทับเวลาไม่ได้`
@@ -477,11 +488,18 @@ export default function CalendarPicker({
                       : [...selectedSlots, s].sort();
                     onTimeSlotChange(serializeSlots(next) || "");
                   }}
+                  // แผน 20261023-02 (โหมด shared · O&M): ว่าง = ขาว · เลือก = ม่วง · ไม่ว่างทุกแบบ = เทา
+                  //   โครงการเดียวกัน + แถบเขียวซ้าย · ปิดช่อง = ลายทแยง · เลยเวลา = จางสุด · ฝั่งขาย (block) หน้าตาเดิม
+                  style={shared && closed ? HATCH : undefined}
                   className={`min-w-0 flex items-center justify-center gap-1 h-8 px-1 rounded-md border transition-all ${
                     selected
                       ? "bg-active border-active text-white shadow-sm shadow-active/20"
+                      : shared && late
+                      ? "bg-gray-50 border-gray-100 text-gray-300 cursor-not-allowed"
+                      : shared && closed
+                      ? "border-gray-200 text-gray-400 cursor-not-allowed"
                       : same.length
-                      ? "bg-emerald-50 border-emerald-200 text-gray-500 cursor-not-allowed"
+                      ? "bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed shadow-[inset_3px_0_0_#10b981]"
                       : taken
                       ? "bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed"
                       : "bg-white border-gray-300 text-gray-900 hover:border-active hover:text-active"
@@ -494,6 +512,9 @@ export default function CalendarPicker({
                     </span>
                     <span className="md:hidden w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: selected ? "#fff" : "#10b981" }} />
                   </>}
+                  {same.length === 0 && other.length > 0 && (
+                    <span className="hidden md:inline truncate text-xxs font-medium text-gray-500">{other.map(i => i.label).join(", ")}</span>
+                  )}
                   {kinds.map(k => (
                     <span key={k} className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: selected ? "#fff" : INFO_COLOR[k] }} />
                   ))}
@@ -501,6 +522,19 @@ export default function CalendarPicker({
               );
             })}
           </div>
+          {/* แถบคำอธิบายสี (แผน 20261023-02 · เฉพาะโหมด shared = O&M) */}
+          {shared && (
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xxs text-gray-500">
+              <span className="inline-flex items-center gap-1"><span className="w-3.5 h-2.5 rounded-sm border border-gray-300 bg-white" />ว่าง</span>
+              <span className="inline-flex items-center gap-1"><span className="w-3.5 h-2.5 rounded-sm border border-active bg-active" />เลือกอยู่</span>
+              <span className="inline-flex items-center gap-1"><span className="w-3.5 h-2.5 rounded-sm border border-gray-200 bg-gray-100" />ไม่ว่าง</span>
+              {pjId && (
+                <span className="inline-flex items-center gap-1"><span className="w-3.5 h-2.5 rounded-sm border border-gray-200 bg-gray-100 shadow-[inset_2px_0_0_#10b981]" />ไม่ว่าง · ทีมอยู่โครงการนี้</span>
+              )}
+              <span className="inline-flex items-center gap-1"><span className="w-3.5 h-2.5 rounded-sm border border-gray-200" style={HATCH} />ปิดช่อง</span>
+              <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: INFO_COLOR.install }} />มีงานติดตั้ง (คนละทีม)</span>
+            </div>
+          )}
         </div>
       )}
 

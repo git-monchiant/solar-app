@@ -673,9 +673,10 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
             {!atAppt && inner === 1 && (
               <>
                 {/* รูปก่อน / หลัง — แยกสองกล่องตามที่ผู้ใช้สั่ง · ★ 22 ต.ค. 69 บังคับอย่างน้อยกล่องละ 1 รูป
-                    ชื่อกล่องเป็นกลาง ไม่ผูกกับงานล้าง เพราะใบนี้ใช้กับงาน O&M ทุกชนิด */}
+                    ชื่อกล่องเป็นกลาง ไม่ผูกกับงานล้าง เพราะใบนี้ใช้กับงาน O&M ทุกชนิด
+                    ★ 23 ต.ค. 69 ผู้ใช้สั่งเอาคำอธิบายข้างหัวข้อออก — กล่องรูปมี * บอกว่าบังคับอยู่แล้ว */}
                 <div className={SECTION}>
-                  <SectionHead icon={<CameraIcon className="w-4 h-4" />} en="Photos" th="รูปก่อน / หลังทำงาน · อย่างน้อยอย่างละ 1 รูป" />
+                  <SectionHead icon={<CameraIcon className="w-4 h-4" />} en="Photos" />
                   <div className="grid gap-3 md:grid-cols-2">
                     {PHOTO_REQUIRED.map((p) => (
                       <PhotoBox key={p.kind} jobId={id} kind={p.kind} label={p.label} photos={photos} disabled={closed} onChanged={setPhotos} />
@@ -749,7 +750,7 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
                       {qc?.name && <div className="h-8 flex items-center justify-center text-xs font-semibold text-gray-600">{qc.name}</div>}
                     </div>
                   </div>
-                  {!closed && <div className="mt-3 text-xxs text-gray-500">ระบบจะบันทึกพิกัดและเวลาอัตโนมัติเมื่อกดปิดงาน</div>}
+                  {/* ★ 23 ต.ค. 69 ผู้ใช้สั่งเอาบรรทัด "ระบบจะบันทึกพิกัดและเวลาอัตโนมัติเมื่อกดปิดงาน" ออก — ยังบันทึกพิกัด/เวลาตอนปิดงานเหมือนเดิม (save → gps) */}
                 </div>
               </>
             )}

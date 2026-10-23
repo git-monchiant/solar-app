@@ -770,7 +770,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                 <span className="text-xxs font-bold tabular-nums leading-none">{String(i + 1).padStart(2, "0")}</span>
                 <span className="text-[10px] font-semibold leading-tight text-center px-1">{f.t}</span>
                 {st === "done" && <CheckIcon className={`w-3 h-3 ${i === step ? "text-white" : "text-emerald-500"}`} strokeWidth={3} />}
-                {st === "skipped" && <span className="text-[9px] leading-none">ข้าม</span>}
+                {/* ★ 23 ต.ค. 69 ผู้ใช้สั่งเอาคำว่า "ข้าม" ใต้ชื่อขั้นออก — ขั้นที่ข้ามยังเป็นกรอบเส้นประจาง */}
               </button>
             );
           })}
@@ -898,9 +898,10 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
             </StepCard>
 
             {/* ★ 28 ก.ย. 69 ตัดขั้น "รอปิด" — เข้างานเป็นขั้นสุดท้ายก่อนปิด: กรอกใบ + ลูกค้าเซ็น → กดปิดงานท้ายใบจบเลย
-                ★ 22 ต.ค. 69 ชื่อขั้น เข้างาน → ปฏิบัติงาน (ตาม FLOW) */}
+                ★ 22 ต.ค. 69 ชื่อขั้น เข้างาน → ปฏิบัติงาน (ตาม FLOW)
+                ★ 23 ต.ค. 69 ผู้ใช้สั่งเอาคำอธิบาย "— ช่างกรอกใบตรวจ · ลูกค้าเซ็นรับ" ออก เหลือชื่อขั้น */}
             <StepCard n={4} className={cardWrap(4)} state={stepState(4)} doneTitle="ปฏิบัติงานเสร็จ" onHeaderClick={() => toggleDone(4)}
-              title="ปฏิบัติงาน — ช่างกรอกใบตรวจ · ลูกค้าเซ็นรับ">
+              title="ปฏิบัติงาน">
               {stepState(4) === "done" && item.booking_id ? doneView(4,
                 <DoneHead text={<>
                   {report?.result === "pass" ? "ผลตรวจ ผ่าน" : report?.result === "fail" ? "ผลตรวจ ไม่ผ่าน" : "ตรวจงานเสร็จ"}

@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>โทนสีปฏิทินนัดหมาย O&amp;M</title>
+<style>
+  @font-face { font-family: "DB Heavent"; src: url("../../../public/fonts/db_heavent_v3.2-webfont.woff") format("woff"); font-weight: 400; }
+  @font-face { font-family: "DB Heavent"; src: url("../../../public/fonts/db_heavent_med_v3.2-webfont.woff") format("woff"); font-weight: 500 600; }
+  @font-face { font-family: "DB Heavent"; src: url("../../../public/fonts/db_heavent_bd_v3.2-webfont.woff") format("woff"); font-weight: 700 800; }
+  :root {
+    --gray-50:#f9fafb; --gray-100:#f3f4f6; --gray-200:#e5e7eb; --gray-300:#d1d5db; --gray-400:#9ca3af;
+    --gray-500:#6b7280; --gray-600:#4b5563; --gray-700:#374151; --gray-900:#111827;
+    --active:#8b5cf6; --active-light:#f5f3ff;
+    --emerald-50:#ecfdf5; --emerald-200:#a7f3d0; --emerald-500:#10b981; --emerald-600:#059669; --emerald-700:#047857;
+    --red-500:#ef4444; --orange:#f97316; --amber-50:#fffbeb; --amber-700:#b45309;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { font-family: "DB Heavent", "Noto Sans Thai", -apple-system, "Segoe UI", sans-serif; background: var(--gray-100);
+         color: var(--gray-900); padding: 28px 20px 64px; font-size: 22px; line-height: 1.35; }
+  .wrap { max-width: 1240px; margin: 0 auto; }
+  header .meta { font-size: 18px; color: var(--gray-500); }
+  header h1 { font-size: 32px; margin: 2px 0 6px; }
+  header p { margin: 0; color: var(--gray-600); max-width: 95ch; }
+  section { margin-top: 34px; }
+  h2 { font-size: 18px; text-transform: uppercase; letter-spacing: .08em; color: var(--gray-500); margin: 0 0 2px; }
+  .sub { margin: 0 0 12px; color: var(--gray-600); font-size: 20px; max-width: 95ch; }
+  .card { background: #fff; border: 1px solid var(--gray-300); border-radius: 14px; padding: 16px 18px; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 900px) { .pair { grid-template-columns: 1fr; } }
+  .tag { display: inline-block; font-size: 16px; font-weight: 700; padding: 1px 10px; border-radius: 99px; margin-bottom: 10px; }
+  .tag.now { background: var(--gray-200); color: var(--gray-600); }
+  .tag.new { background: var(--active); color: #fff; }
+
+  /* หลักสี */
+  .principles { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+  @media (max-width: 900px) { .principles { grid-template-columns: repeat(2, 1fr); } }
+  .pr { background: #fff; border: 1px solid var(--gray-200); border-radius: 12px; padding: 12px; }
+  .pr .sw { height: 34px; border-radius: 8px; margin-bottom: 8px; border: 1px solid rgb(0 0 0 / .06); }
+  .pr b { display: block; font-size: 20px; }
+  .pr span { font-size: 17px; color: var(--gray-600); line-height: 1.25; display: block; }
+
+  /* ช่องเวลา */
+  .slot-head { display: flex; align-items: baseline; font-size: 15px; letter-spacing: .06em; text-transform: uppercase; color: var(--gray-400); font-weight: 700; margin-bottom: 8px; }
+  .slot-head .cnt { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--gray-500); font-size: 16px; }
+  .slot-head .cnt b { color: var(--emerald-700); font-weight: 500; }
+  .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .s { height: 34px; border-radius: 7px; border: 1px solid var(--gray-300); background: #fff; display: flex; align-items: center; justify-content: center;
+       gap: 5px; font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--gray-900); white-space: nowrap; overflow: hidden; padding: 0 4px; position: relative; }
+  .s .h { font-size: 13px; font-weight: 500; }
+  .dot { width: 6px; height: 6px; border-radius: 99px; flex-shrink: 0; }
+  /* ปัจจุบัน */
+  .now .s.sel { background: var(--active); border-color: var(--active); color: #fff; }
+  .now .s.same { background: var(--emerald-50); border-color: var(--emerald-200); color: var(--gray-500); }
+  .now .s.same .h { color: var(--emerald-700); }
+  .now .s.taken, .now .s.closed { background: var(--gray-100); border-color: var(--gray-200); color: var(--gray-400); }
+  .now .s.past { background: var(--gray-100); border-color: var(--gray-200); color: var(--gray-400); }
+  /* เสนอ */
+  .new .s.sel { background: var(--active); border-color: var(--active); color: #fff; }
+  .new .s.taken { background: var(--gray-100); border-color: var(--gray-200); color: var(--gray-400); }
+  .new .s.taken .h { color: var(--gray-500); }
+  .new .s.same { background: var(--gray-100); border-color: var(--gray-200); color: var(--gray-400); box-shadow: inset 3px 0 0 var(--emerald-500); }
+  .new .s.same .h { color: var(--emerald-700); }
+  .new .s.closed { background: repeating-linear-gradient(135deg, var(--gray-100) 0 6px, var(--gray-200) 6px 8px); border-color: var(--gray-200); color: var(--gray-400); }
+  .new .s.past { background: var(--gray-50); border-color: var(--gray-100); color: var(--gray-300); }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; font-size: 16px; color: var(--gray-600); }
+  .legend i { display: inline-block; width: 18px; height: 14px; border-radius: 4px; vertical-align: -1px; margin-right: 5px; border: 1px solid var(--gray-300); }
+
+  /* วันในปฏิทิน */
+  .days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; text-align: center; }
+  .dcell { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .d { width: 38px; height: 38px; border-radius: 99px; display: flex; align-items: center; justify-content: center; font-size: 19px; font-weight: 500; color: var(--gray-700); position: relative; }
+  .d .dots { position: absolute; bottom: 3px; left: 50%; transform: translateX(-50%); display: flex; gap: 2px; }
+  .d .dots span { width: 4px; height: 4px; border-radius: 99px; }
+  .dcell small { font-size: 15px; color: var(--gray-500); line-height: 1.15; }
+  .now .d.wk { color: var(--red-500); }
+  .now .d.today { background: var(--active-light); color: var(--active); box-shadow: 0 0 0 1px rgb(139 92 246 / .3); }
+  .now .d.sel { background: var(--active); color: #fff; }
+  .now .d.rec { background: var(--emerald-50); color: var(--emerald-700); box-shadow: 0 0 0 2px var(--emerald-500); }
+  .now .d.full { background: var(--gray-100); color: var(--gray-400); }
+  .now .d.past { color: var(--gray-300); }
+  .new .d.wk { color: var(--red-500); }
+  .new .d.today { color: var(--active); box-shadow: 0 0 0 1.5px var(--active); }
+  .new .d.sel { background: var(--active); color: #fff; }
+  .new .d.rec { background: var(--emerald-50); color: var(--emerald-700); box-shadow: 0 0 0 2px var(--emerald-500); }
+  .new .d.full { background: var(--gray-100); color: var(--gray-400); text-decoration: line-through; }
+  .new .d.past { color: var(--gray-300); }
+
+  table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid var(--gray-300); border-radius: 14px; overflow: hidden; font-size: 18px; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--gray-100); vertical-align: top; }
+  th { background: var(--gray-50); color: var(--gray-500); font-size: 15px; text-transform: uppercase; letter-spacing: .06em; }
+  td code { font-family: ui-monospace, Consolas, monospace; font-size: 14px; color: var(--gray-700); }
+  .chg { color: var(--active); font-weight: 700; }
+  ul.notes { margin: 6px 0 0; padding-left: 22px; color: var(--gray-700); font-size: 19px; }
+  ul.notes li { margin: 3px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="meta">แผน 20261023-02 · mockup · ยังไม่แก้โค้ด</div>
+    <h1>โทนสีปฏิทินนัดหมาย O&amp;M (ขั้น 04 / เลื่อนนัด)</h1>
+    <p>ตอนนี้ช่องที่ <b>ไม่ว่าง</b> เพราะทีมติดนัดบ้านในโครงการเดียวกัน เป็น <b>พื้นเขียว</b> — ตามมาตรฐานทั่วไปเขียว = ว่าง จึงอ่านสลับกัน
+      ข้อเสนอนี้ให้ <b>สีหนึ่งมีความหมายเดียว</b> ทั้งปฏิทินและช่วงเวลา (ข้อมูลตัวอย่างจากวันที่ 24 ต.ค. บ้าน 119/89)</p>
+  </header>
+
+  <section>
+    <h2>หลักสี</h2>
+    <p class="sub">แบบสัญญาณไฟจราจรที่ระบบจองทั่วไปใช้ — เขียว = ใช้ได้/แนะนำ · เทา = ใช้ไม่ได้ · สีแบรนด์ = ที่เลือกอยู่</p>
+    <div class="principles">
+      <div class="pr"><div class="sw" style="background:#fff"></div><b>ขาว</b><span>ว่าง เลือกได้</span></div>
+      <div class="pr"><div class="sw" style="background:var(--active)"></div><b>ม่วง</b><span>ที่เลือกอยู่ (วัน / ช่วงเวลา)</span></div>
+      <div class="pr"><div class="sw" style="background:var(--emerald-500)"></div><b>เขียว</b><span>ข่าวดี/แนะนำ — ตัวนับว่าง · วันที่ทีมเข้าโครงการเดียวกัน</span></div>
+      <div class="pr"><div class="sw" style="background:var(--gray-200)"></div><b>เทา</b><span>ใช้ไม่ได้ — ไม่ว่าง · ปิด · เต็ม · เลยเวลา</span></div>
+      <div class="pr"><div class="sw" style="background:var(--red-500)"></div><b>แดง</b><span>เลขวันเสาร์–อาทิตย์เท่านั้น (ปฏิทินไทย)</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>ช่วงเวลา — ปัจจุบัน กับ ข้อเสนอ</h2>
+    <p class="sub">เลือก 13:00–14:00 ไว้ · 14:00–15:00 / 15:00 / 16:00–17:00 เป็นตัวอย่างสถานะอื่นที่วันจริงไม่มี</p>
+    <div class="pair">
+      <div class="card now">
+        <span class="tag now">ปัจจุบัน</span>
+        <div class="slot-head">ช่วงเวลา<span class="cnt">ว่าง <b>7</b> / 16 ช่วงเวลา</span></div>
+        <div class="grid4">
+          <div class="s same">09:00–09:30 <span class="h">• 119/138</span></div>
+          <div class="s same">09:30–10:00 <span class="h">• 119/138</span></div>
+          <div class="s same">10:00–10:30 <span class="h">• 119/24</span></div>
+          <div class="s same">10:30–11:00 <span class="h">• 119/24</span></div>
+          <div class="s same">11:00–11:30 <span class="h">• 119/24</span></div>
+          <div class="s">11:30–12:00</div>
+          <div class="s">12:00–12:30</div>
+          <div class="s">12:30–13:00</div>
+          <div class="s sel">13:00–13:30</div>
+          <div class="s sel">13:30–14:00</div>
+          <div class="s taken">14:00–14:30 <span class="dot" style="background:#0d9488"></span></div>
+          <div class="s taken">14:30–15:00 <span class="dot" style="background:#0d9488"></span></div>
+          <div class="s">15:00–15:30 <span class="dot" style="background:var(--orange)"></span></div>
+          <div class="s">15:30–16:00</div>
+          <div class="s closed">16:00–16:30</div>
+          <div class="s closed">16:30–17:00</div>
+        </div>
+        <ul class="notes">
+          <li>ช่องไม่ว่างของโครงการเดียวกัน <b>พื้นเขียว</b> เหมือนว่าง</li>
+          <li>ไม่ว่าง (โครงการอื่น) กับ ปิดช่อง หน้าตาเหมือนกัน</li>
+          <li>ไม่มีคำอธิบายสี</li>
+        </ul>
+      </div>
+      <div class="card new">
+        <span class="tag new">ข้อเสนอ</span>
+        <div class="slot-head">ช่วงเวลา<span class="cnt">ว่าง <b>7</b> / 16 ช่วงเวลา</span></div>
+        <div class="grid4">
+          <div class="s same">09:00–09:30 <span class="h">● 119/138</span></div>
+          <div class="s same">09:30–10:00 <span class="h">● 119/138</span></div>
+          <div class="s same">10:00–10:30 <span class="h">● 119/24</span></div>
+          <div class="s same">10:30–11:00 <span class="h">● 119/24</span></div>
+          <div class="s same">11:00–11:30 <span class="h">● 119/24</span></div>
+          <div class="s">11:30–12:00</div>
+          <div class="s">12:00–12:30</div>
+          <div class="s">12:30–13:00</div>
+          <div class="s sel">13:00–13:30</div>
+          <div class="s sel">13:30–14:00</div>
+          <div class="s taken">14:00–14:30 <span class="h">148/223</span></div>
+          <div class="s taken">14:30–15:00 <span class="h">148/223</span></div>
+          <div class="s">15:00–15:30 <span class="dot" style="background:var(--orange)"></span></div>
+          <div class="s">15:30–16:00</div>
+          <div class="s closed">16:00–16:30</div>
+          <div class="s closed">16:30–17:00</div>
+        </div>
+        <div class="legend">
+          <span><i></i>ว่าง</span>
+          <span><i style="background:var(--active);border-color:var(--active)"></i>เลือกอยู่</span>
+          <span><i style="background:var(--gray-100);border-color:var(--gray-200)"></i>ไม่ว่าง</span>
+          <span><i style="background:var(--gray-100);border-color:var(--gray-200);box-shadow:inset 3px 0 0 var(--emerald-500)"></i>ไม่ว่าง · ทีมอยู่โครงการนี้</span>
+          <span><i style="background:repeating-linear-gradient(135deg,var(--gray-100) 0 4px,var(--gray-200) 4px 6px);border-color:var(--gray-200)"></i>ปิดช่อง</span>
+          <span><span class="dot" style="display:inline-block;background:var(--orange);margin-right:5px"></span>มีงานติดตั้ง (คนละทีม)</span>
+        </div>
+        <ul class="notes">
+          <li>ไม่ว่างทุกแบบ = <b>พื้นเทา</b> · โครงการเดียวกันมี <b>แถบเขียวซ้าย + บ้านเลขที่สีเขียว</b> (รู้ว่าทีมอยู่แถวนี้ จองช่องติดกันได้)</li>
+          <li>ไม่ว่างโครงการอื่นบอกบ้านเลขที่สีเทา (แทนจุดสีทีม)</li>
+          <li>ปิดช่อง = ลายทแยง แยกจากไม่ว่าง · มีแถบคำอธิบายสีใต้ช่อง</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>วันในปฏิทิน — ปัจจุบัน กับ ข้อเสนอ</h2>
+    <p class="sub">เปลี่ยน 2 อย่าง: <b>วันนี้</b> เป็นวงเส้นอย่างเดียว (ไม่ให้คล้ายวันที่เลือก) · <b>วันเต็ม</b> ขีดฆ่าเลข</p>
+    <div class="pair">
+      <div class="card now">
+        <span class="tag now">ปัจจุบัน</span>
+        <div class="days">
+          <div class="dcell"><div class="d">27</div><small>ปกติ</small></div>
+          <div class="dcell"><div class="d wk">25</div><small>เสาร์–อาทิตย์</small></div>
+          <div class="dcell"><div class="d today">23</div><small>วันนี้</small></div>
+          <div class="dcell"><div class="d sel">24</div><small>เลือกอยู่</small></div>
+          <div class="dcell"><div class="d rec">28<span class="dots"><span style="background:#0d9488"></span></span></div><small>ทีมเข้าโครงการ</small></div>
+          <div class="dcell"><div class="d full">29</div><small>ทีมติดนัดครบ</small></div>
+          <div class="dcell"><div class="d past">20</div><small>ผ่านแล้ว</small></div>
+        </div>
+      </div>
+      <div class="card new">
+        <span class="tag new">ข้อเสนอ</span>
+        <div class="days">
+          <div class="dcell"><div class="d">27</div><small>ปกติ</small></div>
+          <div class="dcell"><div class="d wk">25</div><small>เสาร์–อาทิตย์</small></div>
+          <div class="dcell"><div class="d today">23</div><small>วันนี้</small></div>
+          <div class="dcell"><div class="d sel">24</div><small>เลือกอยู่</small></div>
+          <div class="dcell"><div class="d rec">28<span class="dots"><span style="background:#0d9488"></span></span></div><small>ทีมเข้าโครงการ</small></div>
+          <div class="dcell"><div class="d full">29</div><small>ทีมติดนัดครบ</small></div>
+          <div class="dcell"><div class="d past">20</div><small>ผ่านแล้ว</small></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>ตารางสี (Tailwind) — ใช้ตอนลงมือ</h2>
+    <table>
+      <tr><th>สถานะ</th><th>ปัจจุบัน</th><th>ข้อเสนอ</th></tr>
+      <tr><td>ช่อง ว่าง</td><td><code>bg-white border-gray-300 text-gray-900</code></td><td>เหมือนเดิม</td></tr>
+      <tr><td>ช่อง เลือกอยู่</td><td><code>bg-active border-active text-white</code></td><td>เหมือนเดิม</td></tr>
+      <tr><td>ช่อง ไม่ว่าง · โครงการเดียวกัน</td><td><code>bg-emerald-50 border-emerald-200 text-gray-500</code></td>
+          <td class="chg"><code>bg-gray-100 border-gray-200 text-gray-400 shadow-[inset_3px_0_0_#10b981]</code> + บ้านเลขที่ <code>text-emerald-700</code></td></tr>
+      <tr><td>ช่อง ไม่ว่าง · โครงการอื่น</td><td><code>bg-gray-100 border-gray-200 text-gray-400</code> + จุดสีทีม</td>
+          <td class="chg">พื้นเดิม + บ้านเลขที่ <code>text-gray-500</code> (แทนจุด)</td></tr>
+      <tr><td>ช่อง ปิด (calendar_blocks)</td><td>เหมือนไม่ว่าง</td><td class="chg">ลายทแยงเทา <code>repeating-linear-gradient</code></td></tr>
+      <tr><td>ช่อง เลยเวลา (วันนี้)</td><td>เหมือนไม่ว่าง</td><td class="chg"><code>bg-gray-50 border-gray-100 text-gray-300</code></td></tr>
+      <tr><td>ช่อง มีงานติดตั้ง (ไม่ล็อก)</td><td>ว่าง + จุดส้ม</td><td>เหมือนเดิม</td></tr>
+      <tr><td>วัน วันนี้</td><td><code>bg-active-light text-active ring-1 ring-active/30</code></td><td class="chg"><code>text-active ring-[1.5px] ring-active</code> (ไม่มีพื้น)</td></tr>
+      <tr><td>วัน ทีมติดนัดครบ</td><td><code>bg-gray-100 text-gray-400</code></td><td class="chg">+ <code>line-through</code></td></tr>
+      <tr><td>วัน ทีมเข้าโครงการ / เลือกอยู่ / เสาร์–อาทิตย์ / ผ่านแล้ว</td><td colspan="2">เหมือนเดิม (เขียววง · ม่วงทึบ · เลขแดง · เทาจาง)</td></tr>
+      <tr><td>แถบคำอธิบายสี</td><td>ไม่มี</td><td class="chg">ใต้ช่องเวลา เฉพาะปฏิทิน O&amp;M</td></tr>
+    </table>
+    <ul class="notes">
+      <li>แก้ที่ <code>CalendarPicker</code> โหมด <code>overlap="shared"</code> (O&amp;M) เป็นหลัก — ปฏิทินนัดสำรวจ/ติดตั้งฝั่งขายหน้าตาเดิม ยกเว้นจะให้ใช้ชุดเดียวกัน</li>
+      <li>ตัวนับ "ว่าง x / 16" ชิปทีมเข้าโครงการ และรายการนัดของวัน คงสีเดิม (เขียว = ข่าวดี อยู่แล้ว)</li>
+    </ul>
+  </section>
+</div>
+</body>
+</html>
