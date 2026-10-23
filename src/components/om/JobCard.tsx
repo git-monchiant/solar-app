@@ -113,7 +113,10 @@ export default function JobCard({ r, onOpen }: { r: Item; onOpen: () => void }) 
           {r.last_wash
             ? <span className="px-2 py-0.5 rounded-md bg-gray-100 text-gray-700">ล้างล่าสุด <b>{thD(r.last_wash)}</b> <span className="text-gray-400">({m} เดือน)</span></span>
             : <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 font-bold">ยังไม่เคยล้าง</span>}
-          {r.scheduled_at && <span className="px-2 py-0.5 rounded-md bg-sky-50 text-sky-800">นัด <b>{thAppt(r.scheduled_at, r.time_slot)}</b></span>}
+          {r.scheduled_at
+            ? <span className="px-2 py-0.5 rounded-md bg-sky-50 text-sky-800">นัด <b>{thAppt(r.scheduled_at, r.time_slot)}</b></span>
+            // ★ 23 ต.ค. 69 ตกลงรับบริการแล้วยังไม่เลือกวัน (แท็บยืนยันนัดหมาย · แผน 20261023-01 รอบ 4) — เตือนให้เลือกวันนัด
+            : (r.job_status === "pending" || r.job_status === "confirmed") && <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 font-bold">ยังไม่มีวันนัด</span>}
           {/* ใบเสนอราคาของงานเสียเงิน (แผน 20260924-02 เฟส 2) — เห็นเลขที่ สถานะ ยอด โดยไม่ต้องเปิดใบงาน */}
           {r.q_doc_no && (
             <span className="px-2 py-0.5 rounded-md bg-pink-50 text-pink-800">

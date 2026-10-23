@@ -150,13 +150,10 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [noteErr, setNoteErr] = useState("");
-  const [resched, setResched] = useState(false);
   // ★ ไม่เลือกผลไว้ก่อน แบบ Follow-up ฝั่งขาย (แผน 20260929-03 ข้อ 2 · เดิมเลือก "ตกลงนัด" ไว้ให้)
   const [outcome, setOutcome] = useState<string>("");
-  // ★ 1 ต.ค. 69 เลือกวันนัดที่ขั้น 04 ที่เดียว (ผู้ใช้เคาะ "ตามแนะนำ") — งานฟรีตกลงที่ขั้น 01 แล้วมาเลือกวันที่ขั้น 04
-  //   true = ตกลงแล้ว กำลังเลือกวัน · ยังไม่บันทึกอะไรจนกดบันทึกที่ขั้น 04
-  //   ★ 21 ต.ค. 69 ผู้ใช้สั่งเอาปุ่ม "‹ กลับขั้น 01" ออก — ไม่มีทางย้อนในหน้า · รีเฟรชหน้า = เริ่มขั้น 01 ใหม่ (ยังไม่มีอะไรถูกบันทึก)
-  const [schedNow, setSchedNow] = useState(false);
+  // ★ 23 ต.ค. 69 (แผน 20261023-01 รอบ 4) ถอด schedNow — งานฟรีกด "ยืนยันรับบริการ" ที่ขั้น 01 แล้วบันทึกทันที (agreeNow)
+  //   เดิม 1 ต.ค. 69 ไม่บันทึกจนเลือกวันเสร็จที่ขั้น 04 · ออกจากหน้ากลางทางแล้วหาย (บ้าน 146/11)
   const [note, setNote] = useState("");
   // วันนัด + เวลาเริ่มของช่วง (om_slot_config) — เดิมช่อง datetime-local ช่องเดียว
   const [apDate, setApDate] = useState("");
@@ -175,7 +172,6 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
   // ในประกัน: ระบบเลือกให้ก่อนเมื่อมีวันหมดประกันจากใบรับประกันฝั่งขาย (ผู้ใช้เคาะ 28 ก.ย.)
   //   ยังไม่หมด = ในประกัน · หมดแล้ว = นอกประกัน · ไม่มีข้อมูล (บ้าน REM) = ไม่เลือกให้ ทีมต้องเลือกเอง
   const today = new Date().toLocaleDateString("sv-SE");   // YYYY-MM-DD ตามเวลาเครื่อง
-  const plusDays = (n: number) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toLocaleDateString("sv-SE"); };
   const num = (k: string, d: number) => (rules?.[k] != null && !Number.isNaN(Number(rules[k])) ? Number(rules[k]) : d);
   const [rpOpen, setRpOpen] = useState(item.repair_needed === 1 && !item.repair_cancel_id);
   const [rpDetail, setRpDetail] = useState(item.repair_detail ?? "");
@@ -207,10 +203,10 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
   // สถานะของแต่ละขั้น — ใช้ทั้งราง STEPS และการ์ด (แบบ cardState ของหน้า lead)
   // เสนอราคา/ชำระเงิน ของงานใช้สิทธิ์ฟรี = ข้าม · ยังกดเข้าไปอ่านได้ว่าทำไมข้าม
   // ★ ยังไม่ถึง = locked แบบฝั่งขาย: รางกดไม่ได้ · การ์ดไม่มีเนื้อใน (แผน 20260929-02 ผู้ใช้เคาะ "แบบฝั่งขาย")
-  // งานฟรีที่ตกลงที่ขั้น 01 แล้ว กำลังเลือกวันนัดที่ขั้น 04
-  const schedFree = schedNow && at === 0 && !needQuote;
-  // รอยืนยันนัดแต่ยังไม่มีวัน (ข้อมูลเก่า) — เลือกวันที่ขั้น 04 แบบงานที่ชำระแล้ว
-  const pendingNoDate = at === 3 && cur === "pending" && !item.scheduled_at;
+  // ตกลงรับบริการแล้วแต่ยังไม่มีวันนัด — เลือกวันที่ขั้น 04 (แท็บยืนยันนัดหมาย · การ์ดขึ้น "ยังไม่มีวันนัด")
+  //   ★ 23 ต.ค. 69 ทางหลักของงานฟรี: ยืนยันรับบริการที่ขั้น 01 → ใบ pending ไม่มีวัน (API /api/om/follow)
+  //   confirmed ไม่มีวันรับไว้ด้วย กันข้อมูลที่หลุดมา (เลือกวันแล้วเป็น confirmed เหมือนกัน)
+  const pendingNoDate = at === 3 && (cur === "pending" || cur === "confirmed") && !item.scheduled_at;
   // ★ แผน 20261023-01: ยืนยันนัดหมายแล้ว (รวมใบเก่าที่ค้างรอยืนยันนัดแต่มีวัน) — รอช่างถึงหน้างานที่ขั้น 04
   const apptSet = at === 3 && (cur === "pending" || cur === "confirmed") && !!item.scheduled_at;
   const stepState = (i: number): StepState => {
@@ -220,10 +216,10 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
     //   การ์ดโชว์แถวเช็คเด้ง + ฟอร์มแนบหลักฐานใหม่ทันที แบบขั้นเสนอราคาที่เปิดค้างได้ (quoteOpen)
     if (i === 2 && item.pay_state === "bounced") return "active";
     if (i < at || cur === "closed") return "done";
-    if (i === at || (i === 1 && quoteOpen) || (i === 3 && schedFree)) return "active";
+    if (i === at || (i === 1 && quoteOpen)) return "active";
     return "locked";
   };
-  const go = (i: number) => { setStep(i); setTab("workflow"); setResched(false); setOpenDone((s) => new Set(s).add(i)); };
+  const go = (i: number) => { setStep(i); setTab("workflow"); setOpenDone((s) => new Set(s).add(i)); };
   const toggleDone = (i: number) => setOpenDone((s) => {
     const n = new Set(s);
     if (n.has(i)) n.delete(i); else n.add(i);
@@ -260,21 +256,35 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
   }, []);
   // Account อ่านอย่างเดียว — ขั้นที่ไม่ใช่ชำระเงินบอกแค่ว่ารอทีมไหนอยู่ (แผน 20261014-06)
   const waitNote = (text: React.ReactNode) => <div className={`${SECTION} text-sm text-gray-600`}>{text}</div>;
-  // ขั้น 01 ลูกค้าตกลง — งานเสียเงิน (สิทธิ์หมด) ไปขั้น 02 เสนอราคา · งานฟรีไปเลือกวันนัดที่ขั้น 04
+  // ขั้น 01 ลูกค้าตกลง — งานเสียเงิน (สิทธิ์หมด) ไปขั้น 02 เสนอราคา · งานฟรีบันทึกทันทีแล้วเลือกวันนัดที่ขั้น 04
+  // ★ 23 ต.ค. 69 ผู้ใช้สั่ง "กดยืนยัน step 1 แล้วสถานะไปแสดงที่ยืนยันนัดหมายเลย" (แผน 20261023-01 รอบ 4)
+  //   บันทึกการโทร "ตกลงรับบริการ" ไม่มีวัน → API สร้างใบ pending (ช่างยังไม่เห็น) → แท็บยืนยันนัดหมาย · ราง/การ์ดอยู่ขั้น 04
+  const agreeNow = async () => {
+    setBusy(true); setErr("");
+    try {
+      await apiFetch("/api/om/follow", {
+        method: "POST",
+        body: JSON.stringify({ house_id: item.house_id, booking_id: item.booking_id, outcome: "agreed", note: note || null, phone: item.phone }),
+      });
+      setNote("");   // หมายเหตุไปกับการโทรครั้งนี้แล้ว — ช่องที่ขั้น 04 เริ่มว่าง
+      onSaved("บันทึกแล้ว — ลูกค้าตกลงรับบริการ · เลือกวันนัดต่อที่ขั้น 04");
+      if (onReload) onReload(); else onDone();
+    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  };
   const goAgree = () => {
     if (needQuote) { go(1); scrollToCard(1); return; }
-    setSchedNow(true);
-    if (!apDate) setApDate(plusDays(1));   // เลือกพรุ่งนี้ไว้ก่อน ช่วงเวลาขึ้นให้เลือกเลย
-    go(3); scrollToCard(3);
+    agreeNow();
   };
+  // ★ 23 ต.ค. 69 ผู้ใช้สั่ง: เลือก "ตกลงรับบริการ" = เลือกเฉย ๆ แล้วกดปุ่ม "ยืนยันรับบริการ" ด้านล่างถึงไปขั้นถัดไป
+  //   (เดิมเลือกแล้วพาไปขั้น 04 / 02 ทันที ปุ่มล่างไม่เคยได้กด)
   const pickOutcome = (k: string) => {
     setOutcome(k); setErr("");
-    if (k === "agreed") goAgree();
   };
   const resetCall = () => { setOutcome(""); setNote(""); setApDate(""); setApSlot(""); setErr(""); };
 
   // oc = ผลที่จะบันทึก — การ์ดนัดหมายหลังชำระเงินเป็น "ตกลงนัด" เสมอ (ไม่มีให้เลือก)
-  // confirm = ปุ่ม "ยืนยันและเข้างาน" ขั้น 04 — บันทึกเป็นนัดแล้ว แล้วพาไปขั้น 05
+  // confirm = ปุ่ม "ยืนยันนัดหมาย" ขั้น 04 — บันทึกเป็นยืนยันนัดหมาย แล้วอยู่ขั้น 04 ต่อ (แผน 20261023-01 · เดิมพาไปขั้น 05)
   const saveCall = async (oc: string, confirm = false) => {
     if (!oc) return;
     if (oc === "agreed" && (!apDate || !apSlot)) { setErr("กรุณาเลือกวันและช่วงเวลานัด"); return; }
@@ -291,7 +301,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
           phone: item.phone,
         }),
       });
-      if (confirm) { setSchedNow(false); go(4); }
+      if (confirm) go(3);
       onSaved(confirm ? "ยืนยันนัดหมายแล้ว" : "บันทึกการโทรแล้ว"); onDone();
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
@@ -430,11 +440,11 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
 
   // ── ฟอร์มบันทึกการโทร — ก้อนเดียว ใช้ 3 แบบ (แผน 20260929-02 · 1 ต.ค. 69) ──
   //   "follow" = การ์ดขั้น 01: ลูกค้าตกลงรับบริการไหม (ตกลง / ปฏิเสธ) — ไม่มีปฏิทิน
-  //   "free"   = การ์ดขั้น 04 หลังตกลงที่ขั้น 01 (งานฟรี) — เลือกวันนัดแล้วบันทึกทีเดียว
+  //   "free"   = การ์ดขั้น 04 ใบที่ตกลงแล้วแต่ยังไม่มีวัน — เลือกวันนัดแล้วยืนยัน (ไม่มีปุ่มยกเลิก)
   //   "paid"   = การ์ดขั้น 04 หลังชำระเงินครบ — โทรตกลงวันนัด
   //   (ลูกค้าจ่ายเงินแล้ว — ไม่เอาไม่ใช่ทางของขั้นนี้ ยกเลิกหลังรับเงินต้องผ่าน Account)
   // ★ 1 ต.ค. 69 ผู้ใช้เคาะ "ตามแนะนำ": เลือกวันนัดที่ขั้น 04 ที่เดียว ทั้งงานฟรีและงานเสียเงิน
-  //   งานฟรีไม่บันทึกตอนกดตกลงที่ 01 — บันทึกครั้งเดียวตอนเลือกวันเสร็จ (ไม่มีใบ "ตกลงแต่ไม่มีวันนัด")
+  //   ★ 23 ต.ค. 69 งานฟรีบันทึกตั้งแต่กด "ยืนยันรับบริการ" ที่ 01 (ใบ pending ไม่มีวัน) — เดิมบันทึกครั้งเดียวตอนเลือกวันเสร็จ
   //   ติดต่อไม่ได้ / ยังไม่ได้ข้อสรุป → ปุ่ม Follow-up (OmFollowupModal)
   // ★ ส่วนเลือกวันนัดเหมือน "เลื่อนนัดสำรวจ" ฝั่งขาย (AppointmentRescheduler) ทั้งก้อน
   //   หัวข้อ → ปฏิทิน 3 เดือน → ช่วงเวลา → แถบ "นัดเป็น" → ยกเลิก/✓ยืนยัน วางบนพื้นการ์ดตรง ๆ
@@ -501,7 +511,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
           </div>
         ) : (
           <div className="mt-3 rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 text-xs leading-relaxed text-gray-600">
-            เลือกวันนัดต่อที่ขั้น <b>04 นัดหมาย</b> — ระบบจะบันทึกเมื่อเลือกวันนัดเรียบร้อย
+            กดยืนยันแล้ว<b>บันทึกทันที</b> ย้ายไปแท็บยืนยันนัดหมาย — เลือกวันนัดต่อที่ขั้น <b>04 นัดหมาย</b>
           </div>
         ))}
         {mode === "follow" && oc === "declined" && (
@@ -537,9 +547,11 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
           </button>
         )}
         {mode === "follow" && oc === "agreed" ? (
+          // ★ 23 ต.ค. 69 ผู้ใช้สั่ง: เลือก "ตกลงรับบริการ" แล้วปุ่มนี้ = "ยืนยันรับบริการ" (เดิม "ไปเลือกวันนัด ›" / "ไปขั้น 02 เสนอราคา ›")
+          //   กดแล้วไปขั้นถัดไปเหมือนเดิม — งานฟรีขั้น 04 เลือกวันนัด · งานเสียเงินขั้น 02 เสนอราคา (กล่องเทาด้านบนบอกปลายทาง)
           <button type="button" onClick={goAgree}
             className="flex-[2] h-11 rounded-lg text-sm font-bold text-white bg-active hover:bg-active-dark shadow-sm shadow-active/30 flex items-center justify-center gap-2 cursor-pointer">
-            {needQuote ? "ไปขั้น 02 เสนอราคา ›" : "ไปเลือกวันนัด ›"}
+            <CheckIcon className="w-4 h-4" strokeWidth={2.5} />ยืนยันรับบริการ
           </button>
         ) : (
           <button type="button" disabled={busy || !oc || needSlot} onClick={() => saveCall(oc, schedule)}
@@ -557,49 +569,6 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
     );
   };
 
-  // ── แถบนัดหลังยืนยันนัดหมาย — การ์ดขั้น 04 (แผน 20261023-01 · เดิมแท็บย่อย "นัด" ของขั้น 05 ตั้งแต่ 1 ต.ค. 69) ──
-  //   แถบนัด + Reschedule · ปุ่ม "ช่างถึงหน้างาน" อยู่ใต้แถบ (startJob)
-  const apptBlock = (
-    <div className="space-y-3">
-      {/* ★ 23 ต.ค. 69 กลับมาการ์ดขั้น 04 (ผู้ใช้เลือกแบบ B — ยืนยันนัดหมายแล้วอยู่ขั้นนัดหมาย)
-          ★ แถบนัด + ปุ่ม Reschedule ยกจากขั้นย่อย "นัด" ของ Install ฝั่งขาย (แผน 20260928-04 ข้อ 8)
-          สีม่วง = นัดแล้ว รอยืนยัน · สีเขียว = ลูกค้ายืนยันแล้ว · เลื่อนได้จนกว่าช่างจะเริ่มงาน */}
-      {resched && item.booking_id ? (
-        <OmRescheduler bookingId={item.booking_id} currentAt={item.scheduled_at} currentSlot={item.time_slot} rules={rules} project={project}
-          onCancel={() => setResched(false)}
-          onSaved={(m) => { setResched(false); onSaved(m); onDone(); }} />
-      ) : (() => {
-        const confirmed = cur === "confirmed";
-        const canResched = !!item.booking_id && (cur === "pending" || cur === "confirmed");
-        return (
-          <>
-            <div className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg border ${confirmed ? "bg-emerald-50 border-emerald-600/15" : "bg-active-light border-active/20"}`}>
-              <svg className={`w-4 h-4 shrink-0 ${confirmed ? "text-emerald-600" : "text-active"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25" />
-              </svg>
-              <div className="flex-1 flex items-baseline gap-1.5 flex-wrap min-w-0">
-                <span className={`text-xs font-semibold tracking-wider uppercase ${confirmed ? "text-emerald-700/70" : "text-active/70"}`}>
-                  {confirmed ? "ยืนยันแล้ว" : "นัดหมายแล้ว"}
-                </span>
-                {/* ★ ขั้น 01 ปิดแล้วเป็นอ่านอย่างเดียว (แผน 20260929-02) — ทางกลับคือปุ่ม "กลับไปติดตาม" ด้านล่าง */}
-                {item.scheduled_at
-                  ? <span className={`text-sm font-bold ${confirmed ? "text-emerald-900" : "text-active"}`}>{thAppt(item.scheduled_at, item.time_slot)}</span>
-                  : <span className="text-sm text-gray-500 italic">ยังไม่มีวันนัด</span>}
-              </div>
-              {canResched && item.scheduled_at && (
-                <button type="button" onClick={() => setResched(true)} style={{ minHeight: 0 }}
-                  className={`shrink-0 text-xs font-semibold uppercase tracking-wider px-2.5 py-1 rounded-md border transition-colors cursor-pointer ${confirmed ? "border-emerald-600/20 text-emerald-700 hover:bg-emerald-100" : "border-active/30 text-active hover:bg-active/10"}`}>
-                  Reschedule
-                </button>
-              )}
-            </div>
-            {/* ★ 1 ต.ค. 69 ผู้ใช้สั่งเอาปุ่ม "ลูกค้ายืนยันแล้ว / กลับไปติดตาม" ออก — แท็บนัดเหลือแถบนัด + Reschedule + ถัดไป
-                ใบที่ยังค้างรอยืนยัน กดถัดไปได้เลย (startJob ยืนยันให้ก่อนเริ่มงาน) */}
-          </>
-        );
-      })()}
-    </div>
-  );
   // ช่างถึงหน้างาน — อยู่หน้าเดิมแล้วไปแท็บตรวจ (โหลดข้อมูลบ้านใหม่ ไม่เด้งกลับรายการ)
   const startJob = async () => {
     if (!item.booking_id) return;
@@ -617,6 +586,41 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
     catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   };
+
+  // ── การ์ดขั้น 04 หลังยืนยันนัดหมาย (แผน 20261023-01 · เดิมแท็บย่อย "นัด" ของขั้น 05 ตั้งแต่ 1 ต.ค. 69) ──
+  // ★ 23 ต.ค. 69 ผู้ใช้สั่ง "ให้มาที่หน้าปฏิทิน": เปิดปฏิทินเลื่อนนัดค้างไว้เลย (เดิมแถบนัด + กดปุ่ม Reschedule ถึงเห็น)
+  //   ยังไม่เปลี่ยนวัน/ช่อง = ท้ายการ์ดเป็นปุ่มช่างถึงหน้างาน · เปลี่ยนแล้ว = เหตุผล + คืนวันเวลาเดิม / ยืนยันเลื่อนนัด
+  //   แถบนัดบนสุด (ยกจากขั้นย่อย "นัด" ของ Install ฝั่งขาย · แผน 20260928-04 ข้อ 8) คงไว้เป็นสรุป — ไม่มีปุ่ม Reschedule แล้ว
+  //   สีม่วง = รอยืนยันนัด (ใบเก่า) · สีเขียว = ยืนยันแล้ว · เลื่อนได้จนกว่าช่างจะถึงหน้างาน
+  //   ★ ประกาศหลัง arrive — JSX อ่านค่า onClick ทันทีตอนสร้าง (ก่อนบรรทัดประกาศ = ReferenceError)
+  const confirmedNow = cur === "confirmed";
+  const apptBlock = item.booking_id ? (
+    <div className="space-y-3">
+      <div className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg border ${confirmedNow ? "bg-emerald-50 border-emerald-600/15" : "bg-active-light border-active/20"}`}>
+        <svg className={`w-4 h-4 shrink-0 ${confirmedNow ? "text-emerald-600" : "text-active"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25" />
+        </svg>
+        <div className="flex-1 flex items-baseline gap-1.5 flex-wrap min-w-0">
+          <span className={`text-xs font-semibold tracking-wider uppercase ${confirmedNow ? "text-emerald-700/70" : "text-active/70"}`}>
+            {confirmedNow ? "ยืนยันแล้ว" : "นัดหมายแล้ว"}
+          </span>
+          <span className={`text-sm font-bold ${confirmedNow ? "text-emerald-900" : "text-active"}`}>{thAppt(item.scheduled_at, item.time_slot)}</span>
+        </div>
+      </div>
+      {/* key = นัดปัจจุบัน — เลื่อนสำเร็จแล้วโหลดใหม่ ฟอร์มเริ่มที่วันใหม่ (state ในฟอร์มตั้งค่าครั้งเดียวตอนสร้าง) */}
+      <OmRescheduler key={`${item.scheduled_at}|${item.time_slot}`} bookingId={item.booking_id}
+        currentAt={item.scheduled_at} currentSlot={item.time_slot} rules={rules} project={project}
+        onSaved={(m) => { onSaved(m); onDone(); }}
+        idle={
+          <div className="flex md:justify-end">
+            <button type="button" disabled={busy} onClick={arrive} className={NAV_NEXT}>
+              {busy ? "กำลังบันทึก…" : "ช่างถึงหน้างาน"}
+              {!busy && <ChevronRightIcon className="w-4 h-4" strokeWidth={2} />}
+            </button>
+          </div>
+        } />
+    </div>
+  ) : null;
 
   return (
     <div className="flex flex-col h-full min-h-0 bg-white">
@@ -825,23 +829,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                     })()} />,
                     () => events("follow", "gray", "การโทร · เปิดใบงาน"))
                 : viewOnly ? waitNote("รอทีม O&M โทรติดตามลูกค้า")
-                // ★ 21 ต.ค. 69 ผู้ใช้เลือก "ล็อกการ์ด 01 ระหว่างเลือกวันนัด" — งานฟรีกดตกลงแล้วยังไม่บันทึก (บันทึกทีเดียวที่ขั้น 04)
-                //   เดิมย้อนมากดราง 01 แล้วฟอร์มยังแก้ได้ ดูเหมือนปิดขั้นแล้วแต่แก้ได้
-                //   ไม่มีปุ่มย้อนแล้ว (ผู้ใช้สั่งเอา "‹ กลับขั้น 01" ออก 21 ต.ค.) — รีเฟรชหน้าแล้วการ์ดนี้กลับมาเลือกผลใหม่ได้
-                : schedFree ? (
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg border bg-active-light border-active/20 text-sm text-gray-800">
-                      <CheckIcon className="w-4 h-4 shrink-0 text-active" strokeWidth={2.5} />
-                      <span className="min-w-0 flex-1">ลูกค้าตกลงรับบริการ</span>
-                    </div>
-                    {note.trim() && (
-                      <div>
-                        <div className="text-xs font-semibold tracking-wider uppercase text-gray-400 mb-1.5">หมายเหตุ</div>
-                        <div className="px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 whitespace-pre-wrap break-words">{note}</div>
-                      </div>
-                    )}
-                  </div>
-                )
+                // ★ 23 ต.ค. 69 ถอดการ์ด 01 แบบล็อกระหว่างเลือกวัน (21 ต.ค.) — ยืนยันรับบริการบันทึกทันที การ์ดนี้ปิดขั้นเอง
                 : callForm("follow")}
             </StepCard>
 
@@ -907,40 +895,19 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                   </div>
                   {viewOnly ? waitNote("รอฝ่ายขายโทรตกลงวันนัดกับลูกค้า") : callForm("paid")}
                 </div>
-              ) : schedFree ? (
-                // ★ 1 ต.ค. 69 งานฟรีตกลงที่ขั้น 01 แล้ว — เลือกวันนัดที่นี่ที่เดียวแบบงานที่ชำระเงินแล้ว
+              ) : pendingNoDate ? (
+                // ★ 23 ต.ค. 69 ตกลงรับบริการแล้ว (บันทึกที่ขั้น 01) แต่ยังไม่มีวัน — เลือกวันนัดที่นี่ (หน้าตาเดิมของงานฟรีตกลงที่ 01)
                 <div className="space-y-3">
                   <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg border bg-active-light border-active/20 text-sm text-gray-800">
                     <CheckIcon className="w-4 h-4 shrink-0 text-active" strokeWidth={2.5} />
                     <span className="min-w-0 flex-1">ลูกค้าตกลงรับบริการ{skip && <> · งานนี้<b>ไม่ต้องชำระเงิน</b></>} — เลือกวันนัดกับลูกค้า</span>
                   </div>
-                  {callForm("free")}
-                </div>
-              ) : pendingNoDate ? (
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg border bg-active-light border-active/20 text-sm text-gray-800">
-                    <CheckIcon className="w-4 h-4 shrink-0 text-active" strokeWidth={2.5} />
-                    <span className="min-w-0 flex-1">ลูกค้าตกลงแล้ว แต่ยังไม่มีวันนัด — เลือกวันนัดกับลูกค้า</span>
-                  </div>
-                  {viewOnly ? waitNote("รอฝ่ายขายโทรตกลงวันนัดกับลูกค้า") : callForm("paid")}
+                  {viewOnly ? waitNote("รอโทรตกลงวันนัดกับลูกค้า") : callForm("free")}
                 </div>
               ) : apptSet ? (
                 // ★ แผน 20261023-01: ยืนยันนัดหมายแล้ว — อยู่ขั้นนี้จนช่างถึงหน้างาน แล้วไปกรอกใบตรวจที่ขั้น 05
                 //   Account อ่านอย่างเดียว — เลื่อนนัด/ช่างถึงหน้างาน เป็นงานทีมช่าง (แผน 20261014-06)
-                viewOnly ? waitNote(<>นัด <b>{thAppt(item.scheduled_at, item.time_slot)}</b> — รอทีมช่างเข้าปฏิบัติงาน</>) : (
-                  <div className="space-y-3">
-                    {apptBlock}
-                    {/* เปิดฟอร์มเลื่อนนัดอยู่ — ใช้ปุ่มของฟอร์มนั้นอย่างเดียว (แบบ hideNav เดิม) */}
-                    {!resched && (
-                      <div className="flex md:justify-end">
-                        <button type="button" disabled={busy} onClick={arrive} className={NAV_NEXT}>
-                          {busy ? "กำลังบันทึก…" : "ช่างถึงหน้างาน"}
-                          {!busy && <ChevronRightIcon className="w-4 h-4" strokeWidth={2} />}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )
+                viewOnly ? waitNote(<>นัด <b>{thAppt(item.scheduled_at, item.time_slot)}</b> — รอทีมช่างเข้าปฏิบัติงาน</>) : apptBlock
               ) : null}
             </StepCard>
 
