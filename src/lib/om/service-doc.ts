@@ -157,6 +157,7 @@ export function renderServiceDocHtml(d: ServiceDocInput): string {
       </div>`).join("")}</div></div>`;
   }).join("");
 
+  const footer = `ติดต่อฝ่ายบริการด้านเทคนิค โทร. ${CO.phone} ต่อ ${CO.ext} · สายด่วน ${CO.hotline} · ${CO.email}`;
   return `<!doctype html><html lang="th"><head><meta charset="utf-8"><title>${esc(docNo)}</title>
 <style>
 @font-face { font-family: "DBHeavent"; src: url("${DOC_ORIGIN}/font/400.woff") format("woff"); font-weight: 400; }
@@ -219,6 +220,10 @@ table.doc td { padding: 0; vertical-align: top; }
 .photo-cap { border-top: 1px solid #d1d5db; padding: .5mm 2mm; font-size: 13px; color: #6b7280; text-align: center; }
 .strip-footer { background: #f9fafb; border-top: 1px solid #f3f4f6; padding: 2mm 7mm; font-size: 14px; color: #6b7280; text-align: center;
   -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+/* ★ 23 ต.ค. 69 ผู้ใช้ถาม "ทำไมไม่อยู่ล่างสุดของหน้า": tfoot ของตารางวางต่อท้ายเนื้อหาในหน้าสุดท้าย (ไม่ชิดขอบล่าง)
+   ⇒ ส่วนท้ายจริงเป็น position: fixed (Chrome พิมพ์ซ้ำที่ขอบล่างทุกหน้า) · tfoot เหลือเป็นช่องว่างสูงเท่ากัน กันเนื้อหาไหลทับ */
+.strip-footer.fixed { position: fixed; left: 0; bottom: 0; width: 210mm; }
+.strip-footer.foot-space { visibility: hidden; }
 </style></head><body><div id="doc">
 <table class="doc">
   <thead><tr><td>
@@ -242,8 +247,9 @@ table.doc td { padding: 0; vertical-align: top; }
     ${photoBlocks ? `<div class="photos content"><div class="sec-title">ภาพหน้างาน · SITE PHOTOS</div>${photoBlocks}</div>` : ""}
   </td></tr></tbody>
   <tfoot><tr><td>
-    <div class="strip-footer">ติดต่อฝ่ายบริการด้านเทคนิค โทร. ${CO.phone} ต่อ ${CO.ext} · สายด่วน ${CO.hotline} · ${CO.email}</div>
+    <div class="strip-footer foot-space">${footer}</div>
   </td></tr></tfoot>
 </table>
+<div class="strip-footer fixed">${footer}</div>
 </div></body></html>`;
 }
