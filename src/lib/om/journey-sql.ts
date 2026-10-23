@@ -1,7 +1,7 @@
 // คิวรีนับงาน O&M ต่อ journey code — ฝั่ง server เท่านั้น (ลาก mssql ผ่าน entitlement.ts)
 // ค่าคงที่/ทะเบียนเลขอยู่ที่ journey.ts ซึ่ง client import ได้
 
-import { DUE_WASH_SQL } from "./entitlement";
+import { CALL_WASH_SQL } from "./entitlement";
 import { ACTIVE_STATUS } from "./booking";
 import { OM_PAY_LIVE_SQL } from "./om-quotation";
 import { OM_FOLLOW_STEP, OM_PAY_SUB, OM_QUOTE_SUB_BY_STATUS, OM_STEP_BY_STATUS, OM_SUB_BY_STATUS } from "./journey";
@@ -56,7 +56,8 @@ export const OM_JOURNEY_SUMMARY_SQL = `
       FROM om_houses h
      WHERE h.is_om = 1
        AND EXISTS (SELECT 1 FROM om_installations i WHERE i.house_id = h.id)
-       AND ${DUE_WASH_SQL}
+       -- ★ 23 ต.ค. 69 แผน 20261023-03: ถึงคิวโทร (30 วันก่อนครบรอบ) — ตรงกับ #due ของ follow-sql
+       AND ${CALL_WASH_SQL}
        AND NOT EXISTS (SELECT 1 FROM om_bookings b
                         WHERE b.house_id = h.id AND b.status IN (${quote(ACTIVE_STATUS)}))
   ) a GROUP BY journey_step, journey_sub

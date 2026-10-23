@@ -147,6 +147,8 @@ export const SORTS: { k: string; t: string; asc: string; desc: string; def: "asc
 export interface Item {
   house_id: number; house_number: string | null; project_id: string | null; project_name: string | null;
   balance: number; last_wash: string | null; wash_count: number;
+  /** วันครบรอบล้างจริง (YYYY-MM-DD · ล้างล่าสุด + รอบ) — บ้านเข้ารายการ 30 วันก่อนวันนี้ (แผน 20261023-03) · ไม่เคยล้าง = null */
+  next_wash?: string | null;
   /** 1 = บ้านที่ทีมเพิ่มเองที่ยังไม่เคยมีสิทธิ์ล้าง (follow-sql.ts · แผน 20261015-05) — อยู่แท็บติดตาม · ชิปขึ้น "ลูกค้าทั่วไป" แทน "สิทธิ์หมด" */
   new_manual?: number;
   customer_id: number | null; customer_name: string | null; phone: string | null;

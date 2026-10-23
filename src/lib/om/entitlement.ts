@@ -24,6 +24,17 @@ export const DUE_WASH_SQL = `NOT EXISTS (
       WHERE i.house_id = h.id AND rd.status <> 'void' AND ${isCleaning("rd")}
         AND DATEADD(month, ${CLEANING_CYCLE_SQL}, rd.service_date) > SYSDATETIMEOFFSET())`;
 
+/** ★ 23 ต.ค. 69 (แผน 20261023-03 · ผู้ใช้เคาะ 30 วัน): ทีมเริ่มโทรนัดล้างก่อนครบรอบกี่วัน */
+export const CALL_BEFORE_DUE_DAYS = 30;
+
+/** ถึงคิวโทรนัดล้าง = ไม่เคยล้าง หรืออีกไม่เกิน CALL_BEFORE_DUE_DAYS วันจะครบรอบ — alias บ้านชื่อ h
+ *  ★ ใช้กับรายการงานบริการ (follow-sql #due) + badge ท่อน A (journey-sql) เท่านั้น — สองที่นี้ต้องตรงกัน
+ *    "ถึงรอบแล้ว" ของหน้าบ้าน / ภาพรวม / หน้า LINE ลูกค้า ยังใช้ DUE_WASH_SQL (ลูกค้าไม่ควรเห็นถึงรอบก่อนกำหนด) */
+export const CALL_WASH_SQL = `NOT EXISTS (
+      SELECT 1 FROM om_redemptions rd JOIN om_installations i ON i.id = rd.installation_id
+      WHERE i.house_id = h.id AND rd.status <> 'void' AND ${isCleaning("rd")}
+        AND DATEADD(day, -${CALL_BEFORE_DUE_DAYS}, DATEADD(month, ${CLEANING_CYCLE_SQL}, rd.service_date)) > SYSDATETIMEOFFSET())`;
+
 /** ครบรอบล้างถัดไป (YYYY-MM-DD) = ล้างล่าสุด + รอบ — สูตรเดียวกับ DUE_WASH_SQL
  *  วันที่โชว์ต้องเป็นวันเดียวกับที่บ้านเด้งเข้าแท็บติดตาม · ไม่เคยล้าง = NULL · alias บ้านชื่อ h (แผน 20260928-02) */
 export const NEXT_WASH_SQL = `(

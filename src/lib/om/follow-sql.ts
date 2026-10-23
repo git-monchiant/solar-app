@@ -13,7 +13,7 @@
 // ตารางชั่วคราวที่สร้างให้: #due (บ้านเข้าข่าย) · #call (สรุปการโทร) · #last (โทรครั้งล่าสุด)
 //                          #job (ใบงานล่าสุด) · #x (รวมร่าง + คอลัมน์ bucket)
 
-import { DUE_WASH_SQL, isCleaning } from "@/lib/om/entitlement";
+import { CALL_WASH_SQL, NEXT_WASH_SQL, isCleaning } from "@/lib/om/entitlement";
 import { ACTIVE_STATUS } from "@/lib/om/booking";
 import { OM_PAY_LIVE_SQL, omHouseSystemSql } from "@/lib/om/om-quotation";
 import { MANUAL_HOUSE_SOURCE } from "@/lib/om/house-origin";
@@ -61,9 +61,12 @@ export const OM_FOLLOW_SCOPE_SQL = `
            -- บ้าน REM ไม่มีค่านี้ = NULL → ทีมต้องเลือกเอง (ไม่เดาอายุประกันจากวันเริ่ม)
            (SELECT MAX(CONVERT(char(10), i.sales_warranty_end, 23)) FROM om_installations i
              WHERE i.house_id = h.id AND i.sales_warranty_end IS NOT NULL) warranty_end,
-           -- ★ เฟส 6: ถึงรอบล้างไหม (1/0) — เกณฑ์ตัวเดียวกับท่อน A ของ badge (DUE_WASH_SQL)
+           -- ★ เฟส 6: ถึงรอบล้างไหม (1/0) — เกณฑ์ตัวเดียวกับท่อน A ของ badge
            --   ใช้ตัดสินว่าใบงานที่ปิดแล้วยังเป็น "งานปัจจุบัน" ของบ้านอยู่ไหม (ดู #x)
-           CASE WHEN ${DUE_WASH_SQL} THEN 1 ELSE 0 END due_wash,
+           -- ★ 23 ต.ค. 69 แผน 20261023-03: นับจาก "ถึงคิวโทร" = 30 วันก่อนครบรอบ (CALL_WASH_SQL · เดิม DUE_WASH_SQL วันครบรอบพอดี)
+           CASE WHEN ${CALL_WASH_SQL} THEN 1 ELSE 0 END due_wash,
+           -- วันครบรอบจริง (ล้างล่าสุด + รอบ) — การ์ดขึ้นชิป "ครบรอบ …" ให้รู้ว่าโทรล่วงหน้า · ไม่เคยล้าง = NULL
+           ${NEXT_WASH_SQL} next_wash,
            -- ★ เฟส 6: รอบนี้เริ่มเมื่อไร = วันถัดจากล้างล่าสุด (เวลาไทย) — ประวัติโทรก่อนหน้านั้นเป็นของรอบก่อน
            --   เดิมนับตลอดกาล: รอบใหม่ติด "ไม่รับสายครบ" / "ไม่เอา" ของรอบก่อน บ้านตกแท็บผิดทั้งที่ยังไม่มีใครโทรรอบนี้
            (SELECT TODATETIMEOFFSET(DATEADD(day, 1, CAST(MAX(rd.service_date) AS datetime2)), '+07:00')
@@ -75,8 +78,8 @@ export const OM_FOLLOW_SCOPE_SQL = `
      WHERE h.is_om = 1
        AND EXISTS (SELECT 1 FROM om_installations i WHERE i.house_id = h.id)
        AND (
-         -- ถึงรอบล้าง (คำนวณสด) — ตัวเดียวกับ badge ท่อน A (journey-sql.ts)
-         ${DUE_WASH_SQL}
+         -- ถึงคิวโทรนัดล้าง (คำนวณสด · 30 วันก่อนครบรอบ) — ตัวเดียวกับ badge ท่อน A (journey-sql.ts)
+         ${CALL_WASH_SQL}
          -- หรือมีใบงานค้างอยู่ (เช่น งานซ่อมของบ้านที่ยังไม่ถึงรอบล้าง)
          OR EXISTS (SELECT 1 FROM om_bookings b WHERE b.house_id = h.id
                      AND b.status IN (${ACTIVE_SQL}))

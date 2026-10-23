@@ -66,6 +66,10 @@ const EXIT_KEYS: string[] = EXIT_STATUS.map((s) => s.k);
 
 export default function JobCard({ r, onOpen }: { r: Item; onOpen: () => void }) {
   const m = monthsAgo(r.last_wash);
+  // อีกกี่วันครบรอบล้าง (วันนี้ตามเวลาเครื่อง) — ครบแล้ว/ไม่เคยล้าง = ไม่ขึ้นชิป
+  const dueIn = r.next_wash
+    ? Math.round((Date.parse(r.next_wash) - Date.parse(new Date().toLocaleDateString("sv-SE"))) / 86400000)
+    : null;
   // เปลือกการ์ดยกจาก LeadCard ทั้งก้อน (กติกา ui-rules) — เงา/สี hover/การกดด้วยคีย์บอร์ด
   // ต้องเหมือนกันทุกโมดูล · ข้างในเป็นข้อมูล O&M เฉพาะทาง คงไว้ตามเดิม
   return (
@@ -113,6 +117,10 @@ export default function JobCard({ r, onOpen }: { r: Item; onOpen: () => void }) 
           {r.last_wash
             ? <span className="px-2 py-0.5 rounded-md bg-gray-100 text-gray-700">ล้างล่าสุด <b>{thD(r.last_wash)}</b> <span className="text-gray-400">({m} เดือน)</span></span>
             : <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 font-bold">ยังไม่เคยล้าง</span>}
+          {/* ★ 23 ต.ค. 69 แผน 20261023-03: บ้านเข้ารายการ 30 วันก่อนครบรอบ — บอกวันครบรอบจริงให้รู้ว่าโทรล่วงหน้า (ยังไม่นัด) */}
+          {dueIn !== null && dueIn > 0 && !r.scheduled_at && (
+            <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700">ครบรอบ <b>{thD(r.next_wash!)}</b> <span className="text-blue-400">(อีก {dueIn} วัน)</span></span>
+          )}
           {r.scheduled_at
             ? <span className="px-2 py-0.5 rounded-md bg-sky-50 text-sky-800">นัด <b>{thAppt(r.scheduled_at, r.time_slot)}</b></span>
             // ★ 23 ต.ค. 69 ตกลงรับบริการแล้วยังไม่เลือกวัน (แท็บยืนยันนัดหมาย · แผน 20261023-01 รอบ 4) — เตือนให้เลือกวันนัด
