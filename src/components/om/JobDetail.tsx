@@ -16,7 +16,7 @@ import { hasRole, useActiveRoles } from "@/lib/roles";
 import { formatTHB } from "@/lib/utils/formatters";
 import { CALL_OUTCOME, EXIT_STATUS, statusLabel, statusTone } from "@/lib/om/booking";
 import Timeline from "@/components/ui/Timeline";
-import { CheckIcon, ChevronLeftIcon, ClockIcon, DocumentIcon, PhoneIcon } from "@/components/ui/icons";
+import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon, DocumentIcon, PhoneIcon } from "@/components/ui/icons";
 import NotificationBell from "@/components/layout/NotificationBell";
 import JobHistoryItem from "@/components/om/JobHistoryItem";
 import JobFormPanel from "@/components/om/JobFormPanel";
@@ -63,6 +63,8 @@ const STEP_ICON = [
 
 // ชุดคลาสเดียวกับ PreSurveyForm (ฝั่งขาย) — กล่องย่อยในการ์ด · ป้ายช่อง · ปุ่มเลือก · ช่องกรอก
 const SECTION = "rounded-lg bg-white/60 border border-active/15 p-3";
+// ปุ่มถัดไปท้ายการ์ด — ชุดเดียวกับ NAV_NEXT ของใบตรวจ (JobFormPanel) · ใช้กับปุ่มช่างถึงหน้างานขั้น 04
+const NAV_NEXT = "flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold text-white bg-active hover:brightness-110 transition-colors flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50";
 const FIELD_LABEL = "text-xs text-gray-500 block mb-1.5";
 const INPUT = "w-full h-8 px-3 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-active";
 const chipBtn = (selected: boolean) =>
@@ -209,6 +211,8 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
   const schedFree = schedNow && at === 0 && !needQuote;
   // รอยืนยันนัดแต่ยังไม่มีวัน (ข้อมูลเก่า) — เลือกวันที่ขั้น 04 แบบงานที่ชำระแล้ว
   const pendingNoDate = at === 3 && cur === "pending" && !item.scheduled_at;
+  // ★ แผน 20261023-01: ยืนยันนัดหมายแล้ว (รวมใบเก่าที่ค้างรอยืนยันนัดแต่มีวัน) — รอช่างถึงหน้างานที่ขั้น 04
+  const apptSet = at === 3 && (cur === "pending" || cur === "confirmed") && !!item.scheduled_at;
   const stepState = (i: number): StepState => {
     const f = FLOW[i];
     if (skip && "paid" in f && f.paid) return "skipped";
@@ -553,11 +557,11 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
     );
   };
 
-  // ── แท็บ "นัด" ของขั้น 05 (1 ต.ค. 69 ผู้ใช้สั่ง: ขั้น 05 แยกแท็บแบบขั้นติดตั้งฝั่งขาย · แท็บ 2 = เช็คลิสต์) ──
-  //   แถบนัด + Reschedule (+ ลูกค้ายืนยันแล้ว / กลับไปติดตาม ตอนรอยืนยัน) · ปุ่มถัดไปของใบตรวจ = ช่างถึงหน้างาน
+  // ── แถบนัดหลังยืนยันนัดหมาย — การ์ดขั้น 04 (แผน 20261023-01 · เดิมแท็บย่อย "นัด" ของขั้น 05 ตั้งแต่ 1 ต.ค. 69) ──
+  //   แถบนัด + Reschedule · ปุ่ม "ช่างถึงหน้างาน" อยู่ใต้แถบ (startJob)
   const apptBlock = (
     <div className="space-y-3">
-      {/* ★ 1 ต.ค. 69 ย้ายมาการ์ดขั้น 05 (ผู้ใช้สั่ง: ยืนยันแล้วไปขั้น 5 · Reschedule ทำที่ขั้น 5)
+      {/* ★ 23 ต.ค. 69 กลับมาการ์ดขั้น 04 (ผู้ใช้เลือกแบบ B — ยืนยันนัดหมายแล้วอยู่ขั้นนัดหมาย)
           ★ แถบนัด + ปุ่ม Reschedule ยกจากขั้นย่อย "นัด" ของ Install ฝั่งขาย (แผน 20260928-04 ข้อ 8)
           สีม่วง = นัดแล้ว รอยืนยัน · สีเขียว = ลูกค้ายืนยันแล้ว · เลื่อนได้จนกว่าช่างจะเริ่มงาน */}
       {resched && item.booking_id ? (
@@ -605,6 +609,13 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
     await apiFetch(`/api/om/bookings/${item.booking_id}`, { method: "PATCH", body: JSON.stringify({ status: "progress" }) });
     onSaved("ช่างถึงหน้างานแล้ว — เริ่มกรอกใบตรวจรับงาน");
     if (onReload) onReload(); else onDone();
+  };
+  // ปุ่มช่างถึงหน้างานในการ์ดขั้น 04 — เดิมห่อด้วย nextFromAppt ของใบตรวจ (busy + error)
+  const arrive = async () => {
+    setBusy(true); setErr("");
+    try { await startJob(); }
+    catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
   };
 
   return (
@@ -882,7 +893,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
             {/* ★ นัดหมาย = รวมขั้น "ทำนัด" กับ "รอ O&M" เดิม (ขั้นย่อย 2410 รอยืนยันนัด · 2420 นัดแล้ว)
                 ปุ่มโผล่เฉพาะสถานะที่กดได้จริง — เดิมโผล่ตลอด กดผิดสถานะแล้วค่อยโดน API ปฏิเสธ */}
             <StepCard n={3} className={cardWrap(3)} state={stepState(3)} doneTitle="นัดหมายแล้ว" onHeaderClick={() => toggleDone(3)}
-              title="นัดหมาย — เลือกวันนัด">
+              title={apptSet ? "นัดหมาย — รอถึงวันนัด · ช่างถึงหน้างาน" : "นัดหมาย — เลือกวันนัด"}>
               {stepState(3) === "done" ? doneView(3,
                 <DoneHead text={`นัด ${thAppt(item.scheduled_at, item.time_slot)}`} />,
                 () => events("appoint", "blue", "นัดหมาย · ทีมช่าง"),
@@ -913,13 +924,30 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                   </div>
                   {viewOnly ? waitNote("รอฝ่ายขายโทรตกลงวันนัดกับลูกค้า") : callForm("paid")}
                 </div>
+              ) : apptSet ? (
+                // ★ แผน 20261023-01: ยืนยันนัดหมายแล้ว — อยู่ขั้นนี้จนช่างถึงหน้างาน แล้วไปกรอกใบตรวจที่ขั้น 05
+                //   Account อ่านอย่างเดียว — เลื่อนนัด/ช่างถึงหน้างาน เป็นงานทีมช่าง (แผน 20261014-06)
+                viewOnly ? waitNote(<>นัด <b>{thAppt(item.scheduled_at, item.time_slot)}</b> — รอทีมช่างเข้าปฏิบัติงาน</>) : (
+                  <div className="space-y-3">
+                    {apptBlock}
+                    {/* เปิดฟอร์มเลื่อนนัดอยู่ — ใช้ปุ่มของฟอร์มนั้นอย่างเดียว (แบบ hideNav เดิม) */}
+                    {!resched && (
+                      <div className="flex md:justify-end">
+                        <button type="button" disabled={busy} onClick={arrive} className={NAV_NEXT}>
+                          {busy ? "กำลังบันทึก…" : "ช่างถึงหน้างาน"}
+                          {!busy && <ChevronRightIcon className="w-4 h-4" strokeWidth={2} />}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )
               ) : null}
             </StepCard>
 
             {/* ★ 28 ก.ย. 69 ตัดขั้น "รอปิด" — เข้างานเป็นขั้นสุดท้ายก่อนปิด: กรอกใบ + ลูกค้าเซ็น → กดปิดงานท้ายใบจบเลย
                 ★ 22 ต.ค. 69 ชื่อขั้น เข้างาน → ปฏิบัติงาน (ตาม FLOW) */}
             <StepCard n={4} className={cardWrap(4)} state={stepState(4)} doneTitle="ปฏิบัติงานเสร็จ" onHeaderClick={() => toggleDone(4)}
-              title={cur === "pending" || cur === "confirmed" ? "ปฏิบัติงาน — รอถึงวันนัด · ช่างถึงหน้างาน" : "ปฏิบัติงาน — ช่างอยู่หน้างาน · ลูกค้าเซ็นรับ"}>
+              title="ปฏิบัติงาน — ช่างอยู่หน้างาน · ลูกค้าเซ็นรับ">
               {stepState(4) === "done" && item.booking_id ? doneView(4,
                 <DoneHead text={<>
                   {report?.result === "pass" ? "ผลตรวจ ผ่าน" : report?.result === "fail" ? "ผลตรวจ ไม่ผ่าน" : "ตรวจงานเสร็จ"}
@@ -932,24 +960,16 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                 () => <JobReportSummary bookingId={item.booking_id!}
                   startedAt={rowsOf("progress").find((r) => r.action === "start")?.at ?? null} />,
               ) : item.booking_id && viewOnly ? (
-                // Account อ่านอย่างเดียว — ใบตรวจ/เลื่อนนัด/ช่างถึงหน้างาน เป็นงานทีมช่าง (แผน 20261014-06)
-                waitNote(cur === "pending" || cur === "confirmed"
-                  ? <>นัด <b>{thAppt(item.scheduled_at, item.time_slot)}</b> — รอทีมช่างเข้าปฏิบัติงาน</>
-                  : "ทีมช่างกำลังทำงาน — รอปิดงาน")
+                // Account อ่านอย่างเดียว — ใบตรวจเป็นงานทีมช่าง (แผน 20261014-06) · ก่อนช่างถึงอยู่ขั้น 04 (แผน 20261023-01)
+                waitNote("ทีมช่างกำลังทำงาน — รอปิดงาน")
               ) : item.booking_id ? (
                 // ★ เฟส 3: ใบตรวจรับงานฝังมาเลย ไม่ต้องเด้งออกไปหน้าอื่นแล้ว
                 //   ใบเดียวกับ /om/field/[id] เป๊ะ (components/om/JobFormPanel) แก้ที่เดียวได้ทั้งสองที่
                 // ★ 28 ก.ย. 69 (แผน 20260928-03): วางตรงในการ์ดแบบ InstallChecklist ในการ์ด Install — ไม่ห่อ SECTION ซ้อน
                 //   ใบมีแถบขั้นย่อย (ตรวจ / รูป · บันทึก / ส่งมอบ) ของตัวเอง · wrapClass ว่าง = ไม่สร้าง scroll ซ้อน
+                // ★ แผน 20261023-01: ไม่มีแท็บย่อย "นัด" แล้ว (ย้ายไปการ์ดขั้น 04) — แท็บย่อยชุดเดียวกับหน้าช่าง /om/field
                 <JobFormPanel jobId={String(item.booking_id)} wrapClass="" embedded
                   onClosed={() => { onSaved("ปิดงานเรียบร้อย"); onDone(); }}
-                  appt={["pending", "confirmed", "progress", "checked"].includes(cur) ? {
-                    content: apptBlock,
-                    ready: cur === "progress" || cur === "checked",
-                    canNext: cur === "confirmed" || cur === "pending",
-                    onNext: startJob,
-                    hideNav: resched,   // เปิดฟอร์มเลื่อนนัดอยู่ — ใช้ปุ่มของฟอร์มนั้นอย่างเดียว
-                  } : undefined}
                   // ★ 15 ต.ค. 69 ผู้ใช้สั่งเอาบรรทัดคำอธิบาย "กรอกใบตรวจ ให้ลูกค้าเซ็นรับ … · ตัดสิทธิ์ … · เปิดเต็มจอ ›" ออก
                   //   เหลือแค่ป้ายของใบเก่าที่ค้างสถานะรอปิด (ก่อนตัดขั้น) — บอกให้ปิดต่อจากใบนี้ได้เลย
                   intro={cur === "checked" ? (

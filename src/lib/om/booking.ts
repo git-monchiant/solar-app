@@ -14,7 +14,7 @@ export const BOOKING_STATUS = [
   { k: "pending",   t: "รอยืนยันนัด", onCal: true,  tone: "bg-amber-500" },
   // ★ 22 ต.ค. 69 คำทางการตามแท็บหน้ารายการ (เดิม นัดแล้ว · เข้างาน)
   { k: "confirmed", t: "ยืนยันนัดหมาย",  onCal: true,  tone: "bg-blue-600" },
-  { k: "progress",  t: "กำลังดำเนินการ", onCal: true,  tone: "bg-violet-600" },
+  { k: "progress",  t: "กำลังปฏิบัติงาน", onCal: true,  tone: "bg-violet-600" },
   // ★ 28 ก.ย. 69: ไม่มีขั้นบนแถบ/แท็บแล้ว ปุ่มปิดงานไม่ผ่านสถานะนี้ — สงวนไว้ (ยืนยันทาง LINE / Q.C. ในอนาคต)
   { k: "checked",   t: "รอปิด",       onCal: true,  tone: "bg-teal-600" },
   { k: "closed",    t: "ปิดงาน",      onCal: true,  tone: "bg-emerald-600" },

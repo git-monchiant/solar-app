@@ -21,7 +21,7 @@ import {
   CameraIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, DocumentIcon, PlusIcon, UserIcon,
 } from "@/components/ui/icons";
 import { PHOTO_REQUIRED, PROXY_REASONS, failCount, missingPhotos, type Checks, type FormItem, type JobForm } from "@/lib/om/job-form";
-import { statusLabel } from "@/lib/om/booking";
+import { statusLabel, statusTone } from "@/lib/om/booking";
 import { OM_REPAIR_ENABLED, thAppt } from "@/lib/om/service-view";
 
 type Job = {
@@ -39,7 +39,7 @@ type Report = {
 type FormWithItems = JobForm & { items: FormItem[] };
 
 
-// ขั้นย่อยของขั้นเข้างาน — แบบ SUB_STEPS ของ InstallStep (นัด / ตรวจ / … / ส่งมอบ)
+// ขั้นย่อยของขั้นปฏิบัติงาน — แบบ SUB_STEPS ของ InstallStep (ตรวจ / … / ส่งมอบ · นัดอยู่การ์ดขั้น 04 · แผน 20261023-01)
 const SUB_STEPS = ["ตรวจ", "รูป · บันทึก", "ส่งมอบ"] as const;
 
 // หัวหมวดแบบ InstallChecklist (อังกฤษตัวใหญ่) ต่อท้ายชื่อไทยให้ช่างอ่านง่าย
@@ -321,7 +321,7 @@ function PhotoBox({ jobId, kind, label, photos, disabled, onChanged }: {
   );
 }
 
-export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto bg-gray-50", embedded, intro, onClosed, appt }: {
+export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto bg-gray-50", embedded, intro, onClosed }: {
   jobId: string;
   /** กล่องนอกสุด — หน้า /om/field/[id] ใช้ค่า default (เต็มจอ มี scroll ของตัวเอง)
    *  ส่วนตอนฝังในการ์ดขั้นของหน้ารายละเอียด ส่งคลาสที่ไม่สร้าง scroll ซ้อนเข้ามาแทน */
@@ -334,20 +334,7 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
   /** ปิดงานสำเร็จ — หน้าที่ฝังต้องโหลดใหม่ ไม่งั้น header/ราง/สิทธิ์/Activity log ค้างที่ "เข้างาน"
    *  (เจอ 28 ก.ย. 69: ใบ #99 ปิดในฐานแล้ว แต่หน้ารายละเอียดยังโชว์เข้างาน สิทธิ์เหลือ 4) */
   onClosed?: () => void;
-  /** ★ 1 ต.ค. 69 ขั้นย่อยแรก "นัด" แบบขั้นย่อยนัดหมายของ InstallStep (ผู้ใช้สั่ง: ขั้น 05 แยกแท็บ · แท็บ 2 = เช็คลิสต์)
-   *  หน้ารายละเอียดส่งมา: แถบนัด + Reschedule · ปุ่มถัดไป = ช่างถึงหน้างาน (เข้างาน) แล้วไปแท็บตรวจ
-   *  ไม่ส่ง (หน้าช่าง /om/field) = ไม่มีแท็บนัด เหมือนเดิม */
-  appt?: {
-    content: React.ReactNode;
-    /** ช่างถึงหน้างานแล้ว (เข้างาน) — แท็บตรวจเป็นต้นไปเปิดได้ */
-    ready: boolean;
-    /** กดถัดไปที่แท็บนัดได้ไหม (นัดแล้ว = ได้ · รอยืนยัน = ยังไม่ได้) */
-    canNext: boolean;
-    /** ช่างถึงหน้างาน — เปลี่ยนสถานะเป็นเข้างาน */
-    onNext: () => Promise<void>;
-    /** ซ่อนปุ่มท้ายของแท็บนัด — ตอนเปิดฟอร์มเลื่อนนัด (มีปุ่มยกเลิก/ยืนยันเลื่อนนัดของตัวเอง · ผู้ใช้สั่ง 1 ต.ค. 69) */
-    hideNav?: boolean;
-  };
+  // ★ แผน 20261023-01: ถอดแท็บย่อยแรก "นัด" (prop appt · 1 ต.ค. 69) — แถบนัด/Reschedule/ช่างถึงหน้างาน ย้ายไปการ์ดขั้น 04 ของหน้ารายละเอียด
 }) {
   const id = jobId;
   const [job, setJob] = useState<Job | null>(null);
@@ -370,11 +357,9 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
   const [err, setErr] = useState("");
   const [toast, setToast] = useState("");
   // ขั้นย่อย — จำไว้ใน localStorage แบบ installSubStep ของฝั่งขาย · หน้าช่างกับหน้ารายละเอียดใช้ key เดียวกัน
-  // มีแท็บนัด = เลื่อนขั้นย่อยของใบไป 1 · key แยกจากหน้าช่าง (จำนวนแท็บไม่เท่ากัน)
-  const steps: readonly string[] = appt ? ["นัด", ...SUB_STEPS] : SUB_STEPS;
-  const off = appt ? 1 : 0;
-  const [subStep, setSubStep] = useSubStep(`omJobSubStep_${id}${appt ? "_appt" : ""}`, appt && !appt.ready ? 0 : off, steps.length);
-  const inner = subStep - off;   // ขั้นย่อยของใบตรวจ (0 ตรวจ · 1 รูป · บันทึก · 2 ส่งมอบ · -1 = แท็บนัด)
+  //   (0 ตรวจ · 1 รูป · บันทึก · 2 ส่งมอบ)
+  const steps = SUB_STEPS;
+  const [subStep, setSubStep] = useSubStep(`omJobSubStep_${id}`, 0, steps.length);
   const [nextError, setNextError] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const say = (m: string) => { setToast(m); setTimeout(() => setToast(""), 2600); };
@@ -478,16 +463,10 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
   // ประตูเดียวกับปุ่มถัดไป + แท็บขั้นย่อย (แบบ onSubStepChange ของ InstallStep)
   // ★ ข้อมูลที่กรอกไม่หายตอนสลับขั้นย่อย (state อยู่ที่ใบ) · ไม่บันทึกอัตโนมัติ เพราะ PUT เขียน Activity log ทุกครั้ง
   const goSub = (n: number) => {
-    // ยังไม่ถึงหน้างาน — แท็บใบตรวจยังไม่เปิด (แบบขั้นย่อยที่ยังไม่ถึงของฝั่งขาย)
-    if (appt && !appt.ready && n >= off) {
-      // ★ 21 ต.ค. 69 แผน 20261021-01: เดิมบอกให้กดปุ่ม "ลูกค้ายืนยันแล้ว" ที่เอาออกไปแล้ว 1 ต.ค.
-      setNextError(appt.canNext ? "ช่างยังไม่ถึงหน้างาน — กด “ถัดไป” ที่แท็บนัดเมื่อช่างถึงหน้างาน" : "ลูกค้ายังไม่ยืนยันนัด — กรุณายืนยันวันนัดกับลูกค้าก่อน");
-      return;
-    }
     // ขั้นตรวจยังไม่ครบ — ไปขั้นรูป · บันทึก / ส่งมอบ ไม่ได้ (ทั้งปุ่มถัดไปและกดแถบขั้นย่อยข้ามไป)
-    if (!closed && n > subStep && n - off >= 1 && missingText) { setNextError(missingText); return; }
-    if (!closed && n > subStep && n - off > 1 && photoText) { setNextError(photoText); return; }
-    if (!closed && n > subStep && n - off > 1 && repair && !repairDetail.trim()) {
+    if (!closed && n > subStep && n >= 1 && missingText) { setNextError(missingText); return; }
+    if (!closed && n > subStep && n > 1 && photoText) { setNextError(photoText); return; }
+    if (!closed && n > subStep && n > 1 && repair && !repairDetail.trim()) {
       setNextError("กรุณาระบุอาการ / สิ่งที่ต้องซ่อม (เลือก “พบ ต้องซ่อม” ไว้)"); return;
     }
     setNextError(null);
@@ -499,21 +478,6 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
       if (el.scrollHeight > el.clientHeight) el.scrollTo({ top: 0, behavior: "smooth" });
       else el.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 50);
-  };
-
-  // แท็บนัด: ถัดไป = ช่างถึงหน้างาน (ถ้ายังไม่ได้เข้างาน) แล้วไปแท็บตรวจ
-  const nextFromAppt = async () => {
-    if (!appt) return;
-    if (appt.ready) { goSub(off); return; }
-    if (!appt.canNext) { goSub(off); return; }   // ขึ้นเหตุผลจาก goSub
-    setBusy(true); setErr("");
-    try {
-      await appt.onNext();
-      load();
-      setNextError(null);
-      setSubStep(off);
-    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
-    finally { setBusy(false); }
   };
 
   const closeJob = () => {
@@ -579,8 +543,9 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
             <h1 className="text-lg font-bold leading-tight">{form?.label_th ?? "ใบตรวจรับงาน"}</h1>
             {form && <span className="text-xxs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 font-semibold">v{form.version}</span>}
             {jobNoTxt && <span className="text-xs font-bold text-gray-500 tabular-nums">{jobNoTxt}</span>}
-            <span className={`text-xxs px-2 py-0.5 rounded-full text-white font-semibold ${closed ? "bg-emerald-600" : "bg-violet-600"}`}>
-              {closed ? "ปิดงานแล้ว" : "กำลังดำเนินการ"}
+            {/* ★ 23 ต.ค. 69 สถานะจริงของใบ (ยืนยันนัดหมาย / กำลังปฏิบัติงาน) — เดิม "กำลังดำเนินการ" ทุกใบที่ยังไม่ปิด */}
+            <span className={`text-xxs px-2 py-0.5 rounded-full text-white font-semibold ${closed ? "bg-emerald-600" : statusTone(job.status)}`}>
+              {closed ? "ปิดงานแล้ว" : statusLabel(job.status)}
             </span>
             <Link href="/om/services" className="ml-auto text-xs font-bold text-gray-600 no-underline border border-gray-200 rounded-full px-3 py-1">‹ กลับ</Link>
           </div>
@@ -590,7 +555,7 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
       <div className={embedded ? "" : "p-4 max-w-[1400px] mx-auto"}>
         {/* แถบขั้นย่อย — StepLayout ตัวเดียวกับการ์ด Install ฝั่งขาย (state active เสมอ ใบปิดแล้วยังเปิดอ่านได้ทุกขั้น) */}
         <StepLayout state="active" doneHeader={null} subSteps={steps} subStep={subStep} onSubStepChange={goSub}>
-          {appt && inner < 0 ? appt.content : intro}
+          {intro}
           <div className="space-y-3">
             {/* ใบปิดแล้ว — แถบ lock แบบ InstallChecklist (หน้าช่างเต็มจอมีป้ายที่แถบหัวอยู่แล้ว) */}
             {closed && embedded && (
@@ -601,7 +566,7 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
             )}
 
             {/* ── ขั้นย่อย 1: ตรวจ ── */}
-            {inner === 0 && (
+            {subStep === 0 && (
               <>
                 {/* ยังไม่มีใบของชนิดงานนี้ — ยืมใบติดตั้งมาใช้ ต้องบอกช่างให้รู้ ไม่ใช่เงียบ */}
                 {form?.fallback && (
@@ -665,7 +630,7 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
             )}
 
             {/* ── ขั้นย่อย 2: รูป · บันทึก ── */}
-            {inner === 1 && (
+            {subStep === 1 && (
               <>
                 {/* รูปก่อน / หลัง — แยกสองกล่องตามที่ผู้ใช้สั่ง · ★ 22 ต.ค. 69 บังคับอย่างน้อยกล่องละ 1 รูป
                     ชื่อกล่องเป็นกลาง ไม่ผูกกับงานล้าง เพราะใบนี้ใช้กับงาน O&M ทุกชนิด */}
@@ -717,7 +682,7 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
             )}
 
             {/* ── ขั้นย่อย 3: ส่งมอบ — ผลการตรวจ · วิธีปิดงาน · ลายเซ็น ── */}
-            {inner === 2 && (
+            {subStep === 2 && (
               <>
                 {/* ★ 15 ต.ค. 69 ผู้ใช้สั่งเอากล่อง "RESULT ผลการตรวจ" (ปุ่มผ่าน/ไม่ผ่าน) ออก — เลือกเองแล้วขัดกับหน้าตรวจได้
                     (เจอ 2 ใบ: เลือก "ผ่าน" ทั้งที่ติ๊กไม่ผ่าน 1–2 ข้อ) ⇒ ผลตรวจคิดจากข้อที่ติ๊ก: มีข้อไม่ผ่าน = ไม่ผ่าน
@@ -754,22 +719,17 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
 
           {/* ปุ่มท้ายการ์ด — แบบ InstallStep: ย้อนกลับชิดซ้าย · ถัดไป/ปิดงานชิดขวา (+ บันทึกร่างข้าง ๆ)
               มือถือ 3 ปุ่มแบ่งเท่ากันในแถวเดียว (กลุ่มขวาเป็น contents) */}
-          {!(appt?.hideNav && inner < 0) && <div className="flex gap-2 mt-3 md:justify-between">
+          <div className="flex gap-2 mt-3 md:justify-between">
             {subStep > 0
               ? <button type="button" onClick={() => goSub(subStep - 1)} className={NAV_BACK}>
                   <ChevronLeftIcon className="w-4 h-4" strokeWidth={2} />ย้อนกลับ
                 </button>
               : <span className="hidden md:block md:w-64" />}
             <div className="contents md:flex md:gap-2">
-              {!closed && inner >= 0 && (
+              {!closed && (
                 <button type="button" disabled={busy} onClick={() => save(false)} className={NAV_DRAFT}>บันทึกร่าง</button>
               )}
-              {inner < 0 ? (
-                // แท็บนัด — ถัดไป = ช่างถึงหน้างาน (นัดแล้ว) · รอยืนยันนัดกดไม่ได้
-                <button type="button" disabled={busy || (!appt?.ready && !appt?.canNext)} onClick={nextFromAppt} className={NAV_NEXT}>
-                  {busy ? "กำลังบันทึก…" : "ถัดไป"}{!busy && <ChevronRightIcon className="w-4 h-4" strokeWidth={2} />}
-                </button>
-              ) : subStep < last ? (
+              {subStep < last ? (
                 <button type="button" onClick={() => goSub(subStep + 1)} className={NAV_NEXT}>
                   ถัดไป<ChevronRightIcon className="w-4 h-4" strokeWidth={2} />
                 </button>
@@ -784,7 +744,7 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
                 </button>
               )}
             </div>
-          </div>}
+          </div>
         </StepLayout>
       </div>
 
