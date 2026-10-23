@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { HOURLY_SLOTS, formatSlotsRange, parseSlots, serializeSlots, slotLabel } from "@/lib/time-slots";
 import { houseNumberOrNull } from "@/lib/utils/name";
@@ -50,6 +50,9 @@ interface Props {
    *  มีรหัส = แถบชิปวันที่ทีมเข้าโครงการนี้อยู่แล้ว + วงกรอบวัน + ช่องโครงการเดียวกัน (พื้นเขียว + บ้านเลขที่)
    *  ไม่มีรหัส (บ้านนอกโครงการ) = ไม่มีส่วนโครงการ — ตัวนับช่องว่าง + รายการนัดของวันยังขึ้นตามโหมด shared */
   sameProject?: { id: string | null; name: string | null } | null;
+  /** ★ 23 ต.ค. 69 (O&M · ผู้ใช้สั่ง): ยังไม่เลือกวัน = เลือกวันแรกที่ทีมเข้าโครงการนี้อยู่แล้วให้ (วันแรกของชิป ①)
+   *  ครั้งเดียวต่อการเปิด — ล้างวันเองแล้วไม่เลือกซ้ำ · มีวันอยู่แล้ว (เลื่อนนัด) ไม่ทับ · ไม่มีวันโครงการ = ไม่เลือก */
+  autoPickProjectDay?: boolean;
 }
 
 // Team colours mirror the calendar page legend so the picker reads the same
@@ -91,6 +94,7 @@ export default function CalendarPicker({
   maxDate,
   slotDisabled,
   sameProject,
+  autoPickProjectDay = false,
 }: Props) {
   const rangeMode = !!onDateEndChange;
   void zoneFilter;
@@ -234,6 +238,14 @@ export default function CalendarPicker({
           && infoByDate[iso].some(i => i.same))
         .sort().slice(0, 5)
     : [];
+  // เลือกวันโครงการเดียวกันให้ตอนเปิด (autoPickProjectDay) — ข้อมูลนัดมาทีหลัง จึงรอวันแรกของชิปแล้วค่อยเลือก
+  const autoPicked = useRef(false);
+  const firstProjectDay = projectDays[0] ?? null;
+  useEffect(() => {
+    if (!autoPickProjectDay || autoPicked.current || date || !firstProjectDay) return;
+    autoPicked.current = true;
+    onDateChange(firstProjectDay);
+  }, [autoPickProjectDay, date, firstProjectDay, onDateChange]);
 
   const today = new Date(); today.setHours(0, 0, 0, 0);
   // Back-dating view shifts the window one month earlier so the user can

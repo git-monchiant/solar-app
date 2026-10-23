@@ -891,14 +891,9 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                   {viewOnly ? waitNote("รอฝ่ายขายโทรตกลงวันนัดกับลูกค้า") : callForm("paid")}
                 </div>
               ) : pendingNoDate ? (
-                // ★ 23 ต.ค. 69 ตกลงรับบริการแล้ว (บันทึกที่ขั้น 01) แต่ยังไม่มีวัน — เลือกวันนัดที่นี่ (หน้าตาเดิมของงานฟรีตกลงที่ 01)
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg border bg-active-light border-active/20 text-sm text-gray-800">
-                    <CheckIcon className="w-4 h-4 shrink-0 text-active" strokeWidth={2.5} />
-                    <span className="min-w-0 flex-1">ลูกค้าตกลงรับบริการ{skip && <> · งานนี้<b>ไม่ต้องชำระเงิน</b></>} — เลือกวันนัดกับลูกค้า</span>
-                  </div>
-                  {viewOnly ? waitNote("รอโทรตกลงวันนัดกับลูกค้า") : callForm("free")}
-                </div>
+                // ★ 23 ต.ค. 69 ตกลงรับบริการแล้ว (บันทึกที่ขั้น 01) แต่ยังไม่มีวัน — เลือกวันนัดที่นี่
+                //   ผู้ใช้สั่งเอากล่อง "ลูกค้าตกลงรับบริการ · งานนี้ไม่ต้องชำระเงิน — เลือกวันนัดกับลูกค้า" ออก (การ์ดขึ้นปฏิทินเลย)
+                viewOnly ? waitNote("รอโทรตกลงวันนัดกับลูกค้า") : callForm("free")
               ) : null}
             </StepCard>
 

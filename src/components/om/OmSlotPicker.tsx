@@ -54,6 +54,8 @@ export default function OmSlotPicker({ date, slot, onDateChange, onSlotChange, e
         overlap="shared"
         excludeOmBookingId={excludeId ?? null}
         sameProject={project ?? null}
+        // ★ 23 ต.ค. 69 ผู้ใช้สั่ง: เปิดมาเลือกวันที่ทีมเข้าโครงการนี้อยู่แล้วให้ (ยังไม่เลือกวันเท่านั้น — เลื่อนนัดมีวันเดิมไม่ทับ)
+        autoPickProjectDay
         maxDate={lastDay}
         slotDisabled={(d, s) => d < today || (d === today && s <= nowHm)}
       />
