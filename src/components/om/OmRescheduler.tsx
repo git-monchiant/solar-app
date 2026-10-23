@@ -21,7 +21,7 @@ type Preview = {
   rules: { notify_line: boolean };
 };
 
-export default function OmRescheduler({ bookingId, currentAt, currentSlot, rules, project, onCancel, onSaved, idle }: {
+export default function OmRescheduler({ bookingId, currentAt, currentSlot, rules, project, onCancel, onSaved }: {
   bookingId: number;
   /** โครงการของบ้าน — ส่งต่อให้ OmSlotPicker (แผน 20261021-02) */
   project?: { id: string | null; name: string | null } | null;
@@ -30,26 +30,16 @@ export default function OmRescheduler({ bookingId, currentAt, currentSlot, rules
   currentSlot?: string | null;
   /** ค่าในหน้าตั้งค่า O&M — ช่วงวัน/ระยะล่วงหน้าของตัวเลือกวัน */
   rules?: Record<string, unknown>;
-  /** ปุ่มยกเลิก (ปิดฟอร์ม) — ไม่ส่ง = ฝังเปิดค้าง ปุ่มซ้ายเป็น "คืนวันเวลาเดิม" แทน */
-  onCancel?: () => void;
+  onCancel: () => void;
   /** เลื่อนสำเร็จ — ส่งข้อความสรุปผล (รวมผลแจ้ง LINE) ให้หน้าที่ฝังขึ้น toast */
   onSaved: (msg: string) => void;
-  /** ★ 23 ต.ค. 69 (แผน 20261023-01) ฝังเปิดค้างในการ์ดขั้น 04 — ผู้ใช้สั่ง "ให้มาที่หน้าปฏิทิน"
-   *  ยังไม่เปลี่ยนวัน/ช่อง = แสดงอันนี้แทนเหตุผล + ปุ่มยืนยัน (หน้าที่ฝังส่งปุ่มช่างถึงหน้างานมา) */
-  idle?: React.ReactNode;
 }) {
-  const curDate = currentAt ? currentAt.slice(0, 10) : "";
-  const [date, setDate] = useState(curDate);
+  const [date, setDate] = useState(currentAt ? currentAt.slice(0, 10) : "");
   const [slot, setSlot] = useState(currentSlot ?? "");
   const [reason, setReason] = useState("");
   const [preview, setPreview] = useState<Preview | null>(null);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
-  const inline = idle !== undefined;
-  // เปลี่ยนวันหรือช่องจากนัดเดิมแล้ว (ยังเลือกช่องไม่ครบก็นับ) — โหมดฝังสลับไปฟอร์มเลื่อนนัด
-  const dirty = date !== curDate || slot !== (currentSlot ?? "");
-  const showForm = !inline || dirty;
-  const reset = () => { setDate(curDate); setSlot(currentSlot ?? ""); setReason(""); setErr(""); };
 
   // ผลที่จะเกิดเมื่อยืนยัน + คำเตือนเกินเพดาน — ตามค่าในหน้าตั้งค่า ณ ตอนเปิดฟอร์ม
   useEffect(() => {
@@ -83,22 +73,19 @@ export default function OmRescheduler({ bookingId, currentAt, currentSlot, rules
       <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">Reschedule — เลื่อนนัด</div>
 
       <div className="rounded-lg bg-white/60 border border-active/15 p-3 space-y-3">
-        {/* โหมดฝัง: ยังไม่เปลี่ยน = แถบสรุปเป็น "นัดปัจจุบัน" (เดิม "เลื่อนเป็น" ทั้งที่ยังเป็นวันเดิม) */}
-        <OmSlotPicker date={date} slot={slot} excludeId={bookingId} rules={rules} pickedLabel={showForm ? "เลื่อนเป็น" : "นัดปัจจุบัน"} project={project}
+        <OmSlotPicker date={date} slot={slot} excludeId={bookingId} rules={rules} pickedLabel="เลื่อนเป็น" project={project}
           onDateChange={setDate} onSlotChange={setSlot} />
 
-        {showForm && (
-          <div>
-            <label className="text-xs text-gray-500 block mb-1.5">เหตุผลที่เลื่อน</label>
-            <input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300}
-              placeholder="เช่น ลูกค้าขอเลื่อน ไม่อยู่บ้านวันเดิม"
-              className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-active" />
-          </div>
-        )}
+        <div>
+          <label className="text-xs text-gray-500 block mb-1.5">เหตุผลที่เลื่อน</label>
+          <input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300}
+            placeholder="เช่น ลูกค้าขอเลื่อน ไม่อยู่บ้านวันเดิม"
+            className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-active" />
+        </div>
       </div>
 
       {/* ผลที่จะเกิดเมื่อยืนยัน — มาจากหน้าตั้งค่า O&M › กติกา › การเลื่อนนัด (บอกก่อนกด ไม่ให้ทีมหลุดแบบไม่รู้ตัว) */}
-      {showForm && preview && (preview.will.to_pending || preview.rules.notify_line) && (
+      {preview && (preview.will.to_pending || preview.rules.notify_line) && (
         <div className="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2.5 text-xs text-gray-700 space-y-1">
           <div className="font-semibold text-gray-500">เมื่อยืนยันเลื่อนนัด</div>
           {/* ★ 21 ต.ค. 69 แผน 20261021-01: เดิมบอกให้กดปุ่ม "ลูกค้ายืนยันแล้ว" ที่เอาออกไปแล้ว 1 ต.ค. */}
@@ -112,10 +99,10 @@ export default function OmRescheduler({ bookingId, currentAt, currentSlot, rules
 
       {err && <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">{err}</div>}
 
-      {!showForm ? idle : <div className="flex gap-2 pt-1">
-        <button type="button" onClick={onCancel ?? reset}
+      <div className="flex gap-2 pt-1">
+        <button type="button" onClick={onCancel}
           className="flex-1 h-11 rounded-lg text-sm font-semibold bg-white border border-gray-200 text-gray-700 hover:border-gray-400 cursor-pointer">
-          {onCancel ? "ยกเลิก" : "คืนวันเวลาเดิม"}
+          ยกเลิก
         </button>
         <button type="button" onClick={save} disabled={!canSave || saving}
           className="flex-[2] h-11 rounded-lg text-sm font-bold text-white bg-active hover:bg-active-dark disabled:opacity-40 disabled:cursor-not-allowed shadow-sm shadow-active/30 flex items-center justify-center gap-2 cursor-pointer">
@@ -123,7 +110,7 @@ export default function OmRescheduler({ bookingId, currentAt, currentSlot, rules
             <><CheckIcon className="w-4 h-4" strokeWidth={2.5} />ยืนยันเลื่อนนัด</>
           )}
         </button>
-      </div>}
+      </div>
     </div>
   );
 }

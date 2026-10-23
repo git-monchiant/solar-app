@@ -321,7 +321,7 @@ function PhotoBox({ jobId, kind, label, photos, disabled, onChanged }: {
   );
 }
 
-export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto bg-gray-50", embedded, intro, onClosed }: {
+export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto bg-gray-50", embedded, intro, onClosed, apptTab, apptFirst, onStarted }: {
   jobId: string;
   /** กล่องนอกสุด — หน้า /om/field/[id] ใช้ค่า default (เต็มจอ มี scroll ของตัวเอง)
    *  ส่วนตอนฝังในการ์ดขั้นของหน้ารายละเอียด ส่งคลาสที่ไม่สร้าง scroll ซ้อนเข้ามาแทน */
@@ -334,7 +334,14 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
   /** ปิดงานสำเร็จ — หน้าที่ฝังต้องโหลดใหม่ ไม่งั้น header/ราง/สิทธิ์/Activity log ค้างที่ "เข้างาน"
    *  (เจอ 28 ก.ย. 69: ใบ #99 ปิดในฐานแล้ว แต่หน้ารายละเอียดยังโชว์เข้างาน สิทธิ์เหลือ 4) */
   onClosed?: () => void;
-  // ★ แผน 20261023-01: ถอดแท็บย่อยแรก "นัด" (prop appt · 1 ต.ค. 69) — แถบนัด/Reschedule/ช่างถึงหน้างาน ย้ายไปการ์ดขั้น 04 ของหน้ารายละเอียด
+  // ★ แผน 20261023-01: ถอดแท็บย่อยแรก "นัด" (prop appt · 1 ต.ค. 69) พร้อมปุ่มช่างถึงหน้างาน
+  /** ★ รอบ 7 (23 ต.ค. 69 ผู้ใช้สั่ง): แท็บย่อยแรก "วันนัด" — เนื้อหาจากหน้าที่ฝัง (แถบวันนัด + ปุ่ม Reschedule พากลับไปขั้น 04)
+   *  แทนแท็บ "Reschedule" ของรอบ 5 ที่กดแล้วพาออกไปทันที · ไม่ส่ง (หน้าช่าง /om/field) = ไม่มีแท็บนี้ */
+  apptTab?: React.ReactNode;
+  /** เปิดมาที่แท็บวันนัดก่อน — ใบที่ช่างยังไม่เริ่ม (ยืนยันนัดหมาย) · ช่างเริ่มแล้วเปิดที่ขั้นย่อยของใบที่จำไว้ */
+  apptFirst?: boolean;
+  /** ช่างเริ่มกรอกใบแล้ว ใบงานเปลี่ยนเป็นกำลังปฏิบัติงาน — หน้าที่ฝังโหลดข้อมูลใหม่ (ป้าย/แท็บ Reschedule ตามสถานะใหม่) */
+  onStarted?: () => void;
 }) {
   const id = jobId;
   const [job, setJob] = useState<Job | null>(null);
@@ -357,9 +364,15 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
   const [err, setErr] = useState("");
   const [toast, setToast] = useState("");
   // ขั้นย่อย — จำไว้ใน localStorage แบบ installSubStep ของฝั่งขาย · หน้าช่างกับหน้ารายละเอียดใช้ key เดียวกัน
-  //   (0 ตรวจ · 1 รูป · บันทึก · 2 ส่งมอบ)
-  const steps = SUB_STEPS;
-  const [subStep, setSubStep] = useSubStep(`omJobSubStep_${id}`, 0, steps.length);
+  //   inner = ขั้นย่อยของใบ (0 ตรวจ · 1 รูป · บันทึก · 2 ส่งมอบ) · subStep = ตำแหน่งบนแถบ (มีแท็บวันนัด = เลื่อน 1)
+  //   จำ inner ไม่ใช่ตำแหน่งบนแถบ — หน้าช่างไม่มีแท็บวันนัด ใช้ key เดียวกันได้ไม่เพี้ยน
+  //   แท็บวันนัดไม่จำ — เปิดหน้าใหม่เริ่มตาม apptFirst
+  const off = apptTab ? 1 : 0;
+  const steps: readonly string[] = apptTab ? ["วันนัด", ...SUB_STEPS] : SUB_STEPS;
+  const [inner, setInner] = useSubStep(`omJobSubStep_${id}`, 0, SUB_STEPS.length);
+  const [onAppt, setOnAppt] = useState(!!apptTab && !!apptFirst);
+  const atAppt = !!apptTab && onAppt;
+  const subStep = atAppt ? 0 : inner + off;
   const [nextError, setNextError] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const say = (m: string) => { setToast(m); setTimeout(() => setToast(""), 2600); };
@@ -419,7 +432,7 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
       };
       const r = await apiFetch(`/api/om/jobs/${id}/report`, { method: "PUT", body: JSON.stringify(body) });
       setJobNo(r.job_no ?? null);
-      if (!close) { say("บันทึกร่างแล้ว"); return; }
+      if (!close) { say("บันทึกร่างแล้ว"); await markStarted(); return; }
 
       // เดินสถานะให้ครบเส้น — state machine ห้ามข้ามขั้น (เช่น pending → progress ตรง ๆ ไม่ได้)
       // ★ 28 ก.ย. 69: ไม่ผ่าน "รอปิด" แล้ว (เข้างาน → ปิดงานตรง) · ใบเก่าที่ค้าง checked ปิดต่อได้เลย
@@ -444,7 +457,7 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
   const items = form?.items ?? [];
   const fails = failCount(checks, items);
   const closed = job.status === "closed";
-  const last = steps.length - 1;
+  const last = SUB_STEPS.length - 1;   // ขั้นย่อยสุดท้ายของใบ (ส่งมอบ) — เทียบกับ inner
   // ★ 15 ต.ค. 69 ผู้ใช้สั่ง: ขั้นตรวจกรอกไม่ครบ กดถัดไปไม่ได้ — นับเฉพาะข้อที่ใบตรวจตั้ง required (ใบในฐานตั้งไว้ครบทุกข้อ)
   //   ผ่าน/ไม่ผ่าน ต้องเลือก · ช่องวัดค่าต้องเป็นตัวเลข · ข้อ text/photo ยังไม่มีที่เก็บคำตอบ ไม่นับ
   //   API ตรวจซ้ำตอนปิดงาน (PUT /report ที่มีผลตรวจ) — กันข้ามไปขั้นส่งมอบแล้วกดปิด
@@ -460,18 +473,42 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
   // ★ 22 ต.ค. 69 บังคับรูปก่อน/หลัง — ขั้นรูป · บันทึก ไปส่งมอบไม่ได้ · API ปิดงานกันอีกชั้น (report PUT + bookings PATCH)
   const photoText = missingPhotos(photos).join(",") || null;
 
+  // ★ แผน 20261023-01 รอบ 5: ไม่มีปุ่ม "ช่างถึงหน้างาน" แล้ว — ช่างเริ่มกรอกใบ (บันทึกร่าง / กดถัดไปจากขั้นตรวจ) = เริ่มงาน
+  //   ยืนยันนัดหมาย → กำลังปฏิบัติงาน (ใบเก่ารอยืนยันนัดยืนยันก่อน — ลำดับสถานะห้ามข้าม) · หลังจากนี้เลื่อนนัดไม่ได้แล้ว
+  //   ปิดงานไม่ต้องพึ่งตัวนี้ — save(true) เดินสถานะเองครบเส้น
+  const markStarted = async () => {
+    if (job.status !== "pending" && job.status !== "confirmed") return;
+    try {
+      if (job.status === "pending")
+        await apiFetch(`/api/om/bookings/${id}`, { method: "PATCH", body: JSON.stringify({ status: "confirmed" }) });
+      await apiFetch(`/api/om/bookings/${id}`, { method: "PATCH", body: JSON.stringify({ status: "progress" }) });
+      setJob((j) => (j ? { ...j, status: "progress" } : j));
+      onStarted?.();
+    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+  };
+
   // ประตูเดียวกับปุ่มถัดไป + แท็บขั้นย่อย (แบบ onSubStepChange ของ InstallStep)
   // ★ ข้อมูลที่กรอกไม่หายตอนสลับขั้นย่อย (state อยู่ที่ใบ) · ไม่บันทึกอัตโนมัติ เพราะ PUT เขียน Activity log ทุกครั้ง
   const goSub = (n: number) => {
+    // แท็บวันนัด (ไม่ใช่ขั้นย่อยของใบ) — ดูวันนัด / กด Reschedule ในแท็บพากลับไปขั้น 04
+    if (off && n === 0) { setNextError(null); setOnAppt(true); toTop(); return; }
+    const i = n - off;
+    const from = atAppt ? -1 : inner;   // อยู่แท็บวันนัด = ยังไม่เข้าใบตรวจ
     // ขั้นตรวจยังไม่ครบ — ไปขั้นรูป · บันทึก / ส่งมอบ ไม่ได้ (ทั้งปุ่มถัดไปและกดแถบขั้นย่อยข้ามไป)
-    if (!closed && n > subStep && n >= 1 && missingText) { setNextError(missingText); return; }
-    if (!closed && n > subStep && n > 1 && photoText) { setNextError(photoText); return; }
-    if (!closed && n > subStep && n > 1 && repair && !repairDetail.trim()) {
+    if (!closed && i > from && i >= 1 && missingText) { setNextError(missingText); return; }
+    if (!closed && i > from && i > 1 && photoText) { setNextError(photoText); return; }
+    if (!closed && i > from && i > 1 && repair && !repairDetail.trim()) {
       setNextError("กรุณาระบุอาการ / สิ่งที่ต้องซ่อม (เลือก “พบ ต้องซ่อม” ไว้)"); return;
     }
     setNextError(null);
-    setSubStep(n);
-    // เลื่อนกลับขึ้นแถบขั้นย่อย — หน้าช่างเต็มจอ กล่องนอกสุดคือตัว scroll เอง · ตอนฝัง scroll อยู่ที่หน้าที่ฝัง
+    // เดินหน้าจากในใบตรวจ = ช่างอยู่หน้างานแล้ว (แค่เปิดแท็บวันนัดไปขั้นตรวจยังไม่นับ)
+    if (!closed && !atAppt && i > inner) markStarted();
+    setOnAppt(false);
+    setInner(i);
+    toTop();
+  };
+  // เลื่อนกลับขึ้นแถบขั้นย่อย — หน้าช่างเต็มจอ กล่องนอกสุดคือตัว scroll เอง · ตอนฝัง scroll อยู่ที่หน้าที่ฝัง
+  const toTop = () => {
     setTimeout(() => {
       const el = rootRef.current;
       if (!el) return;
@@ -565,8 +602,11 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
               </div>
             )}
 
+            {/* ── แท็บวันนัด (หน้ารายละเอียดส่งเนื้อหามา · รอบ 7) ── */}
+            {atAppt && apptTab}
+
             {/* ── ขั้นย่อย 1: ตรวจ ── */}
-            {subStep === 0 && (
+            {!atAppt && inner === 0 && (
               <>
                 {/* ยังไม่มีใบของชนิดงานนี้ — ยืมใบติดตั้งมาใช้ ต้องบอกช่างให้รู้ ไม่ใช่เงียบ */}
                 {form?.fallback && (
@@ -630,7 +670,7 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
             )}
 
             {/* ── ขั้นย่อย 2: รูป · บันทึก ── */}
-            {subStep === 1 && (
+            {!atAppt && inner === 1 && (
               <>
                 {/* รูปก่อน / หลัง — แยกสองกล่องตามที่ผู้ใช้สั่ง · ★ 22 ต.ค. 69 บังคับอย่างน้อยกล่องละ 1 รูป
                     ชื่อกล่องเป็นกลาง ไม่ผูกกับงานล้าง เพราะใบนี้ใช้กับงาน O&M ทุกชนิด */}
@@ -682,7 +722,7 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
             )}
 
             {/* ── ขั้นย่อย 3: ส่งมอบ — ผลการตรวจ · วิธีปิดงาน · ลายเซ็น ── */}
-            {subStep === 2 && (
+            {!atAppt && inner === 2 && (
               <>
                 {/* ★ 15 ต.ค. 69 ผู้ใช้สั่งเอากล่อง "RESULT ผลการตรวจ" (ปุ่มผ่าน/ไม่ผ่าน) ออก — เลือกเองแล้วขัดกับหน้าตรวจได้
                     (เจอ 2 ใบ: เลือก "ผ่าน" ทั้งที่ติ๊กไม่ผ่าน 1–2 ข้อ) ⇒ ผลตรวจคิดจากข้อที่ติ๊ก: มีข้อไม่ผ่าน = ไม่ผ่าน
@@ -726,10 +766,10 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
                 </button>
               : <span className="hidden md:block md:w-64" />}
             <div className="contents md:flex md:gap-2">
-              {!closed && (
+              {!closed && !atAppt && (
                 <button type="button" disabled={busy} onClick={() => save(false)} className={NAV_DRAFT}>บันทึกร่าง</button>
               )}
-              {subStep < last ? (
+              {atAppt || inner < last ? (
                 <button type="button" onClick={() => goSub(subStep + 1)} className={NAV_NEXT}>
                   ถัดไป<ChevronRightIcon className="w-4 h-4" strokeWidth={2} />
                 </button>

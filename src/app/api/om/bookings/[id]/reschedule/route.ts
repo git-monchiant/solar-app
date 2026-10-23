@@ -20,7 +20,10 @@ import { omErrorText } from "@/lib/om/api-error";
 // ★ การลากในปฏิทิน / จ่ายงาน ยังใช้ PATCH /api/om/bookings/[id] เหมือนเดิม (เครื่องมือจัดคิวของคนจ่ายงาน)
 //   ถ้าใส่กติกาที่นั่นด้วย ลากย้ายช่องเวลาครั้งไหนทีมก็หลุดทุกครั้ง
 
-const OPEN = ["pending", "confirmed"];   // ยังไม่เริ่มงาน — หลังช่างเข้างานแล้วไม่ให้เลื่อนจากปุ่มนี้
+// ★ 23 ต.ค. 69 (แผน 20261023-01 รอบ 8) ผู้ใช้สั่ง "เปิด lock ให้ reschedule ได้ทั้งหมด" — ใบที่ยังไม่ปิดเลื่อนได้หมด
+//   รวมใบที่ช่างเริ่มกรอกใบตรวจแล้ว (progress / checked ใบเก่า) · สถานะคงเดิม เปลี่ยนแค่วันเวลา (reset_to_pending ปิดอยู่)
+//   เดิมเฉพาะ pending / confirmed (หลังช่างเข้างานแล้วไม่ให้เลื่อน)
+const OPEN = ["pending", "confirmed", "progress", "checked"];
 
 type Cur = {
   id: number; house_id: number; status: string; team_id: number | null; team_name: string | null;
@@ -103,7 +106,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   const cur = await load(db, id);
   if (!cur) return NextResponse.json({ error: "ไม่พบใบงานนี้" }, { status: 404 });
   if (!OPEN.includes(cur.status))
-    return NextResponse.json({ error: "เลื่อนนัดได้เฉพาะใบงานที่ยังไม่เริ่มงาน (รอยืนยันนัด / ยืนยันนัดหมาย)" }, { status: 400 });
+    return NextResponse.json({ error: "เลื่อนนัดได้เฉพาะใบงานที่มีวันนัดและยังไม่ปิดงาน" }, { status: 400 });
 
   const picked = await omSlotsFor(db, b.scheduled_at, b.time_slot);
   if ("error" in picked) return NextResponse.json({ error: picked.error }, { status: 400 });
