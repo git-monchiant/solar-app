@@ -39,6 +39,7 @@ export async function GET(req: NextRequest) {
   const gate = await requireAuth(req);
   if (gate.error) return gate.error;
   const u = req.nextUrl.searchParams;
+  // ★ 23 ต.ค. 69 (แผน 20261023-04): tab=all = ทุกแท็บรวมกัน (แท็บ "ทั้งหมด" · หน้าจอส่งมาตอนพิมพ์ค้นหาด้วย = ค้นทุกแท็บ)
   const tab = (u.get("tab") ?? "follow").trim();
   const group = (u.get("group") ?? "").trim();
   const q = (u.get("q") ?? "").trim();
@@ -91,7 +92,7 @@ export async function GET(req: NextRequest) {
      GROUP BY bucket;
 
     SELECT COUNT(*) total FROM #x d
-     WHERE d.bucket = @tab
+     WHERE (@tab = 'all' OR d.bucket = @tab)
        AND ${groupSql}
        AND (@q = '' OR d.house_number LIKE @q OR d.customer_name LIKE @q OR d.phone LIKE @q)
        AND (@mine = 0 OR d.owner_user_id = @mine)
@@ -100,7 +101,7 @@ export async function GET(req: NextRequest) {
     SELECT d.* FROM #x d
      WHERE (@house > 0 AND d.house_id = @house)
         OR (@house = 0
-            AND d.bucket = @tab
+            AND (@tab = 'all' OR d.bucket = @tab)
             AND ${groupSql}
             AND (@q = '' OR d.house_number LIKE @q OR d.customer_name LIKE @q OR d.phone LIKE @q)
             AND (@mine = 0 OR d.owner_user_id = @mine)
@@ -115,7 +116,7 @@ export async function GET(req: NextRequest) {
     SELECT ISNULL(d.project_id, N'${HG.NOPJ}') project_id,
            CASE WHEN d.project_id IS NULL THEN @nopj ELSE MAX(d.project_name) END project_name, COUNT(*) n
       FROM #x d
-     WHERE d.bucket = @tab
+     WHERE (@tab = 'all' OR d.bucket = @tab)
        AND (@mine = 0 OR d.owner_user_id = @mine)
        ${houseOriginSql(origin, "d.house_id")}
      GROUP BY d.project_id

@@ -35,6 +35,14 @@ export default function OmServicesPage() {
   const [dir, setDir] = useState<"asc" | "desc">("asc");
   const sortDef = SORTS.find((s) => s.k === sort) ?? SORTS[0];
   const [q, setQ] = useState("");
+  // ★ 23 ต.ค. 69 (แผน 20261023-04): พิมพ์ค้นหา = ค้นทุกแท็บ (เดิมค้นเฉพาะแท็บที่เปิด หาบ้านไม่เจอเพราะอยู่แท็บอื่น)
+  //   ระหว่างค้นหาแถบแท็บชี้ "ทั้งหมด" · ล้างคำค้นกลับแท็บเดิม · กดแท็บอื่น = ล้างคำค้น
+  const searching = !!q.trim();
+  const effTab = searching ? "all" : tab;
+  // แบ่งหน้า — ยกแถบแบ่งหน้าของหน้าบ้าน / ระบบติดตั้ง O&M (เดิมโหลด 40 ใบแรกของแท็บอย่างเดียว ไม่มีทางดูต่อ)
+  const [page, setPage] = useState(1);
+  const [size, setSize] = useState(30);
+  const [total, setTotal] = useState(0);
   // ★ 15 ต.ค. 69 ผู้ใช้สั่งเอาติ๊ก "งานของฉัน" ออก — กรองจากเจ้าของงาน ซึ่งเอาช่องตั้งเจ้าของงานออกไปแล้ว
   //   (API /api/om/follow ยังรับ mine=1 อยู่ ไม่มีหน้าไหนส่งมาแล้ว)
   const [items, setItems] = useState<Item[] | null>(null);
@@ -44,13 +52,13 @@ export default function OmServicesPage() {
 
   const load = useCallback(() => {
     setItems(null);
-    const p = new URLSearchParams({ tab, sort, dir, size: "40" });
+    const p = new URLSearchParams({ tab: effTab, sort, dir, page: String(page), size: String(size) });
     if (group) p.set("group", group);
     if (q.trim()) p.set("q", q.trim());
     if (origin) p.set("origin", origin);
     apiFetch(`/api/om/follow?${p}`)
       .then((d) => {
-        setItems(d.items ?? []); setCounts(d.counts ?? {});
+        setItems(d.items ?? []); setCounts(d.counts ?? {}); setTotal(Number(d.total ?? 0));
         // ★ รายชื่อโครงการนับตามแท็บที่เปิด (แผน 20261015-05) — เลือกโครงการไว้แล้วสลับไปแท็บที่ไม่มีบ้านของโครงการนั้น
         //   ให้คงชื่อไว้ "· 0" ไม่หายไปเฉย ๆ (ช่องจะว่างทั้งที่ยังกรองอยู่)
         setProjects((prev) => {
@@ -61,10 +69,24 @@ export default function OmServicesPage() {
         });
       })
       .catch((e) => { setErr(e instanceof Error ? e.message : String(e)); setItems([]); });
-  }, [tab, group, sort, dir, q, origin]);
+  }, [effTab, group, sort, dir, q, origin, page, size]);
   useEffect(() => { const t = setTimeout(load, q ? 350 : 0); return () => clearTimeout(t); }, [load, q]);
 
   const totalAll = Object.values(counts).reduce((s, n) => s + n, 0);
+  const pages = Math.max(1, Math.ceil(total / size));
+  // เลขหน้าแบบย่อ: 1 … 4 5 6 … 12 (null = จุดไข่ปลา) — ชุดเดียวกับหน้าบ้าน O&M
+  const pageNums: (number | null)[] = (() => {
+    if (pages <= 7) return Array.from({ length: pages }, (_, i) => i + 1);
+    const near = [page - 1, page, page + 1].filter((n) => n > 1 && n < pages);
+    const out: (number | null)[] = [1];
+    if (near[0] > 2) out.push(null);
+    out.push(...near);
+    if (near[near.length - 1] < pages - 1) out.push(null);
+    out.push(pages);
+    return out;
+  })();
+  // เปลี่ยนหน้า = เลื่อนกลับบนสุด (หน้าใน (app) เลื่อนใน <main> ไม่ใช่ window)
+  const goPage = (n: number) => { setPage(n); document.querySelector("main")?.scrollTo({ top: 0 }); };
 
   return (
     <div>
@@ -75,12 +97,13 @@ export default function OmServicesPage() {
       <ListPageHeader
         title={activeItem?.label ?? "งานบริการ"}
         search={q}
-        onSearchChange={setQ}
+        onSearchChange={(v) => { setQ(v); setPage(1); }}
         searchPlaceholder="ค้นหาบ้านเลขที่ · ชื่อลูกค้า · เบอร์โทร"
-        tabs={TABS.map((t) => ({ key: t.k, label: t.t, count: counts[t.k] ?? 0 }))}
-        activeTab={tab}
-        onTabChange={setTab}
-        tabsLeft={<span className="whitespace-nowrap">{totalAll.toLocaleString("th-TH")} รายการ</span>}
+        // ★ แผน 20261023-04: แท็บแรก "ทั้งหมด" แทนตัวเลข "x รายการ" ที่กดไม่ได้ (แบบแท็บทั้งหมดของ Pipeline ฝั่งขาย)
+        tabs={[{ key: "all", label: "ทั้งหมด", count: totalAll },
+          ...TABS.map((t) => ({ key: t.k, label: t.t, count: counts[t.k] ?? 0 }))]}
+        activeTab={effTab}
+        onTabChange={(k) => { setTab(k); setQ(""); setPage(1); }}
       />
 
       <div className="p-3 md:p-4">
@@ -92,7 +115,7 @@ export default function OmServicesPage() {
           <Dropdown
             className="w-full md:w-72 font-normal"
             value={group}
-            onChange={(v) => setGroup(v)}
+            onChange={(v) => { setGroup(v); setPage(1); }}
             options={[{ value: "", label: `ทุกโครงการ (${projects.filter((p) => p.n > 0).length})` },
               ...projects.map((p) => ({ value: p.project_id, label: `${p.project_name} · ${p.n}` }))]}
             searchable
@@ -101,7 +124,7 @@ export default function OmServicesPage() {
           <Dropdown
             className="w-44 font-normal"
             value={origin}
-            onChange={(v) => setOrigin(parseOrigin(v))}
+            onChange={(v) => { setOrigin(parseOrigin(v)); setPage(1); }}
             options={ORIGIN_OPTIONS}
           />
           <div className="ml-auto flex items-center gap-2">
@@ -112,13 +135,14 @@ export default function OmServicesPage() {
                 if (!v) return;
                 setSort(v);
                 setDir(SORTS.find((s) => s.k === v)?.def ?? "asc");
+                setPage(1);
               }}
               options={SORTS.map((s) => ({ value: s.k, label: s.t }))}
             />
             <Dropdown
               className="w-32"
               value={dir}
-              onChange={(v) => { if (v) setDir(v as "asc" | "desc"); }}
+              onChange={(v) => { if (v) { setDir(v as "asc" | "desc"); setPage(1); } }}
               options={[
                 { value: "asc", label: sortDef.asc },
                 { value: "desc", label: sortDef.desc },
@@ -129,11 +153,38 @@ export default function OmServicesPage() {
 
         {err && <div className="mb-3 rounded-lg bg-red-50 border border-red-200 px-4 py-2 text-sm text-red-700">{err}</div>}
         {items === null ? <Loading /> : items.length === 0 ? (
-          <div className="text-center text-gray-400 py-16 text-sm">ไม่มีรายการในแท็บนี้</div>
+          <div className="text-center text-gray-400 py-16 text-sm">{searching ? "ไม่พบรายการที่ค้นหา" : "ไม่มีรายการในแท็บนี้"}</div>
         ) : (
-          <div className="space-y-2">
-            {items.map((r) => <JobCard key={r.house_id} r={r} onOpen={() => open(r.house_id)} />)}
-          </div>
+          <>
+            <div className="space-y-2">
+              {items.map((r) => <JobCard key={r.house_id} r={r} onOpen={() => open(r.house_id)} />)}
+            </div>
+            {/* แถบแบ่งหน้า — ยกจากหน้าบ้าน / ระบบติดตั้ง O&M (houses/page.tsx) */}
+            <div className="mt-3 px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 flex items-center gap-2 flex-wrap text-xs text-gray-500">
+              <span className="font-semibold">
+                {`${((page - 1) * size + 1).toLocaleString()}–${Math.min(page * size, total).toLocaleString()} จาก ${total.toLocaleString()} รายการ`}
+              </span>
+              {pages > 1 && <span>· หน้า <b className="text-gray-700">{page}</b> จาก {pages}</span>}
+              <select value={size} onChange={(e) => { setSize(Number(e.target.value)); setPage(1); }}
+                className="h-8 rounded-lg border border-gray-200 bg-white px-2 text-xs font-semibold outline-none focus:border-primary cursor-pointer">
+                {[30, 50, 100].map((n) => <option key={n} value={n}>{n} ต่อหน้า</option>)}
+              </select>
+              {pages > 1 && (
+                <span className="ml-auto flex gap-1 items-center">
+                  <button type="button" style={{ minHeight: 0 }} disabled={page <= 1} onClick={() => goPage(page - 1)}
+                    className="w-9 h-9 rounded-lg border border-gray-200 bg-white cursor-pointer disabled:opacity-40">‹</button>
+                  {pageNums.map((n, i) => n === null
+                    ? <span key={`gap${i}`} className="px-1 text-gray-400">…</span>
+                    : <button key={n} type="button" style={{ minHeight: 0 }} onClick={() => goPage(n)}
+                        className={`min-w-9 h-9 px-2 rounded-lg border text-xs font-bold cursor-pointer ${
+                          n === page ? "bg-active-light border-active text-active" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}>
+                        {n}</button>)}
+                  <button type="button" style={{ minHeight: 0 }} disabled={page >= pages} onClick={() => goPage(page + 1)}
+                    className="w-9 h-9 rounded-lg border border-gray-200 bg-white cursor-pointer disabled:opacity-40">›</button>
+                </span>
+              )}
+            </div>
+          </>
         )}
       </div>
 
