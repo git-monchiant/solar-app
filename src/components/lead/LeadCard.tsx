@@ -190,31 +190,34 @@ export default function LeadCard({ lead, compact, onAssignChange, onOpen, slaFoo
             //   order (paid=0)   → ชำระเงิน
             //   order (paid≥1, no install_date) → รอนัดติดตั้ง
             //   install_date set → รอติดตั้ง
-            //   warranty/gridtie/closed → รับประกัน
-            const FLOW_STAGES = ["pre_survey", "booking", "survey", "quote", "order", "wait_install", "install", "installing", "warranty"] as const;
+            //   warranty         → รับประกัน
+            //   gridtie          → ขนานไฟ (แสดงสถานะอย่างเดียว ไม่มี SLA)
+            //   closed           → ✓ ครบทุกขั้น ไม่มีจุดปัจจุบัน
+            const FLOW_STAGES = ["pre_survey", "booking", "survey", "quote", "order", "wait_install", "install", "installing", "warranty", "gridtie"] as const;
             // ตำแหน่งบน flow อ่านจาก journey_step ที่ persist แล้ว (นิยามเดียวกับ
             // เมนูโมดูล/pipeline) — fallback derive แบบเก่าเฉพาะแถวที่ยังไม่มีค่า
-            const JOURNEY_TO_FLOW: Record<number, typeof FLOW_STAGES[number]> = {
+            const JOURNEY_TO_FLOW: Record<number, typeof FLOW_STAGES[number] | "closed"> = {
               100: "pre_survey", 200: "booking", 300: "survey", 400: "quote",
               500: "order", 600: "wait_install",
-              800: "warranty", 900: "warranty", 1000: "warranty",
+              800: "warranty", 900: "gridtie", 1000: "closed",
             };
             const main = getMainStatus(lead.status);
             const sub = getSubstep(lead.status);
             const paid = (lead.order_ready_count ?? lead.order_paid_count ?? 0) >= 1;
             const hasInstallDate = !!lead.install_date;
-            const isDone = ["warranty", "gridtie", "closed"].includes(main);
             const effective = (() => {
               // step 700 แยกด้วย sub: 710 รอติดตั้ง · 720/730 กำลังติดตั้ง/เสร็จ
               if (lead.journey_step === 700) return (lead.journey_sub ?? 710) >= 720 ? "installing" : "install";
               if (lead.journey_step != null && JOURNEY_TO_FLOW[lead.journey_step]) return JOURNEY_TO_FLOW[lead.journey_step];
-              if (isDone) return "warranty";
+              if (["warranty", "gridtie", "closed"].includes(main)) return main;
               if (hasInstallDate) return "install";                                          // schedule locked in
               if (paid && (main === "order" || main === "install")) return "wait_install";   // paid but no date yet
               if (main === "pre_survey" && sub > 0) return "booking";
               return main;
             })();
-            const currentIdx = FLOW_STAGES.indexOf(effective as typeof FLOW_STAGES[number]);
+            // ส่งมอบแล้ว = ผ่านทุกขั้น — index เลยตัวสุดท้ายไปหนึ่ง ทุกโหนดเป็น ✓
+            const currentIdx = effective === "closed" ? FLOW_STAGES.length
+              : FLOW_STAGES.indexOf(effective as typeof FLOW_STAGES[number]);
             if (currentIdx < 0) return null;
             const FLOW_LABELS: Record<string, string> = {
               pre_survey: "ติดตาม",
@@ -226,6 +229,7 @@ export default function LeadCard({ lead, compact, onAssignChange, onOpen, slaFoo
               install: "รอติดตั้ง",
               installing: "กำลังติดตั้ง",
               warranty: "รับประกัน",
+              gridtie: "ขนานไฟ",
             };
             return (
               <div className="hidden md:flex items-start mt-1" aria-label="Flow progress">
@@ -236,8 +240,9 @@ export default function LeadCard({ lead, compact, onAssignChange, onOpen, slaFoo
                   const hasStageSla = s === slaStage && !!lead.sla_status && !!lead.sla_due_at;
                   // นาฬิกาที่ยังเดินอยู่ของขั้นนี้มาก่อนเสมอ ประวัติที่ปิดไปแล้ว
                   // ไม่ต้องแย่งที่กับตัวเลขที่ยังนับสด
-                  // "installing" เป็น stage ของ flow v3 — ระบบ SLA ไม่มีขั้นนี้ (นับรวมใน install)
-                  const lateSla = hasStageSla || s === "installing" ? undefined : lateSlaStages[s];
+                  // "installing" / "gridtie" เป็น stage ของ flow v3 — ระบบ SLA ไม่มีสองขั้นนี้
+                  // (installing นับรวมใน install · CLOSE_LEAD ปิดตอนออกใบรับประกัน ก่อนถึงขนานไฟ)
+                  const lateSla = hasStageSla || s === "installing" || s === "gridtie" ? undefined : lateSlaStages[s];
                   const slaTone = hasStageSla ? SLA_TIMELINE_STYLE[lead.sla_status!]
                     : lateSla ? (lateSla.stillOpen ? SLA_TIMELINE_STYLE.breached : SLA_LATE_TIMELINE_STYLE)
                     : null;
