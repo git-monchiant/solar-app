@@ -133,22 +133,23 @@ export default function OmServicesPage() {
             onChange={(v) => { setOrigin(parseOrigin(v)); setPage(1); }}
             options={ORIGIN_OPTIONS}
           />
-          {/* ★ แผน 20261024-02: ล้างแล้วกี่ครั้ง — เลขข้างตัวเลือก = จำนวนบ้านในแท็บ/โครงการ/ที่มาที่เลือก (ไม่นับคำค้น) */}
+          {/* ★ แผน 20261024-02: ล้างแล้วกี่ครั้ง — เลขข้างตัวเลือก = จำนวนบ้านในแท็บ/โครงการ/ที่มาที่เลือก (ไม่นับคำค้น)
+              ★ 24 ต.ค. 69 ผู้ใช้ถาม "ซ้ำซ้อนกับช่องเรียงไหม" — ป้าย "ล้างไปแล้ว: …" ให้รู้ว่าเป็นตัวกรอง (ช่องเรียงขึ้นต้น "เรียง:") */}
           <Dropdown
             className="w-48 font-normal"
             value={wash}
             onChange={(v) => { setWash(v); setPage(1); }}
             options={[
-              { value: "", label: "ทุกจำนวนครั้งที่ล้าง" },
+              { value: "", label: "ล้างไปแล้ว: ทุกจำนวน" },
               { value: "0", label: `ยังไม่เคยล้าง · ${washCounts["0"] ?? 0}` },
-              { value: "1", label: `ล้างแล้ว 1 ครั้ง · ${washCounts["1"] ?? 0}` },
-              { value: "2", label: `ล้างแล้ว 2 ครั้ง · ${washCounts["2"] ?? 0}` },
-              { value: "3", label: `ล้างแล้ว 3 ครั้งขึ้นไป · ${washCounts["3"] ?? 0}` },
+              { value: "1", label: `ล้างไปแล้ว 1 ครั้ง · ${washCounts["1"] ?? 0}` },
+              { value: "2", label: `ล้างไปแล้ว 2 ครั้ง · ${washCounts["2"] ?? 0}` },
+              { value: "3", label: `ล้างไปแล้ว 3 ครั้งขึ้นไป · ${washCounts["3"] ?? 0}` },
             ]}
           />
           <div className="ml-auto flex items-center gap-2">
             <Dropdown
-              className="w-36"
+              className="w-52"
               value={sort}
               onChange={(v) => {
                 if (!v) return;
@@ -156,7 +157,8 @@ export default function OmServicesPage() {
                 setDir(SORTS.find((s) => s.k === v)?.def ?? "asc");
                 setPage(1);
               }}
-              options={SORTS.map((s) => ({ value: s.k, label: s.t }))}
+              // ★ 24 ต.ค. 69: ขึ้นต้น "เรียง:" แยกจากช่องกรองให้ชัด (ผู้ใช้ถามว่าซ้ำซ้อนกับช่อง "ล้างไปแล้ว" ไหม)
+              options={SORTS.map((s) => ({ value: s.k, label: `เรียง: ${s.t}` }))}
             />
             <Dropdown
               className="w-32"

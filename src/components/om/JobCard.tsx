@@ -115,7 +115,8 @@ export default function JobCard({ r, onOpen }: { r: Item; onOpen: () => void }) 
             ? <span className="px-2 py-0.5 rounded-md bg-teal-50 text-gray-700">สิทธิ์คงเหลือ <b className="text-primary-dark">{r.balance}</b> ครั้ง</span>
             : <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 font-bold">{r.new_manual ? "ลูกค้าทั่วไป" : "ไม่มีสิทธิ์คงเหลือ"}</span>}
           {r.last_wash
-            ? <span className="px-2 py-0.5 rounded-md bg-gray-100 text-gray-700">ล้างล่าสุด <b>{thD(r.last_wash)}</b> <span className="text-gray-400">({m} เดือน)</span></span>
+            // ★ 24 ต.ค. 69 (แผน 20261024-02): บอกจำนวนครั้งที่ล้างด้วย — ตัวกรอง "ล้างไปแล้ว" ต้องเห็นผลบนการ์ด (ui-rules: ตัวเลขต้องเห็นจริง)
+            ? <span className="px-2 py-0.5 rounded-md bg-gray-100 text-gray-700">ล้างแล้ว <b>{r.wash_count}</b> ครั้ง · ล่าสุด <b>{thD(r.last_wash)}</b> <span className="text-gray-400">({m} เดือน)</span></span>
             : <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 font-bold">ยังไม่เคยล้าง</span>}
           {/* ★ 23 ต.ค. 69 แผน 20261023-03: บ้านเข้ารายการ 30 วันก่อนครบรอบ — บอกวันครบรอบจริงให้รู้ว่าโทรล่วงหน้า (ยังไม่นัด) */}
           {dueIn !== null && dueIn > 0 && !r.scheduled_at && (
