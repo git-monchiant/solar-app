@@ -1999,7 +1999,6 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                                       <div key={i}>
                                         <label className="block text-xs text-gray-500 mb-1.5">{r.label}</label>
                                         <LoadProfileField
-                                          key={lead.load_profile ?? ""}
                                           value={lead.load_profile}
                                           acSplit={lead.ac_split}
                                           hasEv={hasEvCharger(lead.pre_appliances)}
