@@ -667,6 +667,8 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                   {item.project_name && <span className="font-bold text-gray-900">{item.project_name}</span>}
                   <span className="text-gray-300 mx-1.5">·</span>
                   <span className="font-mono tabular-nums">{item.phone || "ไม่มีเบอร์โทร"}</span>
+                  {/* ★ 24 ต.ค. 69 ผู้ใช้สั่งเพิ่มขนาด kW — ต่อจากเบอร์แบบการ์ดในรายการ (JobCard) · หลายระบบ = "2.00 + 3.00" */}
+                  {item.kwp_list && <><span className="text-gray-300 mx-1.5">·</span>ขนาด <b className="text-gray-900">{item.kwp_list}</b> kW</>}
                   <span className="text-gray-300 mx-1.5">·</span>
                   สิทธิ์คงเหลือ <b className="text-gray-900">{Math.max(0, item.balance)}</b> ครั้ง
                   <span className="text-gray-300 mx-1.5">·</span>
