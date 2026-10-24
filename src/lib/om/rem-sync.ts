@@ -39,7 +39,9 @@ async function writeOwner(tx: sql.Transaction, contractId: string, o: RemOwner) 
     .input("c", sql.NVarChar(200), o.firstName ?? null).input("d", sql.NVarChar(200), o.lastName ?? null)
     .input("e", sql.Bit, o.isMainCustomer ? 1 : 0)
     .input("f", sql.NVarChar(20), /^\d{13}$/.test(String(o.citizenID)) ? o.citizenID! : null)
-    .input("g", sql.NVarChar(40), o.passportID || null).input("h", sql.NVarChar(30), o.phoneNo1 || null)
+    // ★ 21 ต.ค. 69: คอลัมน์ phone ขยายเป็น 120 แล้วแต่ตรงนี้ยังประกาศ 30 — เจ้าของที่ยัด 3 เบอร์ (31–32 ตัว)
+    //   ทำ transaction ทั้งโครงการล้ม ("Transaction has been aborted") เจอที่ RM · SK2
+    .input("g", sql.NVarChar(40), o.passportID || null).input("h", sql.NVarChar(120), o.phoneNo1 || null)
     .input("i", sql.NVarChar(20), phoneKey(o.phoneNo1) || null).input("j", sql.NVarChar(200), o.email || null)
     .input("k", sql.NVarChar(100), o.nationalityName || null)
     .query(`INSERT INTO om_rem_owners (contract_id, customer_item_id, first_name, last_name, is_main, citizen_id, passport_id, phone, phone_key, email, nationality_name)
@@ -83,22 +85,46 @@ export async function syncProject(db: sql.ConnectionPool, projectId: string): Pr
       "unit_id, project_id, project_name, project_type, unit_number, house_number, house_number_key, phase_name, model_name, model_type_name, titledeed_area, raw",
       "@a,@b,@c,@d,@e,@f,@g,@h,@i,@j,@k,@l");
 
-    // เจ้าของ + โปรโมชัน ผูกกับสัญญา — ลบตามโครงการผ่าน contract_id ของโครงการนั้น
-    await new sql.Request(tx).input("p", sql.NVarChar(20), projectId).query(
-      `DELETE o FROM om_rem_owners o JOIN om_rem_transfers t ON t.contract_id = o.contract_id WHERE t.project_id = @p;
-       DELETE pr FROM om_rem_promotions pr JOIN om_rem_transfers t ON t.contract_id = pr.contract_id WHERE t.project_id = @p;`);
-
-    await replaceProject<RemTransfer>(tx, "om_rem_transfers", projectId, transfers,
-      (r, t) => r.input("a", sql.NVarChar(80), t.contractID).input("b", sql.NVarChar(20), t.projectID)
+    // ★★ 21 ต.ค. 69 (แผน 20261021-04): เดิมลบสัญญาทั้งโครงการแล้วใส่ใหม่ + ลบของแถม "ทุกแหล่ง" ของโครงการ
+    //   ⇒ ของแถมรายหลัง (itf ครบ) กับ BookingInfo (v2 — แหล่งเดียวที่มีโซลาร์ครบ) หายทุกครั้งที่ดึงทะเบียน
+    //      promo_synced_at / booking_checked_at ก็กลับเป็น NULL — รอบ 21 ต.ค. หายไป 7,248 สัญญาใน 66 โครงการ
+    //   ตอนนี้: อัปเดตทีละสัญญา (ค่าที่ขั้นอื่นเติมไว้ยังอยู่) · ลบเฉพาะสัญญาที่ REM ไม่ส่งมาแล้ว
+    for (const t of transfers) {
+      await new sql.Request(tx)
+        .input("a", sql.NVarChar(80), t.contractID).input("b", sql.NVarChar(20), t.projectID)
         .input("c", sql.NVarChar(200), t.projectName ?? null).input("d", sql.NVarChar(4), t.projectType ?? null)
         .input("e", sql.NVarChar(60), t.unitID ?? null).input("f", sql.NVarChar(60), t.unitNumber ?? null)
         .input("g", sql.NVarChar(100), t.houseNumber ?? null).input("h", sql.NVarChar(100), houseKey(t.houseNumber) || null)
         .input("i", sql.DateTimeOffset, thaiDate(t.transferDate)).input("j", sql.DateTimeOffset, thaiDate(t.condominiumRegisterDate))
         .input("k", sql.NVarChar(40), t.latitude || null).input("l", sql.NVarChar(40), t.longitude || null)
         // ★ ตัด owners กับ promotions ออกจาก raw — promotions มีราคาฝังอยู่ ซึ่งเราไม่เก็บ
-        .input("m", sql.NVarChar(sql.MAX), JSON.stringify({ ...t, owners: undefined, promotions: undefined })),
-      "contract_id, project_id, project_name, project_type, unit_id, unit_number, house_number, house_number_key, transfer_date, condo_register_date, latitude, longitude, raw",
-      "@a,@b,@c,@d,@e,@f,@g,@h,@i,@j,@k,@l,@m");
+        .input("m", sql.NVarChar(sql.MAX), JSON.stringify({ ...t, owners: undefined, promotions: undefined }))
+        .query(`UPDATE om_rem_transfers SET project_id = @b, project_name = @c, project_type = @d, unit_id = @e,
+                  unit_number = @f, house_number = @g, house_number_key = @h, transfer_date = @i, condo_register_date = @j,
+                  latitude = @k, longitude = @l, raw = @m, synced_at = SYSDATETIMEOFFSET()
+                WHERE contract_id = @a;
+                IF @@ROWCOUNT = 0
+                  INSERT INTO om_rem_transfers (contract_id, project_id, project_name, project_type, unit_id, unit_number,
+                    house_number, house_number_key, transfer_date, condo_register_date, latitude, longitude, raw)
+                  VALUES (@a,@b,@c,@d,@e,@f,@g,@h,@i,@j,@k,@l,@m)`);
+    }
+
+    // สัญญาที่ REM ไม่ส่งมาแล้ว (ยกเลิก/ย้ายโครงการ) — ลบพร้อมเจ้าของ+ของแถม
+    // เจ้าของของสัญญาที่ยังอยู่ ลบแล้วเขียนใหม่ข้างล่าง (ยิงทุกรอบได้ครบ)
+    // ของแถม: ลบเฉพาะ itf ของสัญญาที่ยังไม่เคยยิงรายหลัง แล้วใส่ชุดทั้งโครงการแทน — ชุดรายหลัง (ครบกว่า) กับ v2 ไม่แตะ
+    const ids = JSON.stringify(transfers.map((t) => String(t.contractID)));
+    const keep = `(SELECT value FROM OPENJSON(@ids))`;
+    const rs = await new sql.Request(tx).input("p", sql.NVarChar(20), projectId).input("ids", sql.NVarChar(sql.MAX), ids).query(`
+      DELETE o FROM om_rem_owners o JOIN om_rem_transfers t ON t.contract_id = o.contract_id
+       WHERE t.project_id = @p AND t.contract_id NOT IN ${keep};
+      DELETE pr FROM om_rem_promotions pr JOIN om_rem_transfers t ON t.contract_id = pr.contract_id
+       WHERE t.project_id = @p AND t.contract_id NOT IN ${keep};
+      DELETE FROM om_rem_transfers WHERE project_id = @p AND contract_id NOT IN ${keep};
+      DELETE FROM om_rem_owners WHERE contract_id IN ${keep};
+      DELETE pr FROM om_rem_promotions pr JOIN om_rem_transfers t ON t.contract_id = pr.contract_id
+       WHERE t.contract_id IN ${keep} AND t.promo_synced_at IS NULL AND pr.source = N'itf';
+      SELECT contract_id FROM om_rem_transfers WHERE contract_id IN ${keep} AND promo_synced_at IS NULL;`);
+    const promoFromProject = new Set(rs.recordset.map((x) => String(x.contract_id)));
 
     // ★★ 9 ก.ย. 69 — ยิงทั้งโครงการได้ owners ไม่ครบ (อาการเดียวกับ promotions ที่เจอ 2 ก.ย.)
     //   หลักฐาน LIFK6: 45/216 กับ 45/209 ได้ 0 คน · 45/215 ได้ 4 คนทั้งที่มีจริง 2 (ส่งซ้ำ)
@@ -137,10 +163,13 @@ export async function syncProject(db: sql.ConnectionPool, projectId: string): Pr
     // ── โปรโมชันที่แถมตอนขาย (★ ที่เดียวที่บอกว่าแถมโซลาร์ไหม)
     //    REM ส่งแถวซ้ำหลายแถวต่อโปรฯ เดียว — กันซ้ำด้วยคีย์ก่อนค่อย insert
     let promotions = 0;
+    const seen = new Set<string>();
     for (const t of transfers) {
-      const seen = new Set<string>();
+      // ยิงรายหลังไปแล้ว = มีชุดที่ครบกว่าอยู่ ไม่เอาชุดทั้งโครงการไปทับ
+      if (!promoFromProject.has(String(t.contractID))) continue;
       for (const p of t.promotions ?? []) {
-        const key = `${p.pDetailID ?? 0}|${p.promotionID ?? ""}`;
+        // คีย์รวมเลขสัญญา — ถ้า REM ส่งสัญญาเดียวมา 2 แถว จะได้ไม่ชน PK จนทั้งโครงการล้ม
+        const key = `${t.contractID}|${p.pDetailID ?? 0}|${p.promotionID ?? ""}`;
         if (seen.has(key)) continue;
         seen.add(key);
         await new sql.Request(tx)
@@ -172,6 +201,10 @@ export async function syncProject(db: sql.ConnectionPool, projectId: string): Pr
 export async function logSync(
   db: sql.ConnectionPool, kind: string, scope: string, actor: number | null,
 ): Promise<number> {
+  // ★ 21 ต.ค. 69: คอลัมน์ scope ยาวได้ 100 ตัว — ตัวตั้งเวลาส่งรหัส 116 โครงการมา (675 ตัว) mssql throw ทันที
+  //   รอบ REM อัตโนมัติล้มเงียบตั้งแต่ตรงนี้ ไม่มีแถวบันทึก · เชื่อมกลับ/ของแถม/เตือนนัดหายตามไปด้วย
+  //   รายโครงการดูได้ที่ om_rem_scan_log อยู่แล้ว ตัดให้พอดีคอลัมน์ได้
+  if (scope.length > 100) scope = scope.slice(0, 99) + "…";
   const r = await db.request().input("k", sql.NVarChar(30), kind).input("s", sql.NVarChar(100), scope)
     .input("u", sql.Int, actor)
     .query(`INSERT INTO om_sync_log (kind, scope, status, actor_user_id) OUTPUT INSERTED.id VALUES (@k, @s, 'running', @u)`);
@@ -204,8 +237,9 @@ async function writePromos(db: sql.ConnectionPool, contractId: string, promos: R
   const tx = new sql.Transaction(db);
   await tx.begin();
   try {
+    // ★ 21 ต.ค. 69: ลบเฉพาะ itf — เดิมลบทุกแหล่ง ยิงรายหลังหลัง BookingInfo แล้วของแถม v2 (โซลาร์ครบ) หาย
     await new sql.Request(tx).input("c", sql.NVarChar(80), contractId)
-      .query(`DELETE FROM om_rem_promotions WHERE contract_id = @c`);
+      .query(`DELETE FROM om_rem_promotions WHERE contract_id = @c AND source = N'itf'`);
     const seen = new Set<string>();
     let n = 0;
     for (const p of promos) {
