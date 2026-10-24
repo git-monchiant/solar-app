@@ -4,7 +4,7 @@
 # Usage:  ./deploy_prd.sh
 # Requires:  sshpass, tar, ssh
 #
-# Flow:  commit reminder → tar+stream source → docker compose up -d --build → smoke test
+# Flow:  commit reminder → tar+stream source → docker compose build --pull → up -d → smoke test
 #
 # WARNING: This deploys to live production at https://solar.senadigital.com.
 # Real customers will see the change. The host was originally UAT but has been
@@ -158,7 +158,7 @@ echo "🔨 Building + restarting container on prod ..."
 sshpass -p "${PRD_PASS}" ssh \
   -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
   -p "${PRD_PORT}" "${PRD_USER}@${PRD_HOST}" \
-  "set -o pipefail; cd ${PRD_DIR} && docker compose up -d --build 2>&1 | tail -5" \
+  "set -o pipefail; cd ${PRD_DIR} && { docker compose build --pull 2>&1 | tail -5 || { echo '⚠️  ดึง base image ใหม่ไม่สำเร็จ (DNS/Docker Hub) — build ด้วย image ที่มีในเครื่องแทน'; docker compose build 2>&1 | tail -5; }; } && docker compose up -d 2>&1 | tail -5 && echo \"Node ใน container: \$(docker exec solar-app node -v)\"" \
   || { echo "❌ Build/restart บน prod ล้มเหลว — container เดิมยังรันอยู่ prod จึงยังเป็นเวอร์ชันก่อนหน้า"; \
        echo "   ดู log เต็ม: ssh -p ${PRD_PORT} ${PRD_USER}@${PRD_HOST} 'cd ${PRD_DIR} && docker compose build'"; exit 1; }
 

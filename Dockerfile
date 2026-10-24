@@ -3,14 +3,20 @@
 # at build time, which hard-fails whenever the prod host's resolver (systemd-
 # resolved stub at 127.0.0.53) flakes. This Dockerfile uses only standard
 # features, so the daemon's built-in frontend handles it with no network pull.
-# Multi-stage build for Next.js 16 (standalone output). Pins node:20-slim so
-# native modules (canvas, puppeteer) build without fighting musl on alpine.
+# Multi-stage build for Next.js 16 (standalone output). Debian slim (not alpine)
+# so native modules (canvas, puppeteer) build without fighting musl.
+#
+# Node 24 LTS, pinned to Debian bookworm — the same Debian as the previous
+# node:20-slim, so every apt package name below stays valid; only the Node
+# version moves. Node 20 reached end-of-life with no patch for the October 2026
+# security release (CVE-2026-111497, Brotli decompression RCE). deploy_prd.sh
+# builds with --pull so each deploy picks up the newest 24.x patch.
 # Final image listens on port 80 because the UAT gateway forwards there.
 
 ###############################################################################
 # 1. deps — install production + dev deps once; cached by package-lock.json
 ###############################################################################
-FROM node:20-slim AS deps
+FROM node:24-bookworm-slim AS deps
 WORKDIR /app
 # Build tools + libs needed by `canvas` (cairo/pango/giflib/jpeg) and anything
 # else that still ships with node-gyp. python3 is required by node-gyp itself.
@@ -26,7 +32,7 @@ RUN npm ci
 ###############################################################################
 # 2. builder — compile Next into `.next/standalone`
 ###############################################################################
-FROM node:20-slim AS builder
+FROM node:24-bookworm-slim AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -39,7 +45,7 @@ RUN npm run build
 ###############################################################################
 # 3. runner — minimal runtime image (no dev build tools, no devDependencies)
 ###############################################################################
-FROM node:20-slim AS runner
+FROM node:24-bookworm-slim AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
