@@ -21,7 +21,7 @@ import ReceiptModal from "../ReceiptModal";
 import { buildAppointmentFlex } from "@/lib/utils/line-flex";
 import { formatSlotsRange } from "@/lib/time-slots";
 import { useSubStep } from "@/lib/hooks/useSubStep";
-import { formatTHB as formatPrice } from "@/lib/utils/formatters";
+import { formatTHB as formatPrice, formatNumber } from "@/lib/utils/formatters";
 import DoneSection from "./DoneSection";
 
 const DEPOSIT_AMOUNT = 1000;
@@ -456,7 +456,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
                   <div className="flex flex-wrap gap-1.5 mt-1">
                     {AC_BTU_SIZES.filter(b => acMap[b] > 0).map(b => (
                       <span key={b} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-violet-50 text-xs font-mono text-violet-700">
-                        {b.toLocaleString()} BTU <span className="font-bold">× {acMap[b]}</span>
+                        {formatNumber(b)} BTU <span className="font-bold">× {acMap[b]}</span>
                       </span>
                     ))}
                   </div>

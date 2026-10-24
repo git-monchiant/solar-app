@@ -1,8 +1,10 @@
 "use client";
 import { useEffect, useState } from "react";
+import { formatTHB } from "@/lib/utils/formatters";
 import { useParams } from "next/navigation";
 import QRCode from "qrcode";
 import { formatSlotsRange } from "@/lib/time-slots";
+import Loading from "@/components/ui/Loading";
 import {
   ROOF_MATERIAL_LABEL as ROOF_MATERIAL_MAP,
   ORIENTATION_LABEL as ORIENTATION_MAP,
@@ -69,6 +71,7 @@ interface Lead {
   survey_db_distance_m: number | null;
   survey_wants_battery: string | null;
   survey_appliances: string | null;
+  pre_appliances: string | null;
   // Roof / house
   survey_roof_material: string | null;
   survey_roof_orientation: string | null;
@@ -137,13 +140,13 @@ export default function SurveyPdfPage() {
       .catch(err => { console.error("QR gen failed", err); setLocQr(null); });
   }, [d?.lead.survey_lat, d?.lead.survey_lng]);
 
-  if (!d) return <div className="flex items-center justify-center h-screen"><div className="w-8 h-8 border-2 border-primary/30 border-t-primary animate-spin" /></div>;
+  if (!d) return <Loading />;
 
   const { lead, packages } = d;
 
   const docNo = `SRV${new Date().getFullYear().toString().slice(-2)}${String(lead.id).padStart(4, "0")}`;
   const slotTime = lead.survey_time_slot ? (formatSlotsRange(lead.survey_time_slot) || lead.survey_time_slot) : "—";
-  const appliances = (lead.survey_appliances || "").split(",").filter(Boolean).map(v => APPLIANCE_MAP[v] || v);
+  const appliances = (lead.pre_appliances || "").split(",").filter(Boolean).map(v => APPLIANCE_MAP[v] || v);
 
   const photoSlots: { url: string | null; label: string }[] = [
     { url: lead.survey_photo_building_url, label: "อาคาร / ตัวบ้าน" },
@@ -253,7 +256,7 @@ export default function SurveyPdfPage() {
                         { label: "L-N", value: lead.survey_voltage_ln != null ? `${lead.survey_voltage_ln} V` : "—" },
                         { label: "L-L", value: lead.survey_voltage_ll != null ? `${lead.survey_voltage_ll} V` : "—" },
                       ]} />
-                      <Field label="ค่าไฟเฉลี่ย/เดือน" value={lead.survey_monthly_bill != null ? `${lead.survey_monthly_bill.toLocaleString()} บาท` : "—"} />
+                      <Field label="ค่าไฟเฉลี่ย/เดือน" value={lead.survey_monthly_bill != null ? `${formatTHB(lead.survey_monthly_bill)} บาท` : "—"} />
                       <GroupRow label="Consumer Unit / MDB" items={[
                         { label: "ยี่ห้อ", value: lead.survey_mdb_brand || "—" },
                         { label: "รุ่น", value: lead.survey_mdb_model || "—" },
@@ -381,7 +384,7 @@ export default function SurveyPdfPage() {
                                 <td className="px-3 py-1.5">{p.solar_panels > 0 ? `${p.solar_panels} × ${p.panel_watt}W` : "—"}</td>
                                 <td className="px-3 py-1.5">{p.inverter_kw > 0 ? `${p.inverter_brand} ${p.inverter_kw}kW` : "—"}</td>
                                 <td className="px-3 py-1.5">{p.has_battery ? `${p.battery_brand || ""} ${p.battery_kwh}kWh`.trim() : "—"}</td>
-                                <td className="py-1.5 text-right font-mono" style={{ paddingLeft: "12px", paddingRight: "32px" }}>{p.price.toLocaleString()}</td>
+                                <td className="py-1.5 text-right font-mono" style={{ paddingLeft: "12px", paddingRight: "32px" }}>{formatTHB(p.price)}</td>
                               </tr>
                             ))}
                           </tbody>

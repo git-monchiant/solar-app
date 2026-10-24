@@ -32,11 +32,10 @@ export const STATUS_CONFIG: Record<string, { label: string; color: string; bg: s
   returned:      { label: "ส่งกลับ Seeker", color: "bg-amber-500",   bg: "bg-amber-50",   text: "text-amber-700",   icon: "M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3",  description: "Returned — seeker follows up again",    action: "Returned" },
 };
 
-// Stage code = the canonical step the lead currently sits in. Persisted on
-// leads.stage_code so dashboards / pipeline / reports can filter by stage
-// without re-deriving from status + payments + install_date every read.
-// Update happens in /api/leads/[id] PATCH whenever the underlying fields
-// change; backfilled by migration 021 for existing rows.
+// Legacy stage code ("MM-S") — ถูกแทนที่ด้วยคอลัมน์ journey ที่ persist จริงแล้ว
+// (leads.journey_step / journey_sub — กติกาอยู่ src/lib/journey-rules.mjs,
+// อัพเดตโดย refreshJourney ทุกจุดเขียน + nightly backfill_journey.mjs)
+// ฟังก์ชันนี้เหลือไว้เป็น fallback ของ BI เท่านั้น — โค้ดใหม่ให้ query journey_* ตรงๆ
 //
 //   01-0  ติดตาม                 status=pre_survey
 //   02-1  จอง รอยืนยัน            status=pre_survey-01

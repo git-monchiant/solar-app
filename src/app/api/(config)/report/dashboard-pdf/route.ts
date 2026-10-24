@@ -19,12 +19,15 @@ export async function GET(req: NextRequest) {
     // Puppeteer is in-process — talk to the server over plain http/localhost
     // instead of the (possibly-HTTPS, possibly-ngrok) external origin so we
     // don't hit SSL errors or extra latency.
-    const internalPort = process.env.PORT || "3000";
+    // ★ 15 ต.ค. 69: dev รันด้วย --port 3020/3030 โดยไม่ตั้ง PORT → เดิมยิงไป 3000 (คนละเซิร์ฟเวอร์/ไม่มี)
+    //   ใช้พอร์ตของคำขอนี้แทนเมื่อไม่ได้ตั้ง PORT · prod ที่ตั้ง PORT ไว้ทำงานเหมือนเดิม
+    const internalPort = process.env.PORT || new URL(req.url).port || "3000";
     // ?path= picks which dashboard to capture. Whitelist so we never let a
     // request point puppeteer at an arbitrary URL.
     const searchParams = new URL(req.url).searchParams;
     const rawPath = searchParams.get("path") || "/dashboard";
-    const ALLOWED = new Set(["/dashboard", "/dashboard-dev", "/dashboard-customer"]);
+    // /om/dashboard = ภาพรวม O&M (แผน 20261015-02)
+    const ALLOWED = new Set(["/dashboard", "/dashboard-dev", "/dashboard-customer", "/om/dashboard"]);
     const path = ALLOWED.has(rawPath) ? rawPath : "/dashboard";
     // Forward the global filter the user has applied on screen so the captured
     // PDF mirrors their view. Embed the filter in the URL query (the dashboard
@@ -45,6 +48,9 @@ export async function GET(req: NextRequest) {
     }
     const dashboardUrl = dashUrl.toString();
     const userId = String(gate.userId);
+    // role ที่คนกดกำลังใช้อยู่ — หน้าที่ซ่อนบางส่วนตาม role (การ์ดมูลค่างาน O&M) ต้องเห็นเท่ากับบนจอ
+    //   ไม่ส่งมา = ไม่ตั้ง (เหมือนเดิม) · ฝั่ง API ยังตรวจกับ role ที่ user มีจริงทุกคำขอ
+    const activeRoles = req.headers.get("x-active-roles") || "";
 
     browser = await puppeteer.launch({
       headless: true,
@@ -60,14 +66,15 @@ export async function GET(req: NextRequest) {
     // src/lib/api.ts. Seed localStorage before the first navigation so the
     // page's apiFetch calls authenticate as the logged-in user. Also seed the
     // dashboard's date-range filter keys so the report renders the same slice.
-    await page.evaluateOnNewDocument((seed: { uid: string; from: string; to: string; mode: string }) => {
+    await page.evaluateOnNewDocument((seed: { uid: string; from: string; to: string; mode: string; roles: string }) => {
       try {
         localStorage.setItem("userId", seed.uid);
+        if (seed.roles) localStorage.setItem("activeRoles", seed.roles);
         if (seed.from) localStorage.setItem("dashboard.dateFrom", seed.from);
         if (seed.to)   localStorage.setItem("dashboard.dateTo",   seed.to);
         localStorage.setItem("dashboard.filterMode", seed.mode);
       } catch {}
-    }, { uid: userId, from: filterFrom, to: filterTo, mode: filterMode });
+    }, { uid: userId, from: filterFrom, to: filterTo, mode: filterMode, roles: activeRoles });
 
     // domcontentloaded is more reliable than networkidle0 here — dev HMR
     // keeps reconnecting websockets and networkidle0 never settles.
@@ -80,8 +87,10 @@ export async function GET(req: NextRequest) {
     );
     // Wait for the LAST section to mount too (3 reason cards at the bottom)
     // so the screenshot doesn't crop the dashboard mid-load.
+    // หน้าที่บอกเองว่าพร้อม (data-pdf-ready · ภาพรวม O&M มี section ไม่ถึง 5 ก้อน) ไม่ต้องรอนับ div จนหมดเวลา
     await page.waitForFunction(
-      () => document.querySelectorAll(".dashboard-pdf-content > div").length >= 5,
+      () => !!document.querySelector(".dashboard-pdf-content [data-pdf-ready]")
+        || document.querySelectorAll(".dashboard-pdf-content > div").length >= 5,
       { timeout: 30000, polling: 500 },
     ).catch(() => {});
     // After mount, give charts a moment to settle so the screenshot isn't

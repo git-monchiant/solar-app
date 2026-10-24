@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import puppeteer from "puppeteer";
+import { formatNumber } from "@/lib/utils/formatters";
 import { getDb } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 
@@ -18,7 +19,7 @@ function escapeHtml(s: string): string {
 }
 
 function renderReportHtml(k: Kpi, asOfDate: string): string {
-  const fmt = (n: number) => n.toLocaleString("en");
+  const fmt = (n: number) => formatNumber(n);
   const cell = (sum: number, today: number) =>
     `<div class="big">${fmt(sum)}</div><div class="sub">วันนี้ +${fmt(today)}</div>`;
 

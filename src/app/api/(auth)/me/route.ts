@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql } from "@/lib/db";
 import { getUserIdFromReq } from "@/lib/auth";
+import { SALES_LEADS } from "@/lib/lead-scope";
 
 export async function GET(req: NextRequest) {
   try {
@@ -27,9 +28,9 @@ export async function GET(req: NextRequest) {
       .input("first_day", sql.DateTime2, firstDay)
       .query(`
         SELECT
-          (SELECT COUNT(*) FROM leads WHERE created_at >= @first_day) as new_leads,
-          (SELECT COUNT(*) FROM leads WHERE pre_booked_at >= @first_day) as booked,
-          (SELECT COUNT(*) FROM leads WHERE status = 'order' AND updated_at >= @first_day) as won
+          (SELECT COUNT(*) FROM ${SALES_LEADS} leads WHERE created_at >= @first_day) as new_leads,
+          (SELECT COUNT(*) FROM ${SALES_LEADS} leads WHERE pre_booked_at >= @first_day) as booked,
+          (SELECT COUNT(*) FROM ${SALES_LEADS} leads WHERE status = 'order' AND updated_at >= @first_day) as won
       `);
 
     return NextResponse.json({ ...user.recordset[0], roles, stats: stats.recordset[0], db_name: process.env.DB_NAME || "solardb" });

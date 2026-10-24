@@ -7,6 +7,7 @@
 // never break the underlying mutation.
 
 import { sql } from "@/lib/db";
+import { formatTHB } from "@/lib/utils/formatters";
 import type { ConnectionPool, Transaction } from "mssql";
 
 type DbExec = ConnectionPool | Transaction;
@@ -58,7 +59,7 @@ export function paymentStepLabel(slipField: string, _stepNo?: number): string {
 
 export function fmtBaht(n: number | null | undefined): string {
   if (n == null || isNaN(Number(n))) return "-";
-  return `฿${Number(n).toLocaleString("en-US")}`;
+  return `฿${formatTHB(Number(n))}`;
 }
 
 export function fmtThaiDate(d: string | Date | null | undefined): string {

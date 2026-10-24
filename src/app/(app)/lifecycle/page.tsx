@@ -8,10 +8,11 @@ import { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx-js-style";
 import Header from "@/components/layout/Header";
 import { STATUS_CONFIG, getMainStatus, getStatusLabel } from "@/lib/constants/statuses";
-import { formatThaiDateShort } from "@/lib/utils/formatters";
+import { formatTHB, formatThaiDateShort } from "@/lib/utils/formatters";
 import { LeadLink } from "@/components/lead/LeadLink";
 import { getSourceStyle } from "@/lib/source-tag";
 import { hasRole, useActiveRoles } from "@/lib/roles";
+import Loading from "@/components/ui/Loading";
 
 interface Row {
   id: number;
@@ -94,7 +95,7 @@ function depositDisplay(r: { order_installments: string | null; order_total: num
   const p = depositPct(r.order_installments);
   if (p == null) return "";
   const amt = r.order_total ? Math.round((r.order_total * p) / 100) : null;
-  return amt != null ? `${amt.toLocaleString()} (${p}%)` : `${p}%`;
+  return amt != null ? `${formatTHB(amt)} (${p}%)` : `${p}%`;
 }
 type Tri = "any" | "yes" | "no";
 
@@ -667,9 +668,7 @@ export default function LifecyclePage() {
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center h-64">
-            <div className="w-8 h-8 border-3 border-gray-200 border-t-gray-900 rounded-full animate-spin" />
-          </div>
+          <Loading />
         ) : (
           <div className="border border-gray-200 rounded-lg bg-white">
             <table className="text-xxs table-fixed w-full">

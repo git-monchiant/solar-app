@@ -26,6 +26,8 @@ interface Props {
   tabs: ListPageTab[];
   activeTab: string;
   onTabChange: (key: string) => void;
+  /** เนื้อหาฝั่งซ้ายของแถว tab/ตัวกรอง — ใช้แสดงจำนวนรายการเมื่อไม่มี tab (โหมดโมดูล) */
+  tabsLeft?: React.ReactNode;
   tabsRight?: React.ReactNode;
   actionHref?: string;
   actionLabel?: string;
@@ -43,6 +45,7 @@ export default function ListPageHeader({
   tabs,
   activeTab,
   onTabChange,
+  tabsLeft,
   tabsRight,
   actionLabel,
   actionIcon,
@@ -66,9 +69,9 @@ export default function ListPageHeader({
   return (
     <Header title={title} subtitle={subtitle} backHref={backHref}>
       {/* Search + Action */}
-      <div className="px-5 pb-3 flex gap-2">
+      <div className="px-5 pb-2 flex gap-2">
         <div className="relative flex-1">
-          <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
           </svg>
           <input
@@ -76,14 +79,14 @@ export default function ListPageHeader({
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
             placeholder={searchPlaceholder}
-            className="w-full h-11 pl-11 pr-4 rounded-full border border-white/30 bg-white/30 backdrop-blur-sm text-sm text-gray-800 placeholder-gray-500 focus:outline-none focus:bg-white/60 focus:border-white/60 transition-all"
+            className="w-full h-8 pl-10 pr-4 rounded-full border border-gray-200 bg-gray-50 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:bg-white focus:border-gray-300 transition-all"
           />
         </div>
         {actionLabel && onAction && (
           <button
             type="button"
             onClick={onAction}
-            className="shrink-0 h-11 px-4 rounded-full bg-white/30 backdrop-blur-sm border border-white/30 text-sm font-semibold text-gray-800 hover:bg-white/60 transition-all"
+            className="shrink-0 h-8 px-4 rounded-full bg-gray-50 border border-gray-200 text-sm font-semibold text-gray-800 hover:bg-gray-100 transition-all"
           >
             {actionLabel}
           </button>
@@ -92,15 +95,16 @@ export default function ListPageHeader({
           <button
             type="button"
             onClick={onAction}
-            className="shrink-0 w-11 h-11 text-gray-700 hover:text-gray-900 transition-colors flex items-center justify-center"
+            className="shrink-0 w-8 h-8 text-gray-700 hover:text-gray-900 transition-colors flex items-center justify-center"
           >
             {actionIcon}
           </button>
         )}
       </div>
 
-      {/* Tabs */}
-      <div className="flex items-center px-5">
+      {/* Tabs / filter row — เส้นจางคั่นจากโซนค้นหาด้านบน */}
+      <div className="flex items-center px-5 border-t border-gray-100">
+      {tabsLeft && <div className="shrink-0 py-1.5 mr-3 text-sm font-semibold text-gray-600">{tabsLeft}</div>}
       <div ref={tabsRef} className="flex-1 flex overflow-x-auto overflow-y-hidden scrollbar-hide overscroll-x-contain touch-pan-x">
         {tabs.map((t, i) => (
           <Fragment key={t.key}>
@@ -125,7 +129,7 @@ export default function ListPageHeader({
           </Fragment>
         ))}
       </div>
-      {tabsRight && <div className="shrink-0 ml-2">{tabsRight}</div>}
+      {tabsRight && <div className="shrink-0 ml-2 py-1.5">{tabsRight}</div>}
       </div>
     </Header>
   );

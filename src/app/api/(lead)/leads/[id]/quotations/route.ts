@@ -50,12 +50,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       ORDER BY r.reminded_at DESC, r.id DESC
     ) reminder
     LEFT JOIN users reminder_user ON reminder_user.id = reminder.reminded_by
-    WHERE q.lead_id=@lead_id ORDER BY q.option_no, q.revision_no DESC;
+    WHERE q.lead_id=@lead_id AND q.om_booking_id IS NULL ORDER BY q.option_no, q.revision_no DESC;
     SELECT qi.*, pi.package_id source_package_id
     FROM quotation_items qi
     JOIN quotations q ON q.id=qi.quotation_id
     LEFT JOIN package_items pi ON pi.id=qi.package_item_id
-    WHERE q.lead_id=@lead_id ORDER BY qi.quotation_id, qi.sort_order, qi.id;
+    WHERE q.lead_id=@lead_id AND q.om_booking_id IS NULL ORDER BY qi.quotation_id, qi.sort_order, qi.id;
   `);
   const recordsets = result.recordsets as unknown as Array<typeof result.recordset>;
   const items = recordsets[1] || [];
@@ -104,7 +104,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     `);
     if (!lead.recordset[0]) { await tx.rollback(); return NextResponse.json({ error: "ไม่พบ Lead" }, { status: 404 }); }
     // Ownership guard removed — any QUOTATION_MANAGE_ROLES member may create for any lead.
-    const existing = await new sql.Request(tx).input("lead_id", sql.Int, leadId).input("option_no", sql.Int, optionNo).query(`SELECT TOP 1 id,status,revision_no FROM quotations WHERE lead_id=@lead_id AND option_no=@option_no ORDER BY revision_no DESC`);
+    const existing = await new sql.Request(tx).input("lead_id", sql.Int, leadId).input("option_no", sql.Int, optionNo).query(`SELECT TOP 1 id,status,revision_no FROM quotations WHERE lead_id=@lead_id AND option_no=@option_no AND om_booking_id IS NULL ORDER BY revision_no DESC`);
     if (existing.recordset[0] && existing.recordset[0].status !== "cancelled") { await tx.rollback(); return NextResponse.json({ error: "ชุดนี้มีใบเสนอราคาแล้ว กรุณาแก้ไขใบเดิม" }, { status: 409 }); }
     const revisionNo = existing.recordset[0]
       ? Number(existing.recordset[0].revision_no) + 1

@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mockup — Module-base Navigation (v3)</title>
+<style>
+  :root { --primary:#1ed0c7; --primary-dark:#18b5ad; --active:#8b5cf6; }
+  * { margin:0; padding:0; box-sizing:border-box; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+  body { background:#f3f4f6; color:#111827; min-height:100vh; }
+  .note { background:#fef3c7; color:#92400e; font-size:12px; text-align:center; padding:6px; letter-spacing:.05em; font-weight:600; }
+  .wrap { max-width:1100px; margin:0 auto; padding:24px 20px 60px; }
+  .view { display:none; } .view.on { display:block; }
+  .topbar { display:flex; align-items:center; gap:12px; margin-bottom:20px; }
+  .logo { width:38px; height:38px; border-radius:10px; background:linear-gradient(135deg,var(--primary),var(--primary-dark)); display:flex; align-items:center; justify-content:center; color:#fff; font-weight:800; font-size:15px; cursor:pointer; }
+  .topbar h1 { font-size:18px; font-weight:800; }
+  .topbar .sub { font-size:11px; color:#6b7280; letter-spacing:.08em; text-transform:uppercase; }
+  .crumb { margin-left:auto; font-size:12px; color:#6b7280; cursor:pointer; }
+  .crumb:hover { color:var(--primary-dark); }
+
+  /* HUB */
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:14px; }
+  .card { background:#fff; border:1px solid #e5e7eb; border-radius:16px; padding:18px 16px 14px; cursor:pointer; transition:.15s; position:relative; }
+  .card:hover { border-color:var(--primary); box-shadow:0 4px 14px rgba(30,208,199,.15); transform:translateY(-1px); }
+  .card.soon { opacity:.55; cursor:default; }
+  .card.soon:hover { border-color:#e5e7eb; box-shadow:none; transform:none; }
+  .card .ic { width:40px; height:40px; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:19px; margin-bottom:10px; }
+  .card h3 { font-size:15px; font-weight:800; margin-bottom:3px; }
+  .card p { font-size:12px; color:#6b7280; line-height:1.45; }
+  .badge { position:absolute; top:14px; right:14px; background:#eef2ff; color:#4338ca; font-size:11px; font-weight:700; border-radius:999px; padding:2px 9px; }
+  .badge.hot { background:#fee2e2; color:#b91c1c; }
+  .soon-tag { position:absolute; top:14px; right:14px; background:#f3f4f6; color:#9ca3af; font-size:10px; font-weight:700; border-radius:999px; padding:2px 8px; letter-spacing:.05em; }
+
+  /* MODULE DESKTOP */
+  .mod { display:flex; gap:16px; align-items:flex-start; }
+  .rail { width:220px; flex-shrink:0; background:#fff; border:1px solid #e5e7eb; border-radius:16px; padding:10px; }
+  .rail .mh { display:flex; align-items:center; gap:8px; padding:8px 10px 12px; border-bottom:1px solid #f3f4f6; margin-bottom:8px; }
+  .rail .mh .ic { width:30px; height:30px; border-radius:9px; font-size:15px; display:flex; align-items:center; justify-content:center; }
+  .rail .mh b { font-size:14px; }
+  .ritem { display:flex; align-items:center; gap:9px; padding:9px 10px; border-radius:10px; font-size:13.5px; color:#374151; cursor:pointer; font-weight:600; }
+  .ritem:hover { background:#f9fafb; }
+  .ritem.on { background:#ecfeff; color:var(--primary-dark); }
+  .ritem .n { margin-left:auto; font-size:11px; background:#f3f4f6; color:#6b7280; border-radius:999px; padding:1px 8px; font-weight:700; }
+  .ritem.on .n { background:var(--primary); color:#fff; }
+  .ritem .dot { width:7px; height:7px; border-radius:99px; background:#d1d5db; flex-shrink:0; }
+  .ritem.on .dot { background:var(--primary); }
+  .ritem.home { color:#6b7280; border-top:1px solid #f3f4f6; margin-top:8px; border-radius:0 0 10px 10px; }
+  .content { flex:1; }
+  .content .head { display:flex; align-items:baseline; gap:10px; margin-bottom:12px; }
+  .content .head h2 { font-size:17px; font-weight:800; }
+  .content .head span { font-size:12px; color:#6b7280; }
+  .lead { background:#fff; border:1px solid #e5e7eb; border-radius:14px; padding:13px 16px; margin-bottom:10px; display:flex; align-items:center; gap:12px; }
+  .lead .av { width:36px; height:36px; border-radius:99px; background:#ecfeff; color:var(--primary-dark); font-weight:800; font-size:13px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .lead b { font-size:14px; display:block; }
+  .lead small { font-size:12px; color:#6b7280; }
+  .chip { margin-left:auto; font-size:11px; font-weight:700; border-radius:999px; padding:3px 10px; flex-shrink:0; }
+  .c-green { background:#ecfdf5; color:#047857; } .c-amber { background:#fffbeb; color:#b45309; } .c-blue { background:#eff6ff; color:#1d4ed8; }
+  .jcode { font-size:10px; color:#9ca3af; font-weight:700; margin-left:8px; }
+
+  /* PHONE */
+  .phones { display:flex; gap:28px; flex-wrap:wrap; justify-content:center; }
+  .phone { width:340px; height:640px; background:#fff; border:10px solid #111827; border-radius:38px; overflow:hidden; display:flex; flex-direction:column; position:relative; }
+  .phead { background:linear-gradient(to bottom, var(--primary), rgba(30,208,199,.45), #fff); padding:40px 18px 12px; }
+  .phead h2 { font-size:17px; font-weight:800; }
+  .phead .sub { font-size:10px; color:#4b5563; letter-spacing:.1em; text-transform:uppercase; font-weight:700; }
+  .pbody { flex:1; overflow:auto; padding:10px 12px 70px; background:#f9fafb; }
+  .pbody .lead { padding:11px 12px; }
+  .pnav { position:absolute; bottom:0; left:0; right:0; background:#fff; border-top:1px solid #e5e7eb; display:flex; padding:7px 4px 16px; }
+  .pnav .ni { flex:1; text-align:center; font-size:9.5px; color:#9ca3af; font-weight:700; cursor:pointer; }
+  .pnav .ni .i { font-size:19px; display:block; margin-bottom:2px; }
+  .pnav .ni.on { color:var(--primary-dark); }
+  .pnav .ni .n2 { position:relative; }
+  .pnav .ni .n2::after { content:attr(data-n); position:absolute; top:-4px; right:-12px; background:#ef4444; color:#fff; font-size:8px; border-radius:99px; padding:1px 4px; }
+  .phone-hub { padding:14px 12px; display:grid; grid-template-columns:1fr 1fr; gap:10px; align-content:start; background:#f9fafb; flex:1; }
+  .phone-hub .card { padding:14px 12px 12px; border-radius:14px; }
+  .phone-hub .card h3 { font-size:13px; } .phone-hub .card p { font-size:10.5px; }
+  .phone-hub .card .ic { width:32px; height:32px; font-size:16px; border-radius:10px; margin-bottom:8px; }
+  .sect { font-size:12px; font-weight:800; color:#6b7280; text-transform:uppercase; letter-spacing:.08em; margin:26px 0 12px; }
+</style>
+</head>
+<body>
+<div class="note">MOCKUP — module-base navigation · ตัวเลข badge = ข้อมูลจริง solardb_v3 (13 ส.ค. 2026, 492 leads)</div>
+<div class="wrap">
+
+  <!-- ═══ VIEW: HUB (desktop) ═══ -->
+  <div class="view on" id="v-hub">
+    <div class="topbar">
+      <div class="logo">S</div>
+      <div><h1>SENA Solar</h1><div class="sub">เลือกโมดูลเพื่อเริ่มงาน</div></div>
+      <div class="crumb">สมชาย (Sales) · สลับ role</div>
+    </div>
+    <div class="grid">
+      <div class="card" onclick="go('v-sales')">
+        <div class="ic" style="background:#ecfdf5">📞</div><span class="badge hot">245</span>
+        <h3>Sales</h3><p>ติดตาม · จอง · เสนอราคา · ชำระเงิน · อนุมัติใบเสนอ</p>
+      </div>
+      <div class="card" onclick="go('v-install')">
+        <div class="ic" style="background:#eff6ff">🔧</div><span class="badge">36</span>
+        <h3>สำรวจ &amp; ติดตั้ง</h3><p>ปฏิทิน · สำรวจ · คิวติดตั้ง · ส่งมอบ</p>
+      </div>
+      <div class="card">
+        <div class="ic" style="background:#ecfeff">🛡️</div><span class="badge">6</span>
+        <h3>Warranty</h3><p>ออกใบรับประกัน · ขนานไฟ · ส่งมอบแล้ว</p>
+      </div>
+      <div class="card">
+        <div class="ic" style="background:#fffbeb">💰</div><span class="badge">0</span>
+        <h3>บัญชี</h3><p>รอยืนยันเงิน · รายรับ/ใบแจ้งหนี้ · ตั้งค่าการชำระ</p>
+      </div>
+      <div class="card">
+        <div class="ic" style="background:#fdf4ff">🏠</div>
+        <h3>Seeker</h3><p>เก็บบ้าน · สนใจ · สร้างลีด · Map · Insights</p>
+      </div>
+      <div class="card soon">
+        <div class="ic" style="background:#fff7ed">🛠️</div><span class="soon-tag">เร็วๆ นี้</span>
+        <h3>O&amp;M</h3><p>แจ้งซ่อม · งานซ่อม · สัญญา O&amp;M · ขาย O&amp;M</p>
+      </div>
+      <div class="card">
+        <div class="ic" style="background:#f5f3ff">📦</div>
+        <h3>Package</h3><p>แคตตาล็อก · จัดการแพ็คเกจ</p>
+      </div>
+      <div class="card">
+        <div class="ic" style="background:#f0f9ff">📊</div>
+        <h3>Dashboard</h3><p>ภาพรวม · Customer · Lifecycle</p>
+      </div>
+      <div class="card">
+        <div class="ic" style="background:#f3f4f6">⚙️</div>
+        <h3>Setup</h3><p>ตั้งค่า · ผู้ใช้ · LINE · Export</p>
+      </div>
+    </div>
+    <div class="sect">มือถือ — hub และในโมดูล (BottomNav = journey ของโมดูล)</div>
+    <div class="phones">
+      <div class="phone">
+        <div class="phead"><div class="sub">SENA Solar</div><h2>เลือกโมดูล</h2></div>
+        <div class="phone-hub">
+          <div class="card" onclick="go('v-install')"><div class="ic" style="background:#ecfdf5">📞</div><h3>Sales</h3><p>245 งานค้าง</p></div>
+          <div class="card" onclick="go('v-install')"><div class="ic" style="background:#eff6ff">🔧</div><h3>สำรวจ&amp;ติดตั้ง</h3><p>36 งานค้าง</p></div>
+          <div class="card"><div class="ic" style="background:#ecfeff">🛡️</div><h3>Warranty</h3><p>6 งาน</p></div>
+          <div class="card"><div class="ic" style="background:#fffbeb">💰</div><h3>บัญชี</h3><p>คิวว่าง</p></div>
+          <div class="card"><div class="ic" style="background:#f5f3ff">📦</div><h3>Package</h3><p>แคตตาล็อก</p></div>
+          <div class="card soon"><div class="ic" style="background:#fff7ed">🛠️</div><h3>O&amp;M</h3><p>เร็วๆ นี้</p></div>
+        </div>
+      </div>
+      <div class="phone">
+        <div class="phead"><div class="sub">สำรวจ &amp; ติดตั้ง</div><h2>กำลังติดตั้ง <span style="font-size:11px;color:#6b7280;font-weight:600">23 งาน</span></h2></div>
+        <div class="pbody">
+          <div class="lead"><div class="av">วส</div><div><b>วุฒิกร เสือสะอาด</b><small>นัด 11 ส.ค. · ทีม A</small></div><span class="chip c-blue">กำลังติดตั้ง</span></div>
+          <div class="lead"><div class="av">สง</div><div><b>เสรี สีงาม</b><small>นัด 8 ส.ค. · ทีม B</small></div><span class="chip c-blue">กำลังติดตั้ง</span></div>
+          <div class="lead"><div class="av">นน</div><div><b>นรชัย นรสุภา</b><small>นัด 31 ส.ค. · QT-260735</small></div><span class="chip c-amber">รอติดตั้ง</span></div>
+        </div>
+        <div class="pnav">
+          <div class="ni" onclick="go('v-hub')"><span class="i">🏠</span>Home</div>
+          <div class="ni"><span class="i">📅</span>ปฏิทิน</div>
+          <div class="ni"><span class="i n2" data-n="7">📍</span>สำรวจ</div>
+          <div class="ni"><span class="i n2" data-n="5">⏳</span>รอติดตั้ง</div>
+          <div class="ni on"><span class="i n2" data-n="23">🔧</span>กำลังติดตั้ง</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ VIEW: MODULE SALES (desktop) ═══ -->
+  <div class="view" id="v-sales">
+    <div class="topbar">
+      <div class="logo" onclick="go('v-hub')">S</div>
+      <div><h1>Sales</h1><div class="sub">journey ของทีมขาย</div></div>
+      <div class="crumb" onclick="go('v-hub')">← กลับ Hub</div>
+    </div>
+    <div class="mod">
+      <div class="rail">
+        <div class="mh"><div class="ic" style="background:#ecfdf5">📞</div><b>Sales</b></div>
+        <div class="ritem"><span class="dot"></span>Today <span class="n">12</span></div>
+        <div class="ritem on"><span class="dot"></span>ติดตาม <span class="n">217</span></div>
+        <div class="ritem"><span class="dot"></span>จองสำรวจ <span class="n">1</span></div>
+        <div class="ritem"><span class="dot"></span>เสนอราคา <span class="n">2</span></div>
+        <div class="ritem"><span class="dot"></span>ชำระเงิน <span class="n">26</span></div>
+        <div class="ritem"><span class="dot"></span>อนุมัติใบเสนอ <span class="n">3</span></div>
+        <div class="ritem home" onclick="go('v-hub')">⌂ กลับ Hub</div>
+      </div>
+      <div class="content">
+        <div class="head"><h2>ติดตาม</h2><span>217 ราย · journey 100 (แยกตามผลติดต่อ)</span></div>
+        <div class="lead"><div class="av">ศช</div><div><b>ศิริอร เชื้อจินดา</b><small>โทรล่าสุด 12 ส.ค. · Facebook</small></div><span class="chip c-amber">ระหว่างเสนอขาย</span><span class="jcode">140</span></div>
+        <div class="lead"><div class="av">ณพ</div><div><b>ณัฐพงศ์</b><small>ติดต่อได้ 10 ส.ค. · Walk-in</small></div><span class="chip c-green">ยังไม่สะดวกคุย</span><span class="jcode">130</span></div>
+        <div class="lead"><div class="av">พล</div><div><b>พฤฒิพล</b><small>สร้าง 13 ส.ค. · เว็บฟอร์ม</small></div><span class="chip c-blue">ยังไม่ติดต่อ</span><span class="jcode">110</span></div>
+        <div class="lead"><div class="av">ปว</div><div><b>ประสุท เวชชประสิทธิ์</b><small>โทร 3 ครั้ง · LINE</small></div><span class="chip c-amber">ติดต่อไม่ได้</span><span class="jcode">120</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ VIEW: MODULE INSTALL (desktop) ═══ -->
+  <div class="view" id="v-install">
+    <div class="topbar">
+      <div class="logo" onclick="go('v-hub')">S</div>
+      <div><h1>สำรวจ &amp; ติดตั้ง</h1><div class="sub">journey ของทีมช่าง</div></div>
+      <div class="crumb" onclick="go('v-hub')">← กลับ Hub</div>
+    </div>
+    <div class="mod">
+      <div class="rail">
+        <div class="mh"><div class="ic" style="background:#eff6ff">🔧</div><b>สำรวจ &amp; ติดตั้ง</b></div>
+        <div class="ritem"><span class="dot"></span>ปฏิทิน</div>
+        <div class="ritem"><span class="dot"></span>สำรวจ <span class="n">7</span></div>
+        <div class="ritem"><span class="dot"></span>รอนัดติดตั้ง <span class="n">1</span></div>
+        <div class="ritem"><span class="dot"></span>รอติดตั้ง <span class="n">5</span></div>
+        <div class="ritem on"><span class="dot"></span>กำลังติดตั้ง <span class="n">23</span></div>
+        <div class="ritem home" onclick="go('v-hub')">⌂ กลับ Hub</div>
+      </div>
+      <div class="content">
+        <div class="head"><h2>กำลังติดตั้ง</h2><span>23 งาน · journey 720</span></div>
+        <div class="lead"><div class="av">วส</div><div><b>วุฒิกร เสือสะอาด</b><small>นัด 11 ส.ค. · checklist 60%</small></div><span class="chip c-blue">กำลังติดตั้ง</span><span class="jcode">720</span></div>
+        <div class="lead"><div class="av">สง</div><div><b>เสรี สีงาม</b><small>นัด 8 ส.ค. · รอสรุป คชจ.</small></div><span class="chip c-blue">กำลังติดตั้ง</span><span class="jcode">720</span></div>
+        <div class="lead"><div class="av">คว</div><div><b>คุณวีรพันธุ์ โขวิฑูรกิจ</b><small>นัด 20 ส.ค. · ทีม B</small></div><span class="chip c-amber">รอติดตั้ง</span><span class="jcode">710</span></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+<script>
+  function go(id) {
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('on'));
+    document.getElementById(id).classList.add('on');
+    window.scrollTo(0, 0);
+  }
+  // rail item toggle (โชว์ active state เฉยๆ — mockup)
+  document.querySelectorAll('.rail .ritem:not(.home)').forEach(el => {
+    el.addEventListener('click', () => {
+      el.parentElement.querySelectorAll('.ritem').forEach(x => x.classList.remove('on'));
+      el.classList.add('on');
+    });
+  });
+</script>
+</body>
+</html>

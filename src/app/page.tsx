@@ -2,39 +2,18 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useActiveRoles } from "@/lib/roles";
+import Loading from "@/components/ui/Loading";
 
+// หน้าแรก = hub เลือกโมดูล (/home) — hub กรองการ์ดตาม role เองอยู่แล้ว
 export default function Home() {
   const router = useRouter();
-  const { activeRoles } = useActiveRoles();
 
   useEffect(() => {
-    if (activeRoles.length === 0) return;
-    const seekerOnly =
-      activeRoles.includes("leadsseeker") &&
-      !activeRoles.includes("sales") &&
-      !activeRoles.includes("solar");
-    const accountOnly =
-      activeRoles.includes("account") &&
-      !activeRoles.includes("admin") &&
-      !activeRoles.includes("sales") &&
-      !activeRoles.includes("solar") &&
-      !activeRoles.includes("solar_sup") &&
-      !activeRoles.includes("sales_sup");
-    const quotationApproverOnly =
-      !activeRoles.includes("admin") &&
-      !activeRoles.includes("sales") &&
-      !activeRoles.includes("solar") &&
-      (activeRoles.includes("solar_sup") || activeRoles.includes("sales_sup"));
-    if (seekerOnly) router.replace("/seeker");
-    else if (accountOnly) router.replace("/today");
-    else if (quotationApproverOnly) router.replace("/quotation-approvals");
-    else router.replace("/pipeline");
-  }, [activeRoles, router]);
+    const authed = typeof window !== "undefined" && !!localStorage.getItem("userId");
+    router.replace(authed ? "/home" : "/login");
+  }, [router]);
 
   return (
-    <div className="flex items-center justify-center h-full">
-      <div className="w-10 h-10 border-3 border-gray-200 border-t-gray-900 rounded-full animate-spin" />
-    </div>
+    <Loading />
   );
 }

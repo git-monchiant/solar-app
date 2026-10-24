@@ -2,10 +2,12 @@
 import { DownloadIcon } from "@/components/ui/icons";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useActiveRoles, useMe, hasRole, Role } from "@/lib/roles";
 import { apiFetch } from "@/lib/api";
+import { getModule, modulesForRoles, countForMenuItem, matchMenuHref, mobileBarForRoles, INJECTED_MENU_ITEMS, type JourneySummaryRow } from "@/lib/modules";
+import { useActiveModuleKey } from "@/lib/hooks/useActiveModule";
 
 type HoverInfo = { label: string; href: string; top: number };
 
@@ -101,8 +103,19 @@ type BottomNavProps = {
 
 export default function BottomNav({ collapsed = false, onToggle }: BottomNavProps = {}) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { activeRoles } = useActiveRoles();
   const { me } = useMe();
+  // โมดูลที่เลือก — sync ผ่าน hook กลาง (ที่เดียวกับหน้า list ใช้)
+  const activeModuleKey = useActiveModuleKey();
+  // badge จำนวนงานต่อเมนู — refetch ทุกครั้งที่เปลี่ยนหน้า (query GROUP BY เบามาก)
+  const [journeySummary, setJourneySummary] = useState<JourneySummaryRow[]>([]);
+  useEffect(() => {
+    // fetch เสมอ — แถบล่างมือถือ (ตาม role) ใช้ badge แม้ยังไม่เคยเลือกโมดูล
+    apiFetch("/api/journey-summary")
+      .then((rows) => setJourneySummary(rows as JourneySummaryRow[]))
+      .catch(() => {});
+  }, [activeModuleKey, pathname]);
   const [pendingApprovals, setPendingApprovals] = useState(0);
   // Floating hover label — only shown when collapsed. position: fixed so it
   // escapes the nav's overflow-y-auto (which CSS-clips both axes).
@@ -124,6 +137,39 @@ export default function BottomNav({ collapsed = false, onToggle }: BottomNavProp
   };
   const seekerMode = activeRoles.includes("leadsseeker") && !activeRoles.includes("sales") && !activeRoles.includes("solar");
   const showAdminGroups = !seekerMode && hasRole(activeRoles, "admin", "sales", "solar_sup", "sales_sup", "solar", "account");
+  // Left menu เป็น layout เดียวทุก role ทุกกรณี: โมดูลที่เลือกไว้ → ถ้าไม่เคยเลือก
+  // หรือ role ปัจจุบันไม่เห็นโมดูลนั้น → default เป็นโมดูลแรกของ role (เมนู legacy
+  // เหลือแค่ fallback ช่วงรอ roles โหลด)
+  // mobileOnly (เช่น Quotation ทางลัดของ Solar Manager) ไม่มีตัวตนบน desktop —
+  // ถ้าค้างเป็นโมดูลที่เลือกไว้ (กดจากมือถือ) เมนูซ้ายจะ fallback เป็นโมดูลปกติแทน
+  const visibleModules = modulesForRoles(activeRoles).filter((m) => !m.soon && m.menu.length > 0 && !m.mobileOnly);
+  const storedModule = getModule(activeModuleKey);
+  const activeModule = storedModule && visibleModules.some((m) => m.key === storedModule.key)
+    ? storedModule
+    : (visibleModules[0] ?? null);
+  const moduleMenuBase = activeModule ? activeModule.menu.filter((mi) => !mi.roles || hasRole(activeRoles, ...mi.roles)) : [];
+  // เมนูงานประจำตัว (อนุมัติใบเสนอ / รอยืนยันเงิน) inject ต่อท้ายทุกโมดูลตามสิทธิ์
+  // — ข้ามตัวที่โมดูลมีอยู่แล้ว (เช่น รอยืนยันเงิน ในโมดูลบัญชี) กันเมนูเบิ้ล
+  const hasHref = (items: typeof moduleMenuBase, href?: string) =>
+    items.some((x) => x.href === href || x.children?.some((c) => c.href === href));
+  const injected = activeModule
+    ? INJECTED_MENU_ITEMS.filter((mi) =>
+        (!mi.roles || hasRole(activeRoles, ...mi.roles)) && !hasHref(moduleMenuBase, mi.href))
+    : [];
+  const moduleMenu = [...moduleMenuBase, ...injected];
+  // แถบล่างมือถือ = "ตาม role ที่สวมอยู่" คงที่ทุกหน้า ไม่ผูกกับโมดูลที่เปิด
+  // (registry: mobileBarForRoles ใน modules.tsx — ปุ่มที่มี roles gate จะเทาเมื่อไม่มีสิทธิ์)
+  const roleBar = mobileBarForRoles(activeRoles);
+  // กติกา: left menu (desktop) แสดงตาม "โมดูลที่ผู้ใช้กดเข้าไปจาก Home" เท่านั้น —
+  // ไม่ sync ตาม URL และไม่ผูกกับแถบล่างมือถือ (สองระบบแยกขาดจากกัน)
+  // สถานะกาง/หุบต่อกลุ่ม — ค่าที่ผู้ใช้กดเองชนะเสมอ, ยังไม่เคยกด (undefined)
+  // จะกางอัตโนมัติเมื่อมีลูก active
+  const [groupToggles, setGroupToggles] = useState<Record<string, boolean>>({});
+  const toggleGroup = (label: string, current: boolean) =>
+    setGroupToggles((prev) => ({ ...prev, [label]: !current }));
+  // เมนูโมดูลอาจมี query (?tab=...) — ใช้ matcher กลางตัวเดียวกับ useActiveMenuItem
+  const isModuleItemActive = (href: string) => matchMenuHref(href, pathname, searchParams);
+  const homeIcon = <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" /></svg>;
   const visibleItems = navItems.filter((item) => {
     if (seekerMode) return item.href === "/seeker" || item.href === "/seeker/dashboard" || item.href === "/seeker/map" || item.href === "/packages" || item.href === "/profile";
     return !item.roles || hasRole(activeRoles, ...item.roles);
@@ -197,7 +243,47 @@ export default function BottomNav({ collapsed = false, onToggle }: BottomNavProp
     <>
       <nav className="fixed inset-x-0 bottom-0 bg-white border-t border-gray-200 z-50 md:hidden">
         <div className="flex justify-around items-center h-20">
-          {visibleMobile.map((item) => {
+          {roleBar.length > 0 ? (
+            <>
+              <Link href="/home"
+                className={`flex flex-col items-center justify-center w-full h-full gap-0.5 transition-colors ${pathname === "/home" ? "text-primary" : "text-gray"}`}>
+                {homeIcon}
+                <span className="text-xs font-semibold uppercase tracking-wider">Home</span>
+              </Link>
+              {roleBar.slice(0, 4).map((mi) => {
+                const n = mi.href === "/quotation-approvals" ? pendingApprovals : countForMenuItem(mi, journeySummary);
+                // ไม่มีสิทธิ์ → ปุ่มเทา กดไม่ได้ (ช่องยังอยู่ให้ layout เท่ากันทุก role)
+                const locked = !!mi.roles && !hasRole(activeRoles, ...mi.roles);
+                if (locked) {
+                  return (
+                    <div key={mi.href} className="flex flex-col items-center justify-center w-full h-full gap-0.5 text-gray-300 select-none">
+                      {mi.icon}
+                      <span className="text-xs font-semibold uppercase tracking-wider">{mi.label}</span>
+                    </div>
+                  );
+                }
+                return (
+                  <Link key={mi.href} href={mi.href!}
+                    className={`flex flex-col items-center justify-center w-full h-full gap-0.5 transition-colors ${isModuleItemActive(mi.href!) ? "text-primary" : "text-gray"}`}>
+                    <span className="relative">
+                      {mi.icon}
+                      {n != null && n > 0 && (
+                        <span className="absolute -top-1.5 -right-3 min-w-5 h-5 rounded-full bg-red-500 text-white text-[11px] font-bold flex items-center justify-center px-1">{n > 99 ? "99+" : n}</span>
+                      )}
+                    </span>
+                    <span className="text-xs font-semibold uppercase tracking-wider">{mi.label}</span>
+                  </Link>
+                );
+              })}
+            </>
+          ) : (
+            <>
+              <Link href="/home"
+                className={`flex flex-col items-center justify-center w-full h-full gap-0.5 transition-colors ${pathname === "/home" ? "text-primary" : "text-gray"}`}>
+                {homeIcon}
+                <span className="text-xs font-semibold uppercase tracking-wider">Home</span>
+              </Link>
+              {visibleMobile.map((item) => {
             const isActive =
               item.href === "/seeker" ? pathname === "/seeker" :
               item.href === "/report" ? pathname === "/report" :
@@ -213,15 +299,17 @@ export default function BottomNav({ collapsed = false, onToggle }: BottomNavProp
               </Link>
             );
           })}
+            </>
+          )}
         </div>
       </nav>
-      <aside className={`hidden md:flex fixed left-0 top-0 bottom-0 bg-white border-r border-gray-200 flex-col z-50 transition-[width] duration-200 ${collapsed ? "w-14" : "w-56"}`}>
-        <div className={`h-16 border-b border-gray-100 bg-white flex items-center ${collapsed ? "justify-center px-2" : "justify-between px-3"}`}>
+      <aside className={`hidden md:flex fixed left-0 top-0 bottom-0 bg-blue-900 border-r border-blue-950 flex-col z-50 transition-[width] duration-200 ${collapsed ? "w-14" : "w-56"}`}>
+        <div className={`h-16 border-b border-white/10 flex items-center ${collapsed ? "justify-center px-2" : "justify-between px-3"}`}>
           {!collapsed && (
             <img
-              src="https://senasolarenergy.com/wp-content/uploads/2022/04/logo_senasolarenergy.png"
+              src="/logos/logo-sena.png"
               alt="Sena Solar Energy"
-              className="h-8 w-auto pl-2"
+              className="h-12 w-auto pl-1"
             />
           )}
           <button
@@ -229,15 +317,112 @@ export default function BottomNav({ collapsed = false, onToggle }: BottomNavProp
             onClick={onToggle}
             title={collapsed ? "Expand menu" : "Collapse menu"}
             aria-label={collapsed ? "Expand menu" : "Collapse menu"}
-            className="p-1.5 rounded-md text-gray-600 hover:bg-gray-100 transition-colors"
+            className="p-1.5 rounded-md text-blue-100 hover:bg-white/10 transition-colors"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
             </svg>
           </button>
         </div>
-        <nav className={`flex-1 min-h-0 overflow-y-auto py-2 space-y-0.5 ${collapsed ? "px-1.5" : "px-3"}`}>
-          {visibleDesktop.map((item, idx) => {
+        <nav className={`flex-1 min-h-0 overflow-y-auto scrollbar-hide py-2 space-y-0.5 ${collapsed ? "px-1.5" : "px-3"}`}>
+          {activeModule ? (
+            <>
+              <Link href="/home"
+                onMouseEnter={(e) => showHover(e, "Home", "/home")}
+                onMouseLeave={scheduleHide}
+                className={`flex items-center rounded-lg text-xs font-semibold uppercase transition-colors ${collapsed ? "justify-center px-2 py-2" : "gap-3 px-3 py-1.5"} ${pathname === "/home" ? "bg-white/15 text-white" : "text-blue-100 hover:bg-white/10"}`}>
+                {homeIcon}
+                {!collapsed && <span>Home</span>}
+              </Link>
+              {!collapsed && (
+                <div className="px-3 pt-3 pb-0.5 text-xxs font-bold uppercase tracking-widest text-blue-300">{activeModule.label}</div>
+              )}
+              {moduleMenu.map((mi, idx) => {
+                const n = mi.href === "/quotation-approvals" ? pendingApprovals : countForMenuItem(mi, journeySummary);
+                // จุดเริ่มของเมนูงานประจำตัวที่ inject มา → มีเส้นคั่นจากเมนูโมดูล
+                const injectedStart = idx === moduleMenuBase.length && injected.length > 0;
+                // กลุ่มพับได้ (มี children) — rail ย่อไม่มีที่ให้หัวข้อ → โชว์ลูกเป็นไอคอนตรงๆ
+                // ป้ายตอนชี้ใส่ชื่อกลุ่มนำหน้า ("O&M · แคตตาล็อก") — ไม่มีหัวกลุ่มให้เห็น ชื่อลูกอย่างเดียวซ้ำข้ามกลุ่มได้
+                if (mi.children) {
+                  if (collapsed) {
+                    return mi.children.map((c) => (
+                      <Link key={c.href} href={c.href!}
+                        onMouseEnter={(e) => showHover(e, `${mi.label} · ${c.label}`, c.href!)}
+                        onMouseLeave={scheduleHide}
+                        className={`flex items-center justify-center px-2 py-2 rounded-lg transition-colors ${isModuleItemActive(c.href!) ? "bg-white/15 text-white" : "text-blue-100 hover:bg-white/10"}`}>
+                        {c.icon}
+                      </Link>
+                    ));
+                  }
+                  const open = groupToggles[mi.label] ?? (mi.defaultOpen || mi.children.some((c) => c.href && isModuleItemActive(c.href)));
+                  return (
+                    <div key={mi.label}>
+                      <button type="button" onClick={() => toggleGroup(mi.label, open)} aria-expanded={open}
+                        className="w-full flex items-center gap-3 px-3 py-1.5 rounded-lg text-xs font-semibold uppercase text-blue-100 hover:bg-white/10 transition-colors">
+                        {mi.icon}
+                        <span className="flex-1 text-left">{mi.label}</span>
+                        {n != null && (
+                          <span className="text-xs font-semibold rounded-full min-w-5 h-5 px-1.5 inline-flex items-center justify-center leading-none bg-white/10 text-blue-100">{n}</span>
+                        )}
+                        <svg className={`w-3 h-3 shrink-0 transition-transform ${open ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                        </svg>
+                      </button>
+                      {open && mi.children.map((c) => {
+                        const cn = countForMenuItem(c, journeySummary);
+                        const cActive = c.href ? isModuleItemActive(c.href) : false;
+                        return (
+                          <Link key={c.href} href={c.href!}
+                            onMouseEnter={(e) => showHover(e, c.label, c.href!)}
+                            onMouseLeave={scheduleHide}
+                            className={`flex items-center gap-2 pl-9 pr-3 py-1.5 rounded-lg text-xs font-semibold uppercase transition-colors ${cActive ? "bg-white/15 text-white" : "text-blue-100 hover:bg-white/10"}`}>
+                            <span className="w-1.5 h-1.5 rounded-full bg-current opacity-40 shrink-0" />
+                            <span className="flex-1">{c.label}</span>
+                            {cn != null && (
+                              <span className={`text-xs font-semibold rounded-full min-w-5 h-5 px-1.5 inline-flex items-center justify-center leading-none ${cActive ? "bg-primary text-white" : "bg-white/10 text-blue-100"}`}>{cn}</span>
+                            )}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  );
+                }
+                const active = isModuleItemActive(mi.href!);
+                return (
+                  <div key={mi.href}>
+                  {injectedStart && <div className="my-1.5 border-t border-white/10" />}
+                  <Link href={mi.href!}
+                    onMouseEnter={(e) => showHover(e, mi.label, mi.href!)}
+                    onMouseLeave={scheduleHide}
+                    className={`flex items-center rounded-lg text-xs font-semibold uppercase transition-colors ${collapsed ? "justify-center px-2 py-2" : "gap-3 px-3 py-1.5"} ${active ? "bg-white/15 text-white" : "text-blue-100 hover:bg-white/10"}`}>
+                    {mi.icon}
+                    {!collapsed && <span className="flex-1">{mi.label}</span>}
+                    {!collapsed && n != null && (
+                      <span className={`text-xs font-semibold rounded-full min-w-5 h-5 px-1.5 inline-flex items-center justify-center leading-none ${active ? "bg-primary text-white" : "bg-white/10 text-blue-100"}`}>{n}</span>
+                    )}
+                  </Link>
+                  </div>
+                );
+              })}
+              <div className="my-1.5 border-t border-white/10" />
+              <Link href="/profile"
+                onMouseEnter={(e) => showHover(e, "Me", "/profile")}
+                onMouseLeave={scheduleHide}
+                className={`flex items-center rounded-lg text-xs font-semibold uppercase transition-colors ${collapsed ? "justify-center px-2 py-2" : "gap-3 px-3 py-1.5"} ${pathname.startsWith("/profile") ? "bg-white/15 text-white" : "text-blue-100 hover:bg-white/10"}`}>
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.963 0a9 9 0 10-11.963 0m11.963 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                {!collapsed && <span>Me</span>}
+              </Link>
+            </>
+          ) : (
+            <>
+              <Link href="/home"
+                onMouseEnter={(e) => showHover(e, "Home", "/home")}
+                onMouseLeave={scheduleHide}
+                className={`flex items-center rounded-lg text-xs font-semibold uppercase transition-colors ${collapsed ? "justify-center px-2 py-2" : "gap-3 px-3 py-1.5"} ${pathname === "/home" ? "bg-white/15 text-white" : "text-blue-100 hover:bg-white/10"}`}>
+                {homeIcon}
+                {!collapsed && <span>Home</span>}
+              </Link>
+              {visibleDesktop.map((item, idx) => {
             const isActive =
               item.href === "/packages" ? pathname === "/packages" :
               item.href === "/seeker" ? pathname === "/seeker" :
@@ -247,11 +432,11 @@ export default function BottomNav({ collapsed = false, onToggle }: BottomNavProp
             const showDivider = prev && prev.group === "seeker" && item.group !== "seeker";
             return (
               <div key={item.href}>
-                {showDivider && <div className="my-1.5 border-t border-gray-100" />}
+                {showDivider && <div className="my-1.5 border-t border-white/10" />}
                 <Link href={item.href}
                   onMouseEnter={(e) => showHover(e, item.label, item.href)}
                   onMouseLeave={scheduleHide}
-                  className={`flex items-center rounded-lg text-xs font-semibold uppercase transition-colors ${collapsed ? "justify-center px-2 py-2" : "gap-3 px-3 py-1.5"} ${isActive ? "bg-primary/10 text-primary" : "text-gray hover:bg-gray-50"}`}>
+                  className={`flex items-center rounded-lg text-xs font-semibold uppercase transition-colors ${collapsed ? "justify-center px-2 py-2" : "gap-3 px-3 py-1.5"} ${isActive ? "bg-white/15 text-white" : "text-blue-100 hover:bg-white/10"}`}>
                   <span className="relative">
                     {item.icon}
                     {collapsed && item.href === "/quotation-approvals" && <CountBadge count={pendingApprovals} compact />}
@@ -262,7 +447,9 @@ export default function BottomNav({ collapsed = false, onToggle }: BottomNavProp
               </div>
             );
           })}
-          {showAdminGroups && <AdminGroups pathname={pathname} activeRoles={activeRoles} username={me?.username ?? null} collapsed={collapsed} onHover={showHover} onHoverEnd={scheduleHide} pendingApprovals={pendingApprovals} />}
+              {showAdminGroups && <AdminGroups pathname={pathname} activeRoles={activeRoles} username={me?.username ?? null} collapsed={collapsed} onHover={showHover} onHoverEnd={scheduleHide} pendingApprovals={pendingApprovals} />}
+            </>
+          )}
         </nav>
       </aside>
       {collapsed && hover && (
@@ -432,13 +619,13 @@ function AdminGroups({ pathname, activeRoles, username, collapsed, onHover, onHo
         const canCollapse = !collapsed && COLLAPSIBLE_GROUPS.has(g.title);
         const folded = canCollapse && foldedGroups.has(g.title);
         return (
-          <div key={g.title} className={i === 0 ? "pt-2 mt-2 border-t border-gray-100" : "pt-2 mt-2"}>
+          <div key={g.title} className={i === 0 ? "pt-2 mt-2 border-t border-white/10" : "pt-2 mt-2"}>
             {!collapsed && (
               canCollapse ? (
                 <button
                   type="button"
                   onClick={() => toggleGroup(g.title)}
-                  className="w-full flex items-center justify-between px-3 pb-0.5 text-xxs font-bold uppercase tracking-widest text-gray-400 hover:text-gray-600 transition-colors"
+                  className="w-full flex items-center justify-between px-3 pb-0.5 text-xxs font-bold uppercase tracking-widest text-blue-300 hover:text-blue-100 transition-colors"
                   aria-expanded={!folded}
                 >
                   <span>{g.title}</span>
@@ -447,7 +634,7 @@ function AdminGroups({ pathname, activeRoles, username, collapsed, onHover, onHo
                   </svg>
                 </button>
               ) : (
-                <div className="px-3 pb-0.5 text-xxs font-bold uppercase tracking-widest text-gray-400">{g.title}</div>
+                <div className="px-3 pb-0.5 text-xxs font-bold uppercase tracking-widest text-blue-300">{g.title}</div>
               )
             )}
             {!folded && links.map(l => {
@@ -465,7 +652,7 @@ function AdminGroups({ pathname, activeRoles, username, collapsed, onHover, onHo
                 <Link key={l.href} href={l.href}
                   onMouseEnter={(e) => onHover(e, l.label, l.href)}
                   onMouseLeave={onHoverEnd}
-                  className={`flex items-center rounded-lg text-xs font-semibold uppercase transition-colors ${collapsed ? "justify-center px-2 py-2" : "gap-3 px-3 py-1.5"} ${active ? "bg-primary/10 text-primary" : "text-gray hover:bg-gray-50"}`}>
+                  className={`flex items-center rounded-lg text-xs font-semibold uppercase transition-colors ${collapsed ? "justify-center px-2 py-2" : "gap-3 px-3 py-1.5"} ${active ? "bg-white/15 text-white" : "text-blue-100 hover:bg-white/10"}`}>
                   <span className="relative">{l.icon}{collapsed && l.href === "/quotation-approvals" && <CountBadge count={pendingApprovals} compact />}</span>
                   {!collapsed && <span>{l.label}</span>}
                   {!collapsed && l.href === "/quotation-approvals" && <CountBadge count={pendingApprovals} />}

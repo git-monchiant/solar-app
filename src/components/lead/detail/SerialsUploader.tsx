@@ -65,7 +65,17 @@ interface Battery  extends BaseDevice { kwh: number | null; }
 type    Panel    = BaseDevice;
 
 interface Props {
-  leadId: number;
+  /** ไม่ส่ง = ต้องส่ง endpoint (O&M ใช้ระบบติดตั้ง ไม่ใช่ lead) */
+  leadId?: number;
+  /** API ของรายการ Serial — ค่าเริ่ม /api/leads/<leadId>/devices · O&M ส่ง /api/om/installations/<id>/devices
+   * (รูปร่าง GET/PUT เหมือนกัน · แผน 20261021-03) */
+  endpoint?: string;
+  /** ชิปยี่ห้อในหน้าต่างเพิ่ม Serial ต่อชนิด — ไม่ส่ง = ชุดจาก survey-options */
+  brandSuggestions?: Partial<Record<DeviceType, readonly string[]>>;
+  /** ดูอย่างเดียว (ไม่มีปุ่มเพิ่ม/ลบ · ไม่มีแถบ "ออกใบรับประกันแล้ว") — Account ในหน้างาน O&M */
+  readOnly?: boolean;
+  /** หลังบันทึกรายการสำเร็จ — O&M โหลด Activity Log / การ์ดระบบติดตั้งใหม่ */
+  onChange?: () => void;
   /** When true, hide × buttons + disable "+ เพิ่ม" — used after the warranty
    * has been issued so the captured serials get locked into the cert. */
   locked?: boolean;
@@ -101,7 +111,8 @@ function sortBySerial<T extends BaseDevice>(items: T[]): T[] {
   });
 }
 
-export default function SerialsUploader({ leadId, locked = false, showTypes, quickKey = false, slotCounts, slotColumns }: Props) {
+export default function SerialsUploader({ leadId, endpoint, brandSuggestions, readOnly = false, onChange, locked = false, showTypes, quickKey = false, slotCounts, slotColumns }: Props) {
+  const url = endpoint ?? `/api/leads/${leadId}/devices`;
   const dialog = useDialog();
   const [inverters, setInverters] = useState<Inverter[]>([]);
   const [batteries, setBatteries] = useState<Battery[]>([]);
@@ -114,7 +125,7 @@ export default function SerialsUploader({ leadId, locked = false, showTypes, qui
 
   const load = useCallback(async () => {
     try {
-      const d = await apiFetch(`/api/leads/${leadId}/devices`) as {
+      const d = await apiFetch(url) as {
         inverters: Inverter[]; batteries: Battery[]; panels: Panel[];
         evidencePhotos?: EvidencePhotos;
       };
@@ -124,7 +135,7 @@ export default function SerialsUploader({ leadId, locked = false, showTypes, qui
       setEvidencePhotos(d.evidencePhotos ?? EMPTY_EVIDENCE);
     } catch (e) { console.error("load devices failed:", e); }
     finally { setLoading(false); }
-  }, [leadId]);
+  }, [url]);
   useEffect(() => { load(); }, [load]);
 
   const saveEvidence = async (type: DeviceType, items: BaseDevice[]): Promise<{ added: number; dupes: number; reason?: string }> => {
@@ -138,7 +149,7 @@ export default function SerialsUploader({ leadId, locked = false, showTypes, qui
         : type === "batteries"
         ? (first as Battery).kwh
         : null;
-      const saved = await apiFetch(`/api/leads/${leadId}/devices`, {
+      const saved = await apiFetch(url, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -174,7 +185,7 @@ export default function SerialsUploader({ leadId, locked = false, showTypes, qui
     });
     if (!ok) return;
     try {
-      const saved = await apiFetch(`/api/leads/${leadId}/devices`, {
+      const saved = await apiFetch(url, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type, photo_url: photo.url }),
@@ -190,13 +201,14 @@ export default function SerialsUploader({ leadId, locked = false, showTypes, qui
 
   const saveType = async (type: DeviceType, items: BaseDevice[]) => {
     try {
-      const res = await apiFetch(`/api/leads/${leadId}/devices`, {
+      const res = await apiFetch(url, {
         method: "PUT", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type, items }),
       }) as { items: BaseDevice[] };
       if (type === "inverters") setInverters(sortBySerial(res.items as Inverter[]));
       if (type === "batteries") setBatteries(sortBySerial(res.items as Battery[]));
       if (type === "panels")    setPanels(sortBySerial(res.items as Panel[]));
+      onChange?.();
     } catch (e) { console.error("save devices failed:", e); }
   };
 
@@ -307,10 +319,10 @@ export default function SerialsUploader({ leadId, locked = false, showTypes, qui
                 onAddClick={() => setOpenModal("inverters")}
                 onQuickAdd={quickKey ? (serial) => onAdd("inverters", [{ brand: inverters.at(-1)?.brand ?? null, serial_no: serial }]) : undefined}
                 onRemove={onRemove}
-                locked={locked}
+                locked={locked || readOnly}
                 evidencePhotos={evidencePhotos.inverters}
                 evidenceError={evidenceError.inverters}
-                onEvidenceClick={() => setEvidenceModal("inverters")}
+                onEvidenceClick={readOnly ? undefined : () => setEvidenceModal("inverters")}
                 onEvidenceDelete={(photo) => deleteEvidence("inverters", photo)}
               />
             )}
@@ -327,10 +339,10 @@ export default function SerialsUploader({ leadId, locked = false, showTypes, qui
                 onAddClick={() => setOpenModal("panels")}
                 onQuickAdd={quickKey ? (serial) => onAdd("panels", [{ brand: panels.at(-1)?.brand ?? null, serial_no: serial }]) : undefined}
                 onRemove={onRemove}
-                locked={locked}
+                locked={locked || readOnly}
                 evidencePhotos={evidencePhotos.panels}
                 evidenceError={evidenceError.panels}
-                onEvidenceClick={() => setEvidenceModal("panels")}
+                onEvidenceClick={readOnly ? undefined : () => setEvidenceModal("panels")}
                 onEvidenceDelete={(photo) => deleteEvidence("panels", photo)}
               />
             )}
@@ -349,10 +361,10 @@ export default function SerialsUploader({ leadId, locked = false, showTypes, qui
                 onAddClick={() => setOpenModal("batteries")}
                 onQuickAdd={quickKey ? (serial) => onAdd("batteries", [{ brand: batteries.at(-1)?.brand ?? null, serial_no: serial }]) : undefined}
                 onRemove={onRemove}
-                locked={locked}
+                locked={locked || readOnly}
                 evidencePhotos={evidencePhotos.batteries}
                 evidenceError={evidenceError.batteries}
-                onEvidenceClick={() => setEvidenceModal("batteries")}
+                onEvidenceClick={readOnly ? undefined : () => setEvidenceModal("batteries")}
                 onEvidenceDelete={(photo) => deleteEvidence("batteries", photo)}
               />
             )}
@@ -365,6 +377,7 @@ export default function SerialsUploader({ leadId, locked = false, showTypes, qui
           type={openModal}
           onCancel={() => setOpenModal(null)}
           onSave={(items) => onAdd(openModal, items)}
+          brands={brandSuggestions?.[openModal]}
           existingSerials={new Set(
             (openModal === "inverters" ? inverters : openModal === "batteries" ? batteries : panels)
               .map(d => d.serial_no?.toLowerCase())
@@ -1013,11 +1026,13 @@ export interface AddDeviceModalProps {
   evidenceOnly?: boolean;
   /** Canonical serials used only to preview match status in evidence mode. */
   referenceSerials?: Set<string>;
+  /** ชิปยี่ห้อขั้นแรก — ไม่ส่ง = BRAND_SUGGESTIONS ของชนิดนั้น (O&M ส่งชุดที่มี ABB / SMA) */
+  brands?: readonly string[];
 }
 // 3-step wizard: pick brand → fill specs (skipped for panels) → capture serial.
 // "Step" here is a logical index, not a route — all rendered in the same modal
 // shell so back/next feels instant and state is preserved between transitions.
-export function AddDeviceModal({ type, onCancel, onSave, existingSerials, evidenceOnly = false, referenceSerials }: AddDeviceModalProps) {
+export function AddDeviceModal({ type, onCancel, onSave, existingSerials, evidenceOnly = false, referenceSerials, brands }: AddDeviceModalProps) {
   const numLabel = type === "inverters" ? "kW" : type === "batteries" ? "kWh" : null;
   // One decision per step so each screen is a single tap when the value is in
   // the catalogue (auto-advance below). Panels skip the spec step.
@@ -1296,7 +1311,7 @@ export function AddDeviceModal({ type, onCancel, onSave, existingSerials, eviden
             <div className="space-y-4">
               <h4 className="text-base font-bold text-gray-800">เลือก Brand</h4>
               <div className="grid grid-cols-2 gap-2">
-                {BRAND_SUGGESTIONS[type].map(b => (
+                {(brands ?? BRAND_SUGGESTIONS[type]).map(b => (
                   <button
                     key={b}
                     type="button"

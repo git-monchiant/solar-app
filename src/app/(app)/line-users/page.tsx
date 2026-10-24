@@ -1,11 +1,13 @@
 "use client";
 import { PlusIcon, UserIcon } from "@/components/ui/icons";
+import { formatThaiDate } from "@/lib/utils/formatters";
 
 import { apiFetch } from "@/lib/api";
 import { useEffect, useState } from "react";
 import Header from "@/components/layout/Header";
 import NewLeadModal from "@/components/modal/NewLeadModal";
 import { LeadLink } from "@/components/lead/LeadLink";
+import Loading from "@/components/ui/Loading";
 
 interface LinkedLead {
   id: number;
@@ -41,7 +43,7 @@ interface LineUser {
 // converts to the user's local timezone. Stripping Z via slice() would make
 // JS treat it as naive local time and shift the display by +7h in Bangkok.
 const formatDate = (d: string) =>
-  new Date(d).toLocaleString("th-TH", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Bangkok" });
+  formatThaiDate(d, { year: false, time: true, timeZone: "Asia/Bangkok" });
 
 export default function LineUsersPage() {
   const [users, setUsers] = useState<LineUser[]>([]);
@@ -60,9 +62,7 @@ export default function LineUsersPage() {
 
       <div className="p-4">
         {loading ? (
-          <div className="flex items-center justify-center py-16">
-            <div className="w-10 h-10 border-3 border-gray-200 border-t-primary rounded-full animate-spin" />
-          </div>
+          <Loading />
         ) : users.length === 0 ? (
           <div className="text-center py-16 text-gray-400 text-sm">ยังไม่มี LINE user</div>
         ) : (

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql, fixDates } from "@/lib/db";
 import { computeStageCode, getStatusLabel } from "@/lib/constants/statuses";
+import { toLegacyStageCode } from "@/lib/journey-rules.mjs";
+import { flipJourneyDatesIfDue } from "@/lib/journey";
+import { SALES_LEADS } from "@/lib/lead-scope";
 
 // GET /api/v1/bi/leads
 //
@@ -98,11 +101,12 @@ export async function GET(req: NextRequest) {
 
   try {
     const db = await getDb();
+    await flipJourneyDatesIfDue(db);
 
     // 4. Count
     const countReq = db.request();
     applyInputs(countReq);
-    const countRes = await countReq.query(`SELECT COUNT(*) AS n FROM dbo.leads l ${whereSql}`);
+    const countRes = await countReq.query(`SELECT COUNT(*) AS n FROM ${SALES_LEADS} l ${whereSql}`);
     const total = countRes.recordset[0]?.n ?? 0;
 
     // 5. Page. `SELECT l.*` gives BI the full schema — new columns light up
@@ -203,7 +207,7 @@ export async function GET(req: NextRequest) {
         -- Sales owner
         u.full_name  AS assigned_name,
         u.email      AS assigned_email
-      FROM dbo.leads l
+      FROM ${SALES_LEADS} l
       LEFT JOIN users u ON l.assigned_user_id = u.id
       LEFT JOIN contacts c1 ON c1.lead_id = l.id AND c1.rn = 1
       LEFT JOIN contacts c2 ON c2.lead_id = l.id AND c2.rn = 2
@@ -249,7 +253,12 @@ export async function GET(req: NextRequest) {
       const survey_date = r.survey_date as string | null;
       const install_completed_at = r.install_completed_at as string | null;
       const order_paid_count = (r.order_paid_count as number | null) ?? 0;
-      r.stage_code = computeStageCode({ status, install_date, survey_date, install_completed_at, order_paid_count });
+      // stage_code (legacy "MM-S") มาจากคอลัมน์ journey ที่ persist แล้ว —
+      // fallback คำนวณสดเฉพาะแถวที่ยังไม่มีค่า (ไม่ควรเกิดหลัง backfill)
+      const journeyStep = (r.journey_step as number | null) ?? null;
+      r.stage_code = journeyStep != null
+        ? toLegacyStageCode({ step: journeyStep, sub: (r.journey_sub as number | null) ?? 0 })
+        : computeStageCode({ status, install_date, survey_date, install_completed_at, order_paid_count });
       r.status_label = getStatusLabel({ status, install_date, order_paid_count });
       return r;
     });

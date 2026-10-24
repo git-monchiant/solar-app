@@ -4,10 +4,12 @@ import { useEffect, useState } from "react";
 import Header from "@/components/layout/Header";
 import { LeadLink } from "@/components/lead/LeadLink";
 import { useOpenLead } from "@/lib/hooks/useOpenLead";
+import { useDialog } from "@/components/ui/Dialog";
 import FallbackImage from "@/components/ui/FallbackImage";
 import ImageLightbox, { type LightboxImage } from "@/components/ui/ImageLightbox";
 import { formatTHB } from "@/lib/utils/formatters";
-import { useDialog } from "@/components/ui/Dialog";
+import Loading from "@/components/ui/Loading";
+import OmPendingPayments, { type OmPendingPayment } from "@/components/om/OmPendingPayments";
 
 interface Installment {
   id: number;
@@ -51,6 +53,8 @@ interface ReportRow {
 
 interface ReportData {
   rows: ReportRow[];
+  /** ค่าบริการงาน O&M ที่รอยืนยัน (แผน 20260924-02 เฟส 4) — คิวเดียวกัน แสดงแยกหมวดติดป้าย O&M */
+  om_pending?: OmPendingPayment[];
 }
 
 const fmt = (n: number) => formatTHB(Math.round(n));
@@ -100,7 +104,7 @@ export default function PendingApprovalReport() {
     });
   }, [data]);
 
-  if (loading) return <div className="flex items-center justify-center h-full py-20"><div className="w-10 h-10 border-3 border-gray-200 border-t-primary rounded-full animate-spin" /></div>;
+  if (loading) return <Loading />;
   if (!data) return <div className="text-center py-12 text-gray-400 text-sm">โหลดไม่สำเร็จ</div>;
 
   // Flatten: one row per pending installment (only ones with slip awaiting verification)
@@ -157,7 +161,16 @@ export default function PendingApprovalReport() {
       || it.project_name?.toLowerCase().includes(q);
   });
 
-  const totalAmount = filtered.reduce((s, it) => s + it.installment.amount, 0);
+  // ค่าบริการ O&M ค้นด้วยคำเดียวกัน (ชื่อ · เลขที่ใบ · โครงการ) แล้วนับรวมในยอดสรุปของคิว
+  const omItems = (data.om_pending ?? []).filter(it => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    return it.customer_name?.toLowerCase().includes(q)
+      || it.quotation_doc_no?.toLowerCase().includes(q)
+      || it.project_name?.toLowerCase().includes(q);
+  });
+  const totalAmount = filtered.reduce((s, it) => s + it.installment.amount, 0)
+    + omItems.reduce((s, it) => s + it.amount, 0);
 
   const openSlips = (i: Installment) => {
     if (i.slip_urls.length === 0) return;
@@ -283,7 +296,7 @@ export default function PendingApprovalReport() {
       });
       window.setTimeout(() => openChequePaymentContext(item, false), 150);
     } catch (e) {
-      dialog.alert({ message: e instanceof Error ? e.message : "ยืนยันรับเช็คไม่สำเร็จ", variant: "danger" });
+      dialog.alert({ title: "ยืนยันรับเช็คไม่สำเร็จ", message: e instanceof Error ? e.message : "เกิดข้อผิดพลาด", variant: "danger" });
     } finally {
       setChequeReceivingId(null);
     }
@@ -298,7 +311,7 @@ export default function PendingApprovalReport() {
         <div className="grid grid-cols-2 gap-2">
           <div className="rounded-xl bg-white border border-gray-300 p-4">
             <div className="text-xs font-semibold uppercase tracking-wider text-gray-400">รายการรอยืนยัน</div>
-            <div className="text-2xl font-bold font-mono tabular-nums text-gray-900 mt-1">{filtered.length}</div>
+            <div className="text-2xl font-bold font-mono tabular-nums text-gray-900 mt-1">{filtered.length + omItems.length}</div>
           </div>
           <div className="rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 text-white p-4">
             <div className="text-xs font-semibold uppercase tracking-wider text-white/70">ยอดรวมรอยืนยัน</div>
@@ -312,7 +325,7 @@ export default function PendingApprovalReport() {
         </div>
 
         {/* List */}
-        {filtered.length === 0 ? (
+        {filtered.length === 0 ? (omItems.length > 0 ? null :
           <div className="bg-white rounded-xl border border-gray-300 p-12 text-center">
             <div className="text-sm text-gray-400">ไม่มีรายการรอยืนยัน</div>
           </div>
@@ -328,7 +341,7 @@ export default function PendingApprovalReport() {
               const chequeFailed = i.cheque_status === "bounced" || i.cheque_status === "cancelled";
               const chequeOverdue = isChequeOverdue(i);
               const statusBadge = i.cheque_status === "bounced" ? (
-                <span className="ml-1.5 inline-flex items-center rounded border border-red-200 bg-red-50 px-1.5 py-0.5 text-[10px] font-bold text-red-700">เช็คเด้ง</span>
+                <span className="ml-1.5 inline-flex items-center rounded border border-red-200 bg-red-50 px-1.5 py-0.5 text-[10px] font-bold text-red-700">เช็คคืน</span>
               ) : i.cheque_status === "cancelled" ? (
                 <span className="ml-1.5 inline-flex items-center rounded border border-gray-300 bg-gray-100 px-1.5 py-0.5 text-[10px] font-bold text-gray-600">ยกเลิกเช็ค</span>
               ) : chequeOverdue ? (
@@ -483,6 +496,8 @@ export default function PendingApprovalReport() {
             })}
           </div>
         )}
+
+        <OmPendingPayments items={omItems} focusedId={focusedPaymentId} />
 
         {filtered.length > 0 && (
           <div className="text-xs text-gray-400 text-center mt-2">

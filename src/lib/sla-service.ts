@@ -293,7 +293,7 @@ async function reconcileOperationalInstance(db: Db, input: {
  */
 export async function syncOperationalSlas(db: Db, leadId: number, actorUserId?: number | null) {
   const result = await db.request().input("lead_id", leadId).query(`
-    SELECT l.id, l.status, l.source, l.customer_grade, l.assigned_user_id, l.created_at, l.owner_assigned_at, l.pre_booked_at,
+    SELECT l.id, l.om_only, l.status, l.source, l.customer_grade, l.assigned_user_id, l.owner_assigned_at, l.pre_booked_at,
            l.survey_ready_at, l.survey_ready_by, l.survey_ready_note,
            l.survey_assigned_user_id, l.install_assigned_user_id,
            l.survey_completed_by, l.install_completed_by,
@@ -435,13 +435,15 @@ export async function syncOperationalSlas(db: Db, leadId: number, actorUserId?: 
   `);
   const lead = result.recordset[0];
   if (!lead) return;
+  // ★ lead ที่ระบบ O&M สร้าง (om_only) ไม่มี SLA ฝั่งขาย — ไม่งั้นทีมขายโดนเตือน "ยังไม่ติดต่อ lead ใหม่"
+  //   ทั้งที่เป็นงานของ O&M (แผน 20260924-02 เฟส 2)
+  if (lead.om_only) return;
 
   const gradeAt = dateOrNull(lead.grade_at);
   const legacyGradeBackfill = String(lead.grade_reason || "") === "grade_sla_backfill_v1";
   const contactedAt = dateOrNull(lead.contacted_at);
   const surveyDoneAt = dateOrNull(lead.survey_done_at);
   const bookSurveyMilestones = resolveBookSurveyMilestones({
-    leadCreatedAt: dateOrNull(lead.created_at),
     surveyReadyAt: dateOrNull(lead.survey_ready_at),
     appointmentSetAt: dateOrNull(lead.booked_at),
     surveyDoneAt,
@@ -520,7 +522,7 @@ export async function syncOperationalSlas(db: Db, leadId: number, actorUserId?: 
 
   const definitions: OperationalDefinition[] = [
     { policyCode: "ELECTRICITY_ASSESSMENT", policyVersion: 3, ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: SLA_TASK_LABEL.ELECTRICITY_ASSESSMENT, anchorAt: qualificationAnchorAt, completionAt: qualificationCompletedAt, targetMinutes: OPERATIONAL_SLA_MINUTES.ELECTRICITY_ASSESSMENT.target, dueMinutes: OPERATIONAL_SLA_MINUTES.ELECTRICITY_ASSESSMENT.due, warningMinutes: OPERATIONAL_SLA_MINUTES.ELECTRICITY_ASSESSMENT.warning },
-    { policyCode: "BOOK_SURVEY", policyVersion: 5, ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: SLA_TASK_LABEL.BOOK_SURVEY, anchorAt: bookSurveyMilestones.anchorAt, anchorSource: bookSurveyMilestones.anchorSource || undefined, completionAt: bookSurveyMilestones.completedAt, completionActivityId: lead.booked_activity_id || lead.survey_activity_id, targetMinutes: OPERATIONAL_SLA_MINUTES.BOOK_SURVEY.target, dueMinutes: OPERATIONAL_SLA_MINUTES.BOOK_SURVEY.due, warningMinutes: OPERATIONAL_SLA_MINUTES.BOOK_SURVEY.warning },
+    { policyCode: "BOOK_SURVEY", policyVersion: 6, ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: SLA_TASK_LABEL.BOOK_SURVEY, anchorAt: bookSurveyMilestones.anchorAt, anchorSource: bookSurveyMilestones.anchorSource || undefined, completionAt: bookSurveyMilestones.completedAt, completionActivityId: lead.booked_activity_id || lead.survey_activity_id, targetMinutes: OPERATIONAL_SLA_MINUTES.BOOK_SURVEY.target, dueMinutes: OPERATIONAL_SLA_MINUTES.BOOK_SURVEY.due, warningMinutes: OPERATIONAL_SLA_MINUTES.BOOK_SURVEY.warning },
     { policyCode: "SITE_SURVEY", policyVersion: 6, ownerRole: "solar", ownerUserId: lead.survey_assigned_user_id || lead.survey_completed_by || null, taskName: SLA_TASK_LABEL.SITE_SURVEY, anchorAt: scheduledSurveyAnchor.at, anchorSource: scheduledSurveyAnchor.source || undefined, freezeAnchorAfterCompletion: true, refreshCompletionAfterCompletion: true, completionAt: surveyDoneAt, completionActivityId: lead.survey_activity_id, targetMinutes: OPERATIONAL_SLA_MINUTES.SITE_SURVEY.target, dueMinutes: OPERATIONAL_SLA_MINUTES.SITE_SURVEY.due, warningMinutes: OPERATIONAL_SLA_MINUTES.SITE_SURVEY.warning },
     { policyCode: "PROPOSAL_ROI", policyVersion: 5, ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: SLA_TASK_LABEL.PROPOSAL_ROI, anchorAt: surveyDoneAt, refreshCompletionAfterCompletion: true, completionAt: proposalAt, completionActivityId: lead.proposal_activity_id, targetMinutes: OPERATIONAL_SLA_MINUTES.PROPOSAL_ROI.target, dueMinutes: OPERATIONAL_SLA_MINUTES.PROPOSAL_ROI.due, warningMinutes: OPERATIONAL_SLA_MINUTES.PROPOSAL_ROI.warning },
     // DEPOSIT_CLOSE (ติดตามปิดการขายและรับมัดจำ) ถูกถอดตามคำสั่งผู้ใช้ — ไม่อยู่ในตาราง
@@ -560,11 +562,12 @@ export async function syncOperationalSlas(db: Db, leadId: number, actorUserId?: 
 
 export async function ensureFirstContactSla(db: Db, leadId: number) {
   const leadResult = await db.request().input("lead_id", leadId).query(`
-    SELECT id, source, assigned_user_id, created_at
+    SELECT id, source, assigned_user_id, created_at, om_only
     FROM leads WHERE id = @lead_id
   `);
   const lead = leadResult.recordset[0];
   if (!lead) return null;
+  if (lead.om_only) return null;   // lead ของ O&M ไม่มี SLA ฝั่งขาย ดู syncOperationalSlas
 
   // One deadline for every source: the Bangkok contact window decides it.
   const startedAt = new Date(lead.created_at);

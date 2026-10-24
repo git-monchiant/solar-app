@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, fixDates } from "@/lib/db";
+import { flipJourneyDatesIfDue } from "@/lib/journey";
 import { requireAuth } from "@/lib/auth";
+import { SALES_LEADS, SALES_PAYMENTS } from "@/lib/lead-scope";
 
 export const runtime = "nodejs";
 
@@ -46,6 +48,7 @@ export async function GET(req: NextRequest) {
   if (gate.error) return gate.error;
   try {
     const db = await getDb();
+    await flipJourneyDatesIfDue(db);
     // Rank up to 5 contact attempts per lead. The "contact" set covers every
     // outbound channel sales might log: explicit follow-up entries, calls,
     // visits, LINE messages, etc.
@@ -86,6 +89,8 @@ export async function GET(req: NextRequest) {
         l.source,
         l.phone,
         l.status,
+        l.journey_step,
+        l.journey_sub,
         l.customer_grade,
         l.customer_group,
         l.created_at,
@@ -97,6 +102,10 @@ export async function GET(req: NextRequest) {
         l.pre_doc_no,
         l.payment_confirmed,
         l.lost_reason,
+        -- Why a still-unbooked lead hasn't paid yet. Carried on the row so
+        -- the dashboard's เหตุผลที่ยังไม่จอง card can open a bucket popup per reason,
+        -- the same way lost_reason backs the Lost card.
+        l.undecided_reason,
         l.order_installments,
         l.order_total,
         l.order_discount_amount,
@@ -109,7 +118,7 @@ export async function GET(req: NextRequest) {
         -- key; the client knows whether to label it "ค่าสำรวจ" or "งวด N".
         (
           SELECT slip_field, amount, confirmed_at
-          FROM payments
+          FROM ${SALES_PAYMENTS} payments
           WHERE lead_id = l.id AND confirmed_at IS NOT NULL
             AND (slip_field = 'pre_slip_url' OR slip_field LIKE 'order_installment_%')
           ORDER BY
@@ -121,16 +130,16 @@ export async function GET(req: NextRequest) {
         -- Submitted but not yet signed off by accounting — money owed to us
         -- that hasn't landed. Surfaced so the dashboard can show it separately
         -- from confirmed cash.
-        (SELECT ISNULL(SUM(amount), 0) FROM payments
+        (SELECT ISNULL(SUM(amount), 0) FROM ${SALES_PAYMENTS} payments
           WHERE lead_id = l.id AND submitted_at IS NOT NULL AND confirmed_at IS NULL) AS pending_amount,
-        (SELECT COUNT(*) FROM payments
+        (SELECT COUNT(*) FROM ${SALES_PAYMENTS} payments
           WHERE lead_id = l.id AND slip_field LIKE 'order_installment_%' AND confirmed_at IS NOT NULL) AS order_paid_count,
         l.install_completed_at AS install_done_at,
         CASE WHEN EXISTS (
           SELECT 1 FROM slip_files
           WHERE lead_id = l.id AND slip_field = 'pre_slip_url'
         ) OR EXISTS (
-          SELECT 1 FROM payments
+          SELECT 1 FROM ${SALES_PAYMENTS} payments
           WHERE lead_id = l.id AND slip_field = 'pre_slip_url' AND submitted_at IS NOT NULL
         ) THEN 1 ELSE 0 END AS pre_slip_uploaded,
 
@@ -139,7 +148,7 @@ export async function GET(req: NextRequest) {
         -- attribute that contact to the lead's creation date.
         COALESCE(c1.created_at,
           CASE WHEN EXISTS (
-            SELECT 1 FROM payments
+            SELECT 1 FROM ${SALES_PAYMENTS} payments
             WHERE lead_id = l.id AND slip_field = 'pre_slip_url' AND submitted_at IS NOT NULL
           ) THEN l.created_at END
         ) AS first_contact_at,
@@ -148,7 +157,7 @@ export async function GET(req: NextRequest) {
           WHEN c1.title LIKE N'ติดต่อได้%'                                   THEN 'yes'
           WHEN c1.activity_type IN ('call','visit','line','line_sent','loan_followup') THEN 'yes'
           WHEN c1.activity_type IS NULL AND EXISTS (
-            SELECT 1 FROM payments
+            SELECT 1 FROM ${SALES_PAYMENTS} payments
             WHERE lead_id = l.id AND slip_field = 'pre_slip_url' AND submitted_at IS NOT NULL
           ) THEN 'yes'
           ELSE NULL
@@ -162,7 +171,7 @@ export async function GET(req: NextRequest) {
         COALESCE(
           (SELECT MIN(created_at) FROM lead_activities
             WHERE lead_id = l.id AND title LIKE N'%เสนอขาย%'),
-          (SELECT MIN(submitted_at) FROM payments
+          (SELECT MIN(submitted_at) FROM ${SALES_PAYMENTS} payments
             WHERE lead_id = l.id AND slip_field = 'pre_slip_url' AND submitted_at IS NOT NULL)
         ) AS sales_pitch_at,
 
@@ -171,7 +180,7 @@ export async function GET(req: NextRequest) {
         -- column still tracks "จองสำรวจ" — semantically the booking happened,
         -- just at 0 ฿.
         COALESCE(
-          (SELECT MIN(confirmed_at) FROM payments
+          (SELECT MIN(confirmed_at) FROM ${SALES_PAYMENTS} payments
             WHERE lead_id = l.id AND slip_field = 'pre_slip_url' AND confirmed_at IS NOT NULL),
           CASE WHEN l.pre_survey_fee_type = 'free' AND l.payment_confirmed = 1 THEN l.pre_booked_at END
         ) AS booking_paid_at,
@@ -182,7 +191,7 @@ export async function GET(req: NextRequest) {
         (SELECT MIN(created_at) FROM lead_activities
           WHERE lead_id = l.id AND activity_type='status_change' AND new_status='order') AS quote_issued_at,
 
-        (SELECT MIN(confirmed_at) FROM payments
+        (SELECT MIN(confirmed_at) FROM ${SALES_PAYMENTS} payments
           WHERE lead_id = l.id AND slip_field LIKE 'order[_]%' AND confirmed_at IS NOT NULL) AS order_paid_at,
 
         (SELECT MIN(created_at) FROM lead_activities
@@ -199,7 +208,7 @@ export async function GET(req: NextRequest) {
         (SELECT MAX(created_at) FROM lead_activities
           WHERE lead_id = l.id AND activity_type='status_change' AND new_status='lost') AS lost_at
 
-      FROM leads l
+      FROM ${SALES_LEADS} l
       LEFT JOIN users u ON u.id = l.assigned_user_id
       LEFT JOIN contacts c1 ON c1.lead_id = l.id AND c1.rn = 1
       LEFT JOIN contacts c2 ON c2.lead_id = l.id AND c2.rn = 2

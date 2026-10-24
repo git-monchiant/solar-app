@@ -1,10 +1,13 @@
 "use client";
 import { DownloadIcon } from "@/components/ui/icons";
+import { useDialog } from "@/components/ui/Dialog";
+import Dropdown from "@/components/ui/Dropdown";
 // xlsx-js-style — same fork the Lead Tracking export uses (writes cell styles).
 import * as XLSX from "xlsx-js-style";
 
 import { apiFetch, getUserIdHeader } from "@/lib/api";
 import { getWithTtl, setWithTtl, TWO_HOURS_MS } from "@/lib/storage-ttl";
+import { sheetOf, type SheetCol } from "@/lib/utils/xlsx-sheet";
 import { useEffect, useMemo, useState } from "react";
 import { useOpenLead } from "@/lib/hooks/useOpenLead";
 import { LeadLink } from "@/components/lead/LeadLink";
@@ -13,7 +16,7 @@ import { STATUS_CONFIG } from "@/lib/constants/statuses";
 import { PRIMARY_REASON_LABEL } from "@/lib/constants/info-labels";
 import { getSourceStyle, normalizeSourceKey } from "@/lib/source-tag";
 import { formatTHB as fmt } from "@/lib/utils/formatters";
-import { useDialog } from "@/components/ui/Dialog";
+import Loading from "@/components/ui/Loading";
 
 type LifecycleCol = "first_contact_at" | "contact2_at" | "contact3_at" | "contact4_at" | "contact5_at"
   | "sales_pitch_at" | "booking_paid_at" | "survey_date" | "survey_done_at"
@@ -67,15 +70,37 @@ const moneyOf = (r: { order_total: number | null; install_extra_cost: number | n
   const net = gross - discount;
   return { value: gross, net, discount, paid, pending: Number(r.pending_amount || 0), due: net - paid };
 };
-const fmtBaht = (v: number) => `฿${Math.round(v).toLocaleString("th-TH")}`;
+const fmtBaht = (v: number) => `฿${fmt(Math.round(v))}`;
 
 type LifecycleRow = { [K in LifecycleCol]: string | null }
   & { [K in ContactStateField]: "yes" | "no" | null }
-  & { id: number; full_name: string; phone: string | null; house_number: string | null; source: string | null; status: string; pre_doc_no: string | null; payment_confirmed: boolean | null; pre_slip_uploaded: 0 | 1; lost_reason: string | null; order_installments: string | null; order_paid_count: number; created_at: string | null }
+  & { id: number; full_name: string; phone: string | null; house_number: string | null; source: string | null; status: string; pre_doc_no: string | null; payment_confirmed: boolean | null; pre_slip_uploaded: 0 | 1; lost_reason: string | null; undecided_reason: string | null; order_installments: string | null; order_paid_count: number; created_at: string | null }
+  & { journey_step: number | null; journey_sub: number | null }
   // Money columns — the bucket popup shows per-lead value/paid/outstanding and
   // totals them in its header. payment_dates_json is a FOR JSON PATH array of
   // { slip_field, amount, confirmed_at } covering confirmed payments only.
   & { order_total: number | null; install_extra_cost: number | null; order_discount_amount: number | null; payment_dates_json: string | null; install_actual_date: string | null; pending_amount: number | null; lost_at: string | null };
+
+// One interested prospect from the SEEKER side. Prospects live in their own
+// table — no lifecycle, no money — so the เหตุผลที่สนใจ card opens its own
+// popup instead of reusing the lead bucket one. `interest_reasons` arrives as
+// the raw CSV of reason codes the seeker ticked.
+type ProspectRow = {
+  id: number; project_id: number | null; project_name: string | null;
+  house_number: string | null; full_name: string; phone: string | null;
+  interest_reasons: string | null; lead_id: number | null; created_at: string | null;
+};
+
+// Both popup exports describe their sheet as a column spec (SheetCol) and hand
+// it to sheetOf — moved to src/lib/utils/xlsx-sheet.ts so the O&M overview can
+// share it (แผน 20261015-02).
+
+// interest_reasons is a CSV of reason codes ("save_bill,has_ev"). The card,
+// the popup and the export all split it the same way through these two.
+const reasonCodesOf = (p: ProspectRow) =>
+  (p.interest_reasons || "").split(",").map(s => s.trim()).filter(Boolean);
+const reasonLabelsOf = (p: ProspectRow) =>
+  reasonCodesOf(p).map(c => PRIMARY_REASON_LABEL[c] || c);
 
 // Moved over from /dashboard-dev — subset of fields the 5-card row needs.
 interface DevData {
@@ -86,6 +111,7 @@ interface DevData {
   interest_reasons: { code: string; cnt: number }[];
   interested_count: number;
   undecided_reasons: { reason: string; cnt: number }[];
+  interest_prospects: ProspectRow[];
 }
 
 interface DashboardData {
@@ -129,59 +155,63 @@ export default function DashboardPage() {
   // Click any KPI count → popup lists the leads behind it. Click a name to open
   // that lead's detail in a new tab.
   const [bucket, setBucket] = useState<{ title: string; rows: LifecycleRow[] } | null>(null);
+  // Same idea for the เหตุผลที่สนใจ card, but its rows are prospects, not leads —
+  // different columns, different destination on click — so it gets its own
+  // state and its own popup rather than bending the lead one out of shape.
+  const [prospectBucket, setProspectBucket] = useState<{ title: string; rows: ProspectRow[] } | null>(null);
 
-  // Export the open bucket popup's leads to .xlsx — same columns the popup
-  // shows, so the sheet matches what the user is looking at.
-  const exportBucketExcel = () => {
-    if (!bucket || bucket.rows.length === 0) return;
-    // Cancelled-after-booking is the one bucket sales actually calls back, so
-    // it carries a phone column the other buckets don't need.
-    const withPhone = bucket.title === "ยกเลิกหลังจอง";
-    const header = [
-      "ID", "ชื่อ-นามสกุล",
-      ...(withPhone ? ["เบอร์โทร"] : []),
+  // Export a lead list to .xlsx — same columns the bucket popup shows, so the
+  // sheet matches what the user is looking at. `stageOf` adds a leading
+  // ขั้นตอน column for exports that span several stations at once.
+  const exportLeadsExcel = (title: string, rows: LifecycleRow[], stageOf?: (r: LifecycleRow) => string) => {
+    if (rows.length === 0) return;
+    const money = (r: LifecycleRow) => moneyOf(r);
+    const cols: SheetCol<LifecycleRow>[] = [
+      ...(stageOf ? [{ label: "ขั้นตอน", wch: 16, always: true, value: stageOf }] : []),
+      { label: "ID", wch: 8, always: true, value: r => r.id },
+      { label: "ชื่อ-นามสกุล", wch: 28, always: true, value: r => r.full_name },
+      // Every bucket carries the phone now — whatever list sales opens, the
+      // next thing they do with it is call the people on it.
+      { label: "เบอร์โทร", wch: 14, value: r => r.phone || "" },
+      { label: "บ้านเลขที่", wch: 14, value: r => r.house_number || "" },
+      { label: "สถานะ", wch: 16, always: true, value: r => (STATUS_CONFIG[r.status] || STATUS_CONFIG[r.status.split("-")[0]])?.label || r.status },
+      { label: "จ่าย (%)", wch: 9, value: r => paidPctOf(r) ?? "" },
       // ราคาเต็ม / ส่วนลด are split out here (the popup only has room for the
       // net figure) so the sheet still shows how มูลค่างาน was arrived at.
-      "บ้านเลขที่", "สถานะ", "จ่าย (%)", "ราคาเต็ม", "ส่วนลด", "มูลค่างาน", "รับแล้ว", "ยังค้างรับ", "วันนัดติดตั้ง", "วันติดตั้งจริง", "วันที่สร้าง", "เหตุผลที่ยกเลิก",
+      { label: "ราคาเต็ม", wch: 13, value: r => money(r).value || "" },
+      { label: "ส่วนลด", wch: 11, value: r => money(r).discount || "" },
+      { label: "มูลค่างาน", wch: 13, value: r => money(r).value ? money(r).net : "" },
+      { label: "รับแล้ว", wch: 13, value: r => money(r).value ? money(r).paid : "" },
+      { label: "ยังค้างรับ", wch: 13, value: r => money(r).value ? money(r).due : "" },
+      { label: "วันนัดติดตั้ง", wch: 14, value: r => thDate(r.install_date) },
+      { label: "วันติดตั้งจริง", wch: 14, value: r => thDate(r.install_actual_date || r.install_done_at) },
+      { label: "วันที่สร้าง", wch: 14, always: true, value: r => thDate(r.created_at) },
+      { label: "เหตุผลที่ยกเลิก", wch: 48, value: r => r.lost_reason || "" },
+      { label: "เหตุผลที่ยังไม่จอง", wch: 28, value: r => r.undecided_reason || "" },
     ];
-    const data = bucket.rows.map((r) => {
-      const cfg = STATUS_CONFIG[r.status] || STATUS_CONFIG[r.status.split("-")[0]];
-      const pct = paidPctOf(r);
-      const m = moneyOf(r);
-      return [
-        r.id,
-        r.full_name,
-        ...(withPhone ? [r.phone || ""] : []),
-        r.house_number || "",
-        cfg?.label || r.status,
-        pct ?? "",
-        m.value || "",
-        m.discount || "",
-        m.value ? m.net : "",
-        m.value ? m.paid : "",
-        m.value ? m.due : "",
-        thDate(r.install_date),
-        thDate(r.install_actual_date || r.install_done_at),
-        thDate(r.created_at),
-        r.lost_reason || "",
-      ];
-    });
-    const ws = XLSX.utils.aoa_to_sheet([header, ...data]);
-    ws["!cols"] = [
-      { wch: 8 }, { wch: 28 },
-      ...(withPhone ? [{ wch: 14 }] : []),
-      { wch: 14 }, { wch: 16 }, { wch: 9 }, { wch: 13 }, { wch: 11 }, { wch: 13 }, { wch: 13 }, { wch: 13 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 48 },
-    ];
-    ws["!freeze"] = { xSplit: 0, ySplit: 1 };
-    header.forEach((_, c) => {
-      const ref = XLSX.utils.encode_cell({ r: 0, c });
-      if (ws[ref]) ws[ref].s = { font: { bold: true }, fill: { fgColor: { rgb: "F3F4F6" } } };
-    });
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Leads");
+    const wb = sheetOf(cols, rows, "Leads");
     // Excel rejects \ / : * ? [ ] in names — strip them out of the bucket title.
-    const safe = bucket.title.replace(/[\\/:*?[\]]/g, "-");
+    const safe = title.replace(/[\\/:*?[\]]/g, "-");
     XLSX.writeFile(wb, `${safe}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+  const exportBucketExcel = () => { if (bucket) exportLeadsExcel(bucket.title, bucket.rows); };
+  // Prospect popup export — mirrors exportBucketExcel but for the SEEKER-side
+  // columns (no money: a prospect has no order yet).
+  const exportProspectExcel = () => {
+    if (!prospectBucket || prospectBucket.rows.length === 0) return;
+    const cols: SheetCol<ProspectRow>[] = [
+      { label: "ID", wch: 8, always: true, value: p => p.id },
+      { label: "ชื่อ-นามสกุล", wch: 28, always: true, value: p => p.full_name },
+      { label: "เบอร์โทร", wch: 14, value: p => p.phone || "" },
+      { label: "บ้านเลขที่", wch: 14, value: p => p.house_number || "" },
+      { label: "โครงการ", wch: 24, value: p => p.project_name || "" },
+      { label: "เหตุผลที่สนใจ", wch: 40, value: p => reasonLabelsOf(p).join(", ") },
+      { label: "Lead ID", wch: 10, value: p => p.lead_id || "" },
+      { label: "วันที่บันทึก", wch: 14, always: true, value: p => thDate(p.created_at) },
+    ];
+    const wb = sheetOf(cols, prospectBucket.rows, "Prospects");
+    const safe = prospectBucket.title.replace(/[\/:*?[\]]/g, "-");
+    XLSX.writeFile(wb, `prospects_${safe}_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
   // Global filter — every chip/funnel/popup downstream uses
   // `filteredLifecycleRows`. Default window: 1 Jan 2026 → today (persists
@@ -266,7 +296,7 @@ export default function DashboardPage() {
     apiFetch("/api/lifecycle").then((rows: LifecycleRow[]) => setLifecycleRows(rows)).catch(console.error);
   }, []);
 
-  if (loading) return <div className="flex items-center justify-center h-full py-20"><div className="w-10 h-10 border-3 border-gray-200 border-t-primary rounded-full animate-spin" /></div>;
+  if (loading) return <Loading />;
   if (!data) return <div className="text-center py-12 text-gray-400 text-sm">Unable to load data</div>;
 
 
@@ -281,12 +311,10 @@ export default function DashboardPage() {
               {/* Global created_at filter — every chip / funnel / popup
                   downstream uses filteredLifecycleRows. */}
               <div className="hidden md:flex items-center gap-1 text-xs text-gray-500">
-                <select value={filterMode} onChange={e => setFilterMode(e.target.value as "created" | "activity")}
-                  className="h-8 px-2 rounded-lg bg-white border border-gray-200 text-xs text-gray-700 focus:outline-none focus:border-gray-300"
-                  title="เลือกเงื่อนไขฟิลเตอร์">
-                  <option value="created">วันที่สร้างลีด</option>
-                  <option value="activity">กิจกรรม</option>
-                </select>
+                <Dropdown className="w-36" value={filterMode} onChange={v => { if (v) setFilterMode(v as "created" | "activity"); }} options={[
+                  { value: "created", label: "วันที่สร้างลีด" },
+                  { value: "activity", label: "กิจกรรม" },
+                ]} />
                 <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
                   className="h-8 px-2 rounded-lg bg-white border border-gray-200 text-xs text-gray-700 focus:outline-none focus:border-gray-300"
                   title="ช่วงวันที่ (จาก)" />
@@ -316,7 +344,7 @@ export default function DashboardPage() {
                     if (dateTo)   qs.set("to",   dateTo);
                     qs.set("mode", filterMode);
                     const res = await fetch(`/api/report/dashboard-pdf?${qs.toString()}`, { headers: { ...getUserIdHeader() } });
-                    if (!res.ok) { dialog.alert({ message: "ดาวน์โหลด PDF ไม่สำเร็จ", variant: "danger" }); return; }
+                    if (!res.ok) { dialog.alert({ title: "โหลดไม่สำเร็จ", message: "ดาวน์โหลด PDF ไม่สำเร็จ", variant: "danger" }); return; }
                     const blob = await res.blob();
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement("a");
@@ -394,7 +422,31 @@ export default function DashboardPage() {
                 const m = moneyOf(r);
                 return { value: a.value + m.net, paid: a.paid + m.paid, due: a.due + m.due };
               }, { value: 0, paid: 0, due: 0 });
-              if (t.value === 0) return null;
+              if (bucket.rows.length === 0) return null;
+              // Nothing priced in this bucket (ยังไม่จอง is all pre-order) — a
+              // money strip would just read ฿0 four times over. Swap in what
+              // these rows are actually about: how many have been reached at
+              // all. Every bucket keeps a header either way.
+              if (t.value === 0) {
+                const reached = bucket.rows.filter(r =>
+                  r.first_contact_state === "yes" || r.contact2_state === "yes" || r.contact3_state === "yes"
+                  || r.contact4_state === "yes" || r.contact5_state === "yes"
+                ).length;
+                return (
+                  <div className="grid grid-cols-3 gap-px bg-gray-200 border-b border-gray-200 text-center">
+                    {[
+                      ["จำนวนงาน", `${bucket.rows.length} งาน`, "text-gray-900"],
+                      ["ติดต่อได้แล้ว", `${reached} งาน`, "text-emerald-700"],
+                      ["ยังติดต่อไม่ได้", `${bucket.rows.length - reached} งาน`, "text-amber-700"],
+                    ].map(([label, val, cls]) => (
+                      <div key={label} className="bg-gray-50 px-2 py-2">
+                        <div className="text-xxs text-gray-500">{label}</div>
+                        <div className={`text-sm font-bold font-mono tabular-nums ${cls}`}>{val}</div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              }
               return (
                 <div className="grid grid-cols-4 gap-px bg-gray-200 border-b border-gray-200 text-center">
                   {[
@@ -456,6 +508,11 @@ export default function DashboardPage() {
                       {r.status === "lost" && r.lost_reason && (
                         <div className="text-xs text-rose-700 truncate mt-0.5">เหตุผล: {r.lost_reason}</div>
                       )}
+                      {/* Same idea for the ยังไม่จอง buckets — matters most in
+                          the all-up one, where the rows carry mixed reasons. */}
+                      {r.status === "pre_survey" && r.undecided_reason && (
+                        <div className="text-xs text-amber-700 truncate mt-0.5">เหตุผล: {r.undecided_reason}</div>
+                      )}
                     </div>
                     {/* Money as its own fixed column — kept out of the meta line
                         so it can't run under the status badge on narrow rows. */}
@@ -480,6 +537,118 @@ export default function DashboardPage() {
             </div>
             <div className="px-4 py-2 border-t border-gray-100 text-xxs text-gray-400 text-center">
               คลิกชื่อเพื่อเปิด lead detail ใน tab ใหม่
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Prospect popup — the เหตุผลที่สนใจ card's click-through. Same shell as
+          the bucket popup above, different rows: prospects carry no money and
+          no lifecycle, so the summary strip counts heads instead and the row
+          shows project / reasons. A prospect that already became a lead links
+          to that lead; the rest open their project in SEEKER. */}
+      {prospectBucket && (
+        <div
+          className="fixed inset-0 z-50 bg-black/50 flex items-end md:items-center justify-center p-0 md:p-4"
+          onClick={() => setProspectBucket(null)}
+        >
+          <div
+            className="bg-white rounded-t-2xl md:rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-4 border-b border-gray-200">
+              <h3 className="text-lg font-bold text-gray-900">
+                {prospectBucket.title} <span className="text-base font-normal text-gray-500 ml-1">({prospectBucket.rows.length})</span>
+              </h3>
+              <div className="flex items-center gap-2">
+                {prospectBucket.rows.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={exportProspectExcel}
+                    className="cursor-pointer inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-white border border-gray-200 text-xs font-semibold text-gray-700 hover:border-gray-300 transition-colors"
+                    title={`Export ${prospectBucket.rows.length} rows to Excel`}
+                  >
+                    <DownloadIcon className="w-3.5 h-3.5 text-gray-400" strokeWidth={2} />
+                    <span>Excel</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setProspectBucket(null)}
+                  className="cursor-pointer w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500 text-xl"
+                  aria-label="ปิด"
+                >✕</button>
+              </div>
+            </div>
+            {/* How many of these prospects already became leads — the one thing
+                sales asks of this list. */}
+            {(() => {
+              const became = prospectBucket.rows.filter(r => r.lead_id).length;
+              return (
+                <div className="grid grid-cols-3 gap-px bg-gray-200 border-b border-gray-200 text-center">
+                  {[
+                    ["ผู้สนใจ", `${prospectBucket.rows.length} คน`, "text-gray-900"],
+                    ["เป็นลีดแล้ว", `${became} คน`, "text-emerald-700"],
+                    ["ยังไม่เป็นลีด", `${prospectBucket.rows.length - became} คน`, "text-amber-700"],
+                  ].map(([label, val, cls]) => (
+                    <div key={label} className="bg-gray-50 px-2 py-2">
+                      <div className="text-xxs text-gray-500">{label}</div>
+                      <div className={`text-sm font-bold font-mono tabular-nums ${cls}`}>{val}</div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+            <div className="overflow-auto divide-y divide-gray-100">
+              {prospectBucket.rows.length === 0 ? (
+                <div className="text-center py-10 text-gray-400 text-sm">ไม่มีรายการ</div>
+              ) : prospectBucket.rows.map((pr) => {
+                const labels = reasonLabelsOf(pr);
+                const body = (
+                  <>
+                    <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center shrink-0 text-gray-600 font-bold text-sm">
+                      {pr.full_name.charAt(0)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold text-gray-900 truncate flex items-baseline gap-2">
+                        <span className="truncate">{pr.full_name}</span>
+                        {pr.created_at && (
+                          <span className="text-xs font-normal text-gray-400 shrink-0">
+                            บันทึก {new Date(pr.created_at).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "2-digit" })}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs text-gray-500 flex items-baseline gap-3 font-mono tabular-nums whitespace-nowrap">
+                        <span className="w-12 shrink-0">ID {pr.id}</span>
+                        <span className="w-24 shrink-0 truncate">บ้าน {pr.house_number || "—"}</span>
+                        <span className="w-24 shrink-0 truncate">{pr.phone || "—"}</span>
+                        <span className="flex-1 min-w-0 truncate">{pr.project_name || ""}</span>
+                      </div>
+                      {labels.length > 0 && (
+                        <div className="text-xs text-emerald-700 truncate mt-0.5">เหตุผล: {labels.join(" · ")}</div>
+                      )}
+                    </div>
+                    <span className={`text-xxs font-bold uppercase tracking-wider px-2 py-0.5 rounded text-white shrink-0 w-20 text-center ${pr.lead_id ? "bg-emerald-500" : "bg-gray-400"}`}>
+                      {pr.lead_id ? `LEAD ${pr.lead_id}` : "PROSPECT"}
+                    </span>
+                  </>
+                );
+                const rowCls = "cursor-pointer flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50";
+                return pr.lead_id ? (
+                  <LeadLink key={pr.id} id={pr.lead_id} className={rowCls}>{body}</LeadLink>
+                ) : (
+                  <a
+                    key={pr.id}
+                    href={pr.project_id ? `/seeker?pid=${pr.project_id}` : "/seeker"}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={rowCls}
+                  >{body}</a>
+                );
+              })}
+            </div>
+            <div className="px-4 py-2 border-t border-gray-100 text-xxs text-gray-400 text-center">
+              คนที่เป็นลีดแล้ว → เปิด lead detail · ที่เหลือ → เปิดโครงการนั้นใน SEEKER
             </div>
           </div>
         </div>
@@ -514,37 +683,26 @@ export default function DashboardPage() {
           const periodLabel = dateFrom && dateTo ? "ช่วงที่เลือก" : "เดือนนี้";
           const fmtMoney = (v: number) => v >= 1000000 ? `฿${(v / 1000000).toFixed(1)}M` : v >= 1000 ? `฿${Math.round(v / 1000)}K` : `฿${fmt(v)}`;
 
-          const today = new Date(new Date().toDateString());
           const bookingPaidRows = filteredLifecycleRows.filter(r => r.booking_paid_at);
           const bookingPaidCount = bookingPaidRows.length;
 
-          // 4 mutually-exclusive buckets sum = total leads:
-          //   1) ยกเลิก (status=lost) — extracted first so the other 3 contain
-          //      only active leads, otherwise lost would double-count.
-          //   2) ติดต่อได้ — booking_paid OR any state=yes (booking override)
-          //   3) ติดต่อไม่ได้ — has no, no yes
-          //   4) ยังไม่ติดต่อ — no state activity at all
-          const lostRows         = filteredLifecycleRows.filter(r => r.status === "lost");
-          const contactedYesRows = filteredLifecycleRows.filter(r => r.status !== "lost" && (!!r.booking_paid_at
-            || [r.first_contact_state, r.contact2_state, r.contact3_state, r.contact4_state, r.contact5_state].some(s => s === "yes")));
-          const contactedNoRows = filteredLifecycleRows.filter(r => {
-            if (r.status === "lost" || r.booking_paid_at) return false;
-            const states = [r.first_contact_state, r.contact2_state, r.contact3_state, r.contact4_state, r.contact5_state];
-            return states.some(s => s === "no") && !states.some(s => s === "yes");
-          });
-          const notContactedRows = filteredLifecycleRows.filter(r => {
-            if (r.status === "lost" || r.booking_paid_at) return false;
-            const states = [r.first_contact_state, r.contact2_state, r.contact3_state, r.contact4_state, r.contact5_state];
-            return !states.some(s => s === "yes") && !states.some(s => s === "no");
-          });
+          // 4 mutually-exclusive buckets sum = total leads — อ่านจาก journey ที่
+          // persist แล้ว (sub 110/120/130/140 = funnel การติดต่อ) นิยามเดียวกับ
+          // dashboard-dev · ยกเลิกนับรวมส่งกลับ Seeker (9800) เพราะออกจาก pipeline
+          const isContactable = (r: LifecycleRow) => r.journey_sub === 130 || r.journey_sub === 140
+            || (r.journey_step != null && r.journey_step >= 200 && r.journey_step <= 1000);
+          const lostRows         = filteredLifecycleRows.filter(r => r.journey_step === 9900 || r.journey_step === 9800);
+          const contactedYesRows = filteredLifecycleRows.filter(isContactable);
+          const contactedNoRows  = filteredLifecycleRows.filter(r => r.journey_sub === 120);
+          const notContactedRows = filteredLifecycleRows.filter(r => r.journey_sub === 110);
           const lostTotal    = lostRows.length;
           const contactedYes = contactedYesRows.length;
           const contactedNo  = contactedNoRows.length;
           const notContacted = notContactedRows.length;
 
-          const contactedNoPitchRows     = contactedYesRows.filter(r => r.status === "pre_survey" && !r.sales_pitch_at && r.pre_slip_uploaded !== 1);
-          const contactedInPitchRows     = contactedYesRows.filter(r => r.status === "pre_survey" && r.sales_pitch_at && r.pre_slip_uploaded !== 1);
-          const contactedSlipPendingRows = contactedYesRows.filter(r => r.status === "pre_survey-01" || (r.status === "pre_survey" && r.pre_slip_uploaded === 1));
+          const contactedNoPitchRows     = contactedYesRows.filter(r => r.journey_sub === 130);
+          const contactedInPitchRows     = contactedYesRows.filter(r => r.journey_sub === 140);
+          const contactedSlipPendingRows = contactedYesRows.filter(r => r.journey_sub === 210);
           // booking_paid_at = "ชำระจองสำรวจ" inside this card. Scoped to
           // contactedYesRows (excludes lost) so the 4 sub-chips partition the
           // card header exactly — lost-after-booking shows up in the Leads
@@ -555,12 +713,9 @@ export default function DashboardPage() {
           const contactedSlipPending = contactedSlipPendingRows.length;
           const contactedBooked      = contactedBookedRows.length;
 
-          // "ได้ใบเสนอราคา" = status=order AND no install_date yet. Once
-          // install_date is locked in (regardless of whether status flipped
-          // to "install"), the lead moves to the install chip via the rule
-          // above, so we exclude those rows from order to keep stations
-          // mutually exclusive.
-          const orderRows = bookingPaidRows.filter(r => r.status === "order" && !r.install_date);
+          // "ได้ใบเสนอราคา" = journey 500/600 (ขั้นชำระเงิน–รอนัดติดตั้ง) — พอมีนัด
+          // ติดตั้ง journey ขยับเป็น 700 เอง สถานีจึงไม่ซ้อนกันโดยโครงสร้าง
+          const orderRows = bookingPaidRows.filter(r => r.journey_step === 500 || r.journey_step === 600);
           const orderPaidFull = orderRows.filter(r => {
             if (!r.order_paid_at) return false;
             const total = (() => { try { return r.order_installments ? (JSON.parse(r.order_installments) as unknown[]).length : 0; } catch { return 0; } })();
@@ -569,23 +724,15 @@ export default function DashboardPage() {
           const orderPaidPartial = orderRows.filter(r => r.order_paid_at).length - orderPaidFull;
           const orderUnpaid = orderRows.length - orderPaidPartial - orderPaidFull;
 
-          const stepWaitSurveyRows       = filteredLifecycleRows.filter(r => r.status === "pre_survey-02");
-          const stepSurveyScheduledRows  = bookingPaidRows.filter(r => r.status === "survey" && r.survey_date && new Date(r.survey_date) > today);
-          const stepSurveyingRows        = bookingPaidRows.filter(r => r.status === "survey" && (!r.survey_date || new Date(r.survey_date) <= today));
-          // "รอใบเสนอราคา" excludes leads with install_date set — those already
-  // have a locked-in install schedule (even if status got reverted to quote)
-  // so they belong in the install chip, not the quote chip.
-  const stepWaitQuoteRows        = bookingPaidRows.filter(r => r.status === "quote" && !r.install_date);
-          // Install chips: paid first installment + install_date set. Done
-          // is status-based (warranty/gridtie/closed) — same gate the pipeline
-          // page uses, so the counts here and the pipeline tab counts agree.
-          // install_done_at alone does NOT mark a lead as done: a crew can
-          // tick "ติดตั้งเสร็จ" but the remaining sub-steps (ส่งมอบ etc.) keep
-          // the macro status at "install" until ใบรับประกัน is issued.
-          const notInstallDone = (s: string) => s !== "warranty" && s !== "gridtie" && s !== "closed" && s !== "lost" && s !== "returned";
-          const stepInstallScheduledRows = bookingPaidRows.filter(r => (r.order_paid_count ?? 0) > 0 && r.install_date && notInstallDone(r.status) && new Date(r.install_date) > today);
-          const stepInstallingRows       = bookingPaidRows.filter(r => (r.order_paid_count ?? 0) > 0 && r.install_date && notInstallDone(r.status) && new Date(r.install_date) <= today);
-          const stepDoneRows             = bookingPaidRows.filter(r => ["warranty", "gridtie", "closed"].includes(r.status));
+          // สถานี = journey code ตรงๆ (split นัด/กำลัง มาจาก refreshJourney +
+          // nightly recompute) · ติดตั้งเสร็จ = 730 หรือขั้นหลังติดตั้ง (800–1000)
+          const stepWaitSurveyRows       = filteredLifecycleRows.filter(r => r.journey_sub === 220);
+          const stepSurveyScheduledRows  = bookingPaidRows.filter(r => r.journey_sub === 310);
+          const stepSurveyingRows        = bookingPaidRows.filter(r => r.journey_sub === 320);
+          const stepWaitQuoteRows        = bookingPaidRows.filter(r => r.journey_step === 400);
+          const stepInstallScheduledRows = bookingPaidRows.filter(r => r.journey_sub === 710);
+          const stepInstallingRows       = bookingPaidRows.filter(r => r.journey_sub === 720);
+          const stepDoneRows             = bookingPaidRows.filter(r => r.journey_sub === 730 || (r.journey_step != null && r.journey_step >= 800 && r.journey_step <= 1000));
           // นัดติดตั้ง / กำลังติดตั้ง / ติดตั้งเสร็จ breakdown: how many leads
           // have paid every installment (ครบ) vs. only the deposit (มัดจำ).
           // Mirrors the orderPaidFull / orderPaidPartial split used earlier.
@@ -599,7 +746,7 @@ export default function DashboardPage() {
           const installingPaidPartial = stepInstallingRows.length - installingPaidFull;
           const donePaidFull = countFullyPaid(stepDoneRows);
           const donePaidPartial = stepDoneRows.length - donePaidFull;
-          const stepLostAfterRows        = bookingPaidRows.filter(r => r.status === "lost");
+          const stepLostAfterRows        = bookingPaidRows.filter(r => r.journey_step === 9900);
 
           const pct = (a: number, b: number) => b > 0 ? Math.round((a / b) * 100) : 0;
 
@@ -699,7 +846,7 @@ export default function DashboardPage() {
                 {/* Leads */}
                 <div className="rounded-2xl bg-white border border-gray-200 p-4 flex flex-col">
                   <div className="flex items-baseline justify-between mb-3">
-                    <span className="text-sm font-bold uppercase tracking-[0.15em] text-gray-500">Leads ทั้งหมด</span>
+                    <span className="text-sm font-bold text-gray-500">Leads ทั้งหมด</span>
                     <span className="text-xs font-semibold text-emerald-600">+{data.this_month.new_leads || 0} {periodLabel}</span>
                   </div>
                   <button
@@ -718,7 +865,7 @@ export default function DashboardPage() {
                 {/* ติดต่อได้ — ปลายทาง */}
                 <div className="rounded-2xl bg-white border border-gray-200 p-4 flex flex-col">
                   <div className="flex items-baseline justify-between mb-3">
-                    <span className="text-sm font-bold uppercase tracking-[0.15em] text-emerald-700">ติดต่อได้ — ปลายทาง</span>
+                    <span className="text-sm font-bold text-emerald-700">ติดต่อได้ — ปลายทาง</span>
                     <span className="text-xs font-semibold text-gray-500">{pct(contactedYes, filteredLifecycleRows.length)}% reach</span>
                   </div>
                   <button
@@ -743,7 +890,7 @@ export default function DashboardPage() {
                     different months) shows the real cash instead of a fiction. */}
                 <div className="rounded-2xl bg-teal-200 border border-teal-400 p-4 flex flex-col">
                   <div className="flex items-baseline justify-between mb-3">
-                    <span className="text-sm font-bold uppercase tracking-[0.15em] text-teal-800">มูลค่างานที่นัดติดตั้ง</span>
+                    <span className="text-sm font-bold text-teal-800">มูลค่างานที่นัดติดตั้ง</span>
                     <span className="text-xs font-semibold text-teal-700">{periodLabel}</span>
                   </div>
                   {/* Contract value of every job with an install appointment in
@@ -795,7 +942,7 @@ export default function DashboardPage() {
                       onClick={openBucket("ชำระจองสำรวจ", bookingPaidRows.filter(r => r.status !== "lost"))}
                       className={`text-3xl font-bold font-mono tabular-nums text-emerald-700 leading-none ${bigNumCls}`}
                     >{bookingPaidCount - stepLostAfterRows.length}</button>
-                    <span className="text-sm font-bold uppercase tracking-[0.15em] text-emerald-700">ชำระจองสำรวจ</span>
+                    <span className="text-sm font-bold text-emerald-700">ชำระจองสำรวจ</span>
                     {stepLostAfterRows.length > 0 && (
                       <button
                         type="button"
@@ -804,6 +951,27 @@ export default function DashboardPage() {
                       >+ {stepLostAfterRows.length} ยกเลิกหลังจอง</button>
                     )}
                     <span className="text-xs font-semibold text-gray-500">{pct(bookingPaidCount, contactedYes)}% ของติดต่อได้</span>
+                    {/* ทุกการ์ดในแถวนี้รวมเป็นไฟล์เดียว เรียงตามลำดับสถานี — คอลัมน์ ขั้นตอน
+                        บอกว่าลีดอยู่การ์ดไหน (ลีดหนึ่งอยู่ได้สถานีเดียว เผื่อซ้อนก็นับครั้งแรก) */}
+                    {(() => {
+                      const stageById = new Map<number, string>();
+                      const rowsAll: LifecycleRow[] = [];
+                      for (const s of stations) for (const r of s.rows) {
+                        if (!stageById.has(r.id)) { stageById.set(r.id, s.l); rowsAll.push(r); }
+                      }
+                      return rowsAll.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => exportLeadsExcel("ชำระจองสำรวจ", rowsAll, r => stageById.get(r.id) ?? "")}
+                          className="no-print cursor-pointer self-center inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg bg-white border border-gray-200 text-xs font-semibold text-gray-700 hover:border-gray-300 transition-colors"
+                          style={{ minHeight: 0 }}
+                          title={`Export ${rowsAll.length} รายการในแถวนี้เป็น Excel`}
+                        >
+                          <DownloadIcon className="w-3.5 h-3.5 text-gray-400" strokeWidth={2} />
+                          <span>Excel</span>
+                        </button>
+                      );
+                    })()}
                   </div>
                   <span className="text-xxs text-gray-400">แตกย่อยตาม step ปัจจุบัน (sum = ชำระจองสำรวจ)</span>
                 </div>
@@ -816,7 +984,7 @@ export default function DashboardPage() {
                       onClick={() => setBucket({ title: s.l, rows: s.rows })}
                       className={`cursor-pointer text-left rounded-xl border p-3 ${s.cardBg} ${s.cardBorder} hover:ring-2 hover:ring-offset-1 hover:ring-gray-300 transition-all`}
                     >
-                      <div className={`text-sm font-bold uppercase tracking-[0.1em] leading-tight ${s.labelColor}`}>{s.l}</div>
+                      <div className={`text-sm font-bold leading-tight ${s.labelColor}`}>{s.l}</div>
                       <div className={`text-2xl font-bold font-mono tabular-nums leading-none mt-1.5 ${s.dark ? "text-white" : "text-gray-900"}`}>{s.rows.length}</div>
                       {s.detail
                         ? <div className={`text-xxs mt-1.5 font-mono tabular-nums leading-tight ${s.dark ? "text-white/85" : "text-gray-500"}`}>{s.detail}</div>
@@ -865,19 +1033,36 @@ export default function DashboardPage() {
           // Pulled in locally — the outer IIFE that owns openBucket/lostRows
           // closes before this block, so the click handlers need their own.
           const lostRows = filteredLifecycleRows.filter(r => r.status === "lost");
+          // ยังไม่จอง = the exact cohort /api/dashboard-dev groups by
+          // undecided_reason: still pre_survey, no booking doc. Re-deriving it
+          // from the rows (instead of trusting the bar's own count) is what
+          // keeps the popup and the bar above it in lockstep.
+          const undecidedRows = filteredLifecycleRows.filter(r => r.status === "pre_survey" && !r.pre_doc_no);
+          // Server folds NULL/'' into this label; match it when filtering back.
+          const NO_REASON = "ไม่ระบุเหตุผล";
+          const prospects = devData.interest_prospects || [];
           const bigNumCls = "cursor-pointer hover:underline decoration-2 underline-offset-4";
           const openBucket = (title: string, rows: LifecycleRow[]) => () => setBucket({ title, rows });
+          const openProspects = (title: string, rows: ProspectRow[]) => () => setProspectBucket({ title, rows });
           return (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div className="rounded-xl bg-white border border-gray-300 p-4">
                 <div className="flex items-baseline justify-between mb-3">
                   <div className="text-sm font-semibold uppercase tracking-wider text-gray-400">เหตุผลที่สนใจ <span className="normal-case text-gray-300">(prospects)</span></div>
-                  <div className="text-lg font-bold font-mono tabular-nums text-emerald-700">{devData.interested_count}</div>
+                  <button
+                    type="button"
+                    onClick={openProspects("ผู้สนใจทั้งหมด", prospects)}
+                    className={`text-lg font-bold font-mono tabular-nums text-emerald-700 ${bigNumCls}`}
+                  >{devData.interested_count}</button>
                 </div>
                 {devData.interest_reasons.length > 0 ? (
                   <BarList
-                    items={devData.interest_reasons.map(r => ({ label: PRIMARY_REASON_LABEL[r.code] || r.code, value: r.cnt }))}
+                    items={devData.interest_reasons.map(r => ({ code: r.code, label: PRIMARY_REASON_LABEL[r.code] || r.code, value: r.cnt }))}
                     color="bg-emerald-500"
+                    onSelect={(code, label) => setProspectBucket({
+                      title: `สนใจเพราะ ${label}`,
+                      rows: prospects.filter(pr => reasonCodesOf(pr).includes(code)),
+                    })}
                   />
                 ) : (
                   <div className="text-xs text-gray-400 text-center py-4">ยังไม่มีข้อมูล</div>
@@ -887,12 +1072,20 @@ export default function DashboardPage() {
               <div className="rounded-xl bg-white border border-gray-300 p-4">
                 <div className="flex items-baseline justify-between mb-3">
                   <div className="text-sm font-semibold uppercase tracking-wider text-gray-400">เหตุผลที่ยังไม่จอง</div>
-                  <div className="text-lg font-bold font-mono tabular-nums text-amber-700">{devData.undecided_reasons.reduce((a, b) => a + b.cnt, 0)}</div>
+                  <button
+                    type="button"
+                    onClick={openBucket("ยังไม่จอง", undecidedRows)}
+                    className={`text-lg font-bold font-mono tabular-nums text-amber-700 ${bigNumCls}`}
+                  >{devData.undecided_reasons.reduce((a, b) => a + b.cnt, 0)}</button>
                 </div>
                 {devData.undecided_reasons.length > 0 ? (
                   <BarList
-                    items={devData.undecided_reasons.map(r => ({ label: r.reason, value: r.cnt }))}
+                    items={devData.undecided_reasons.map(r => ({ code: r.reason, label: r.reason, value: r.cnt }))}
                     color="bg-amber-400"
+                    onSelect={(reason) => setBucket({
+                      title: reason,
+                      rows: undecidedRows.filter(r => (r.undecided_reason?.trim() || NO_REASON) === reason),
+                    })}
                   />
                 ) : (
                   <div className="text-xs text-gray-400 text-center py-4">ยังไม่มีข้อมูล</div>
@@ -1012,15 +1205,16 @@ function ActivityChart({ data }: { data: { day: string; lead_id: number; full_na
         <div className="text-sm font-semibold uppercase tracking-wider text-gray-400">
           การติดตามลูกค้า <span className="normal-case text-gray-300">(30 วันล่าสุด)</span>
         </div>
-        <select
+        <Dropdown
+          className="w-28"
           value={mode}
-          onChange={(e) => setMode(e.target.value as typeof mode)}
-          className="h-7 px-2 pr-6 rounded-md border border-gray-200 bg-white text-xxs font-medium text-gray-700 focus:outline-none focus:border-gray-400"
-        >
-          <option value="all">All</option>
-          <option value="create">Create</option>
-          <option value="activity">Activity</option>
-        </select>
+          onChange={(v) => { if (v) setMode(v as typeof mode); }}
+          options={[
+            { value: "all", label: "All" },
+            { value: "create", label: "Create" },
+            { value: "activity", label: "Activity" },
+          ]}
+        />
       </div>
       <div className="flex">
         {/* Y axis — only max + 0 */}
@@ -1146,15 +1340,16 @@ function LineGrowthChart({ users }: { users: { created_at: string; phone: string
         <div className="text-sm font-semibold uppercase tracking-wider text-gray-400">
           Add LINE OA รายวัน <span className="normal-case text-gray-300">(30 วันล่าสุด)</span>
         </div>
-        <select
+        <Dropdown
+          className="w-32"
           value={mode}
-          onChange={(e) => setMode(e.target.value as typeof mode)}
-          className="h-7 px-2 pr-6 rounded-md border border-gray-200 bg-white text-xxs font-medium text-gray-700 focus:outline-none focus:border-gray-400"
-        >
-          <option value="all">All</option>
-          <option value="line">Line</option>
-          <option value="line_phone">Line + Phone</option>
-        </select>
+          onChange={(v) => { if (v) setMode(v as typeof mode); }}
+          options={[
+            { value: "all", label: "All" },
+            { value: "line", label: "Line" },
+            { value: "line_phone", label: "Line + Phone" },
+          ]}
+        />
       </div>
       <div className="flex">
         <div className="flex flex-col justify-between pr-2" style={{ height: chartH }}>
@@ -1212,54 +1407,37 @@ function LineGrowthChart({ users }: { users: { created_at: string; phone: string
 // (same override as KPI), so a lead that paid but never had a successful
 // contact-attempt logged (e.g. lead 438) is still in ติดต่อได้.
 function LifecycleFunnelChart({ rows, onStageClick }: { rows: LifecycleRow[]; onStageClick?: (title: string, rows: LifecycleRow[]) => void }) {
-  const CONTACT_STATES: ContactStateField[] = [
-    "first_contact_state", "contact2_state", "contact3_state", "contact4_state", "contact5_state",
-  ];
-  const today = new Date(new Date().toDateString());
-  const stateList = (r: LifecycleRow) => CONTACT_STATES.map(s => r[s]);
-  const hasYes = (r: LifecycleRow) => stateList(r).some(s => s === "yes");
-  const hasNo  = (r: LifecycleRow) => stateList(r).some(s => s === "no");
   const isPaid = (r: LifecycleRow) => !!r.booking_paid_at;
 
-  // Contact section — 4 mutually-exclusive buckets sum = total leads, matching
-  // Leads card chips exactly. Lost is extracted first so the other 3 contain
-  // only active leads (no double-count with the terminal ยกเลิก bar).
-  const isLost = (r: LifecycleRow) => r.status === "lost";
-  const noContactRows  = rows.filter(r => !isLost(r) && !isPaid(r) && !hasYes(r) && !hasNo(r));
-  const contactNoRows  = rows.filter(r => !isLost(r) && !isPaid(r) && hasNo(r) && !hasYes(r));
-  const contactYesRows = rows.filter(r => !isLost(r) && (isPaid(r) || hasYes(r)));
+  // Contact section — partition เดียวกับ KPI card และ dashboard-dev: อ่านจาก
+  // journey ที่ persist (sub 110/120/130/140 = funnel การติดต่อ)
+  const isContactable = (r: LifecycleRow) => r.journey_sub === 130 || r.journey_sub === 140
+    || (r.journey_step != null && r.journey_step >= 200 && r.journey_step <= 1000);
+  const noContactRows  = rows.filter(r => r.journey_sub === 110);
+  const contactNoRows  = rows.filter(r => r.journey_sub === 120);
+  const contactYesRows = rows.filter(isContactable);
 
-  // ติดต่อได้ — ปลายทาง: same 4 mutually-exclusive buckets as KPI card 2
-  // (sum = contactYesRows.length). Lost is excluded above so we don't add a
-  // 5th bar for it.
-  const destNoPitchRows     = contactYesRows.filter(r => r.status === "pre_survey" && !r.sales_pitch_at && r.pre_slip_uploaded !== 1);
-  const destInPitchRows     = contactYesRows.filter(r => r.status === "pre_survey" && r.sales_pitch_at && r.pre_slip_uploaded !== 1);
-  const destSlipPendingRows = contactYesRows.filter(r => r.status === "pre_survey-01" || (r.status === "pre_survey" && r.pre_slip_uploaded === 1));
-  const destBookedRows      = contactYesRows.filter(r => !!r.booking_paid_at);
+  // ติดต่อได้ — ปลายทาง: 4 buckets เดียวกับ KPI card 2
+  const destNoPitchRows     = contactYesRows.filter(r => r.journey_sub === 130);
+  const destInPitchRows     = contactYesRows.filter(r => r.journey_sub === 140);
+  const destSlipPendingRows = contactYesRows.filter(r => r.journey_sub === 210);
+  const destBookedRows      = contactYesRows.filter(isPaid);
 
-  // ชำระจองสำรวจ — same 9 buckets as KPI row 2 stations (sum = bookingPaid).
-  const bookingPaidRows = rows.filter(r => r.booking_paid_at);
-  const stepWaitSurveyRows       = rows.filter(r => r.status === "pre_survey-02");
-  const stepSurveyScheduledRows  = bookingPaidRows.filter(r => r.status === "survey" && r.survey_date && new Date(r.survey_date) > today);
-  const stepSurveyingRows        = bookingPaidRows.filter(r => r.status === "survey" && (!r.survey_date || new Date(r.survey_date) <= today));
-  // "รอใบเสนอราคา" excludes leads with install_date set — those already
-  // have a locked-in install schedule (even if status got reverted to quote)
-  // so they belong in the install chip, not the quote chip.
-  const stepWaitQuoteRows        = bookingPaidRows.filter(r => r.status === "quote" && !r.install_date);
-  // Mirror of the dashboard page rule — exclude order leads that already
-  // have install_date set (those land in the install chip instead).
-  const orderRowsList            = bookingPaidRows.filter(r => r.status === "order" && !r.install_date);
-  // Mirror of the dashboard page rule — install chip ignores status; the
-  // earlier quote/order chips exclude install_date-set rows to avoid overlap.
-  const stepInstallScheduledRows = bookingPaidRows.filter(r => (r.order_paid_count ?? 0) > 0 && r.install_date && !r.install_done_at && new Date(r.install_date) > today);
-  const stepInstallingRows       = bookingPaidRows.filter(r => (r.order_paid_count ?? 0) > 0 && r.install_date && new Date(r.install_date) <= today && !r.install_done_at);
-  const stepDoneRows             = bookingPaidRows.filter(r => ["warranty", "gridtie", "closed"].includes(r.status));
-  const stepLostAfterRows        = bookingPaidRows.filter(r => r.status === "lost");
+  // ชำระจองสำรวจ — 9 สถานีเดียวกับ KPI row 2 (journey code ตรงๆ)
+  const bookingPaidRows = rows.filter(isPaid);
+  const stepWaitSurveyRows       = rows.filter(r => r.journey_sub === 220);
+  const stepSurveyScheduledRows  = bookingPaidRows.filter(r => r.journey_sub === 310);
+  const stepSurveyingRows        = bookingPaidRows.filter(r => r.journey_sub === 320);
+  const stepWaitQuoteRows        = bookingPaidRows.filter(r => r.journey_step === 400);
+  const orderRowsList            = bookingPaidRows.filter(r => r.journey_step === 500 || r.journey_step === 600);
+  const stepInstallScheduledRows = bookingPaidRows.filter(r => r.journey_sub === 710);
+  const stepInstallingRows       = bookingPaidRows.filter(r => r.journey_sub === 720);
+  const stepDoneRows             = bookingPaidRows.filter(r => r.journey_sub === 730 || (r.journey_step != null && r.journey_step >= 800 && r.journey_step <= 1000));
+  const stepLostAfterRows        = bookingPaidRows.filter(r => r.journey_step === 9900);
 
-  // ยกเลิก — every lost lead (= countsByStatus['lost']). Overlaps with contact
-  // buckets above because lost can happen at any stage; shown separately as a
-  // terminal-state column so the user sees total churn at a glance.
-  const lostRows = rows.filter(r => r.status === "lost");
+  // ยกเลิก (รวม) — terminal ทุกตัว (ยกเลิก + ส่งกลับ Seeker) ซ้อนกับ bucket อื่น
+  // ได้โดยตั้งใจ เพราะการยกเลิกเกิดที่ขั้นไหนก็ได้
+  const lostRows = rows.filter(r => r.journey_step === 9900 || r.journey_step === 9800);
 
   type Seg = { color: string; count: number; rows: LifecycleRow[]; subLabel?: string };
   const stages: { label: string; total: number; rows: LifecycleRow[]; segments: Seg[] }[] = [
@@ -1497,14 +1675,22 @@ function SourceQualityChart({
 
 // BarList — moved over from /dashboard-dev so the 5-card row above can render
 // without the dev page.
-function BarList({ items, color }: { items: { label: string; value: number }[]; color: string }) {
+// `onSelect` turns every bar into a button — same click-through the Lost card
+// has. It hands back `code`, not the label: the caller filters its own rows by
+// the raw value (a reason code, or the reason text itself), while the label is
+// already translated for display.
+function BarList({ items, color, onSelect }: {
+  items: { code: string; label: string; value: number }[];
+  color: string;
+  onSelect?: (code: string, label: string) => void;
+}) {
   const max = Math.max(...items.map(i => i.value), 1);
   return (
     <div className="space-y-1.5">
       {items.map((it, i) => {
         const pct = (it.value / max) * 100;
-        return (
-          <div key={i}>
+        const body = (
+          <>
             <div className="flex items-center justify-between mb-0.5">
               <span className="text-xs font-medium text-gray-700 truncate">{it.label}</span>
               <span className="text-xs font-bold font-mono tabular-nums text-gray-900 ml-2">{it.value}</span>
@@ -1512,7 +1698,17 @@ function BarList({ items, color }: { items: { label: string; value: number }[]; 
             <div className="h-1.5 bg-gray-100 overflow-hidden">
               <div className={`h-full ${color}`} style={{ width: `${pct}%` }} />
             </div>
-          </div>
+          </>
+        );
+        return onSelect ? (
+          <button
+            type="button"
+            key={i}
+            onClick={() => onSelect(it.code, it.label)}
+            className="w-full text-left hover:bg-gray-50 rounded px-1 py-0.5 cursor-pointer transition-colors"
+          >{body}</button>
+        ) : (
+          <div key={i}>{body}</div>
         );
       })}
     </div>

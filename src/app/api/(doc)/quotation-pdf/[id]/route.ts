@@ -1,5 +1,6 @@
 import { readFileSync } from "fs";
 import { join } from "path";
+import { formatTHB } from "@/lib/utils/formatters";
 import { createHash } from "crypto";
 import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
@@ -13,11 +14,13 @@ import {
   calculateFinancialSnapshot,
   expandOtherPackageAddOns,
   parseDocumentInputs,
+  readPaymentMethod,
   QUOTATION_DOCUMENT_VERSION,
   type QuotationDocumentSnapshot,
 } from "@/lib/quotation-document";
-import { buildSurveyReportHtml } from "@/lib/docs/survey-report";
+import { buildSurveyReportHtml, countSurveyReportPages } from "@/lib/docs/survey-report";
 import { buildContentDisposition } from "@/lib/doc-filename";
+import { buildOmPreviewSnapshot, buildOmQuoteSnapshot, parseOmQuoteInput } from "@/lib/om/om-quotation";
 import {
   getQuotationLegalContent,
   parseQuotationPaymentTerms,
@@ -63,11 +66,7 @@ const esc = (value: unknown) =>
         "'": "&#39;",
       })[char]!,
   );
-const money = (value: unknown) =>
-  Number(value || 0).toLocaleString("th-TH", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+const money = (value: unknown) => formatTHB(Number(value || 0), { decimals: 2 });
 const thaiDate = (value: unknown) =>
   value
     ? new Intl.DateTimeFormat("th-TH", {
@@ -150,6 +149,25 @@ export async function POST(req: NextRequest) {
   if (!userId || !(await getQuotationActor(userId)))
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   const body = await req.json();
+  // ★ ใบ O&M — ปุ่ม "ดูตัวอย่าง" ใน popup ทำใบเสนอราคา O&M (แผน 20261002-04)
+  //   ชุดข้อมูลสร้างแบบ buildOmQuoteSnapshot จากค่าในฟอร์ม · detail.om_booking_id ไม่ว่าง ⇒ GET เข้าทาง O&M เอง
+  if (body.om) {
+    const input = parseOmQuoteInput(body);
+    if (typeof input === "string") return NextResponse.json({ error: input }, { status: 400 });
+    const houseId = Number(body.house_id);
+    if (!houseId) return NextResponse.json({ error: "ต้องระบุบ้าน" }, { status: 400 });
+    try {
+      const built = await buildOmPreviewSnapshot(houseId, input, {
+        docNo: body.docNo ? String(body.docNo) : null, validDays: Number(body.validDays) || null, actorUserId: userId,
+      });
+      const token = randomUUID();
+      previewCache.set(token, built);
+      setTimeout(() => previewCache.delete(token), 10 * 60_000);
+      return NextResponse.json({ token });
+    } catch (e) {
+      return NextResponse.json({ error: e instanceof Error ? e.message : "สร้างตัวอย่างไม่สำเร็จ" }, { status: 400 });
+    }
+  }
   const now = new Date().toISOString();
   let packageRow = body.package || {};
   let previewAllItems: Array<Record<string, unknown>> = Array.isArray(body.allItems) ? body.allItems : [];
@@ -224,7 +242,10 @@ export async function POST(req: NextRequest) {
     terms_text: body.termsText || "",
     created_by_name: "-",
   };
-  const inputs = parseDocumentInputs(body.documentInputs || {});
+  // รูปแบบการชำระที่ยังว่างใช้คำตอบใน Customer Info (เหมือน buildQuotationDocumentSnapshot)
+  const inputs = parseDocumentInputs(body.documentInputs || {}, {
+    payment_method: readPaymentMethod(previewLeadData.payment_interest),
+  });
   const snapshot: QuotationDocumentSnapshot = {
     version: QUOTATION_DOCUMENT_VERSION,
     generated_at: now,
@@ -264,12 +285,16 @@ export async function GET(
     : undefined;
   const quotationId = Number(id);
   const htmlPreview = req.nextUrl.searchParams.get("format") === "html";
-  const quotationOnly =
-    req.nextUrl.searchParams.get("quotation_only") === "1" || htmlPreview;
   const detail =
     cachedPreview?.detail || (await getQuotationDetail(quotationId));
   if (!detail)
     return NextResponse.json({ error: "ไม่พบใบเสนอราคา" }, { status: 404 });
+  // ★ ใบเสนอราคางานบริการ O&M (แผน 20260924-02 เฟส 3) ใช้ตัวเรนเดอร์เดียวกันทั้งก้อน
+  //   ต่างแค่ไม่แนบรายงานสำรวจ (งานล้างแผงไม่มีการสำรวจ) → เข้าทาง quotation-only เสมอ
+  //   ชุดข้อมูลเอกสารมาจาก buildOmQuoteSnapshot (แถวแพ็กเกจ O&M + ข้อความท้ายใบของ O&M)
+  const isOm = detail.om_booking_id != null;
+  const quotationOnly =
+    isOm || req.nextUrl.searchParams.get("quotation_only") === "1" || htmlPreview;
 
   const db = await getDb();
   if (detail.status === "approved" && !quotationOnly) {
@@ -324,7 +349,10 @@ export async function GET(
       /* regenerate below */
     }
   }
-  if (!snapshot) snapshot = await buildQuotationDocumentSnapshot(quotationId);
+  if (!snapshot)
+    snapshot = isOm
+      ? await buildOmQuoteSnapshot(quotationId)
+      : await buildQuotationDocumentSnapshot(quotationId);
   if (!snapshot)
     return NextResponse.json(
       { error: "สร้างข้อมูลเอกสารไม่สำเร็จ" },
@@ -361,6 +389,18 @@ export async function GET(
   } catch {
     /* keep empty */
   }
+  // ยอดเงินแต่ละงวด (งวดสุดท้ายรับเศษให้รวมเท่ายอดสุทธิพอดี) — ใช้ทั้งตารางงวดในใบ
+  // และยอดผ่อนบัตรใน §8 ของรายงานสำรวจ ให้สองเอกสารบอกยอดเดียวกัน
+  const outstandingAmount = Number(q.outstanding_amount) || 0;
+  const paymentAmounts: number[] = [];
+  terms.forEach((term, index) => {
+    const allocated = paymentAmounts.reduce((sum, amount) => sum + amount, 0);
+    paymentAmounts.push(
+      index === terms.length - 1
+        ? Math.round(Math.max(0, outstandingAmount - allocated) * 100) / 100
+        : Math.round(((outstandingAmount * Number(term.percent || 0)) / 100) * 100) / 100,
+    );
+  });
 
   const settings = snapshot.settings;
   const bankName =
@@ -413,14 +453,16 @@ export async function GET(
     name: q.package_name_snapshot || snapshot.package.name,
     price: q.package_price_snapshot || snapshot.package.price,
   };
+  // ★ ใบ O&M (om-doc): เลข SSR-OM-QT-26-0014 ยาวกว่าเลขฝั่งขาย ช่องเดิมตัดเป็น 2 บรรทัด (ผู้ใช้ตรวจ PDF 14 ต.ค. 69)
+  //   ⇒ ช่องหัวข้อแคบลง + เลขใบไม่ตัดบรรทัด 10pt เฉพาะใบ O&M · Email ว่างไม่ใส่สีลิงก์ให้ขีด "-" (ทุกใบ)
   const quotationHeader = `
     <div class="header">
       <div class="brand"><img src="${logoDataUrl}" alt="SENA Solar Energy"></div>
       <div class="company"><b>บริษัท เสนา โซลาร์ เอนเนอร์ยี่ จำกัด (สำนักงานใหญ่)</b><br>เลขที่ 448 ถนนรัชดาภิเษก แขวงสามเสนนอก เขตห้วยขวาง<br>กรุงเทพมหานคร 10310 โทร. 0-2541-4642<br>เลขประจำตัวผู้เสียภาษี 0105552041258</div>
-      <div class="quotation-title"><div>ใบเสนอราคา</div><table><tr><td>QUOTATION NO.</td><td>${esc(q.doc_no)}</td></tr><tr><td>วันที่</td><td>${thaiDate(q.issue_date)}</td></tr></table></div>
+      <div class="quotation-title${isOm ? " om-doc" : ""}"><div>ใบเสนอราคา</div><table><tr><td>QUOTATION NO.</td><td>${esc(q.doc_no)}</td></tr><tr><td>วันที่</td><td>${thaiDate(q.issue_date)}</td></tr></table></div>
     </div>
     <div class="customer-grid">
-      <table class="customer-table"><tr><th>ชื่อโครงการ :</th><td>${esc(q.project_name || "-")}</td></tr><tr><th>ลูกค้า :</th><td>${esc(q.customer_name)}</td></tr><tr><th>ที่อยู่ :</th><td><span class="address-value">${esc(q.installation_address || q.id_card_address || "-")}</span></td></tr><tr><th>เบอร์ติดต่อ :</th><td>${esc(q.customer_phone || "-")}</td></tr><tr><td colspan="2" class="tax-row"><span>เลขประจำตัวผู้เสียภาษี :</span><span>${esc(q.id_card_number || "-")}</span></td></tr><tr><th>Email :</th><td class="email">${esc(q.customer_email || "-")}</td></tr></table>
+      <table class="customer-table"><tr><th>ชื่อโครงการ :</th><td>${esc(q.project_name || "-")}</td></tr><tr><th>ลูกค้า :</th><td>${esc(q.customer_name)}</td></tr><tr><th>ที่อยู่ :</th><td><span class="address-value">${esc(q.installation_address || q.id_card_address || "-")}</span></td></tr><tr><th>เบอร์ติดต่อ :</th><td>${esc(q.customer_phone || "-")}</td></tr><tr><td colspan="2" class="tax-row"><span>เลขประจำตัวผู้เสียภาษี :</span><span>${esc(q.id_card_number || "-")}</span></td></tr><tr><th>Email :</th><td${q.customer_email ? ' class="email"' : ""}>${esc(q.customer_email || "-")}</td></tr></table>
       <table class="contact-table"><tr><th>ชื่อผู้ติดต่อ :</th><td colspan="2">${esc(quotationContact.name)}</td></tr><tr><th>โทร :</th><td colspan="2">${esc(quotationContact.phone)}</td></tr><tr><th>E-Mail :</th><td colspan="2">${esc(quotationContact.email)}</td></tr><tr><th>Line OA :</th><td colspan="2">${esc(quotationContact.lineOa)}</td></tr><tr><td colspan="3" class="valid-box"><div class="valid-box-grid"><span class="valid-label">ยืนราคา</span><span class="valid-days"><b>${esc(q.valid_days)}</b></span><span class="valid-copy">วัน นับจากวันที่ออกเอกสารใบเสนอราคา</span></div></td></tr></table>
     </div>`;
 
@@ -596,10 +638,19 @@ export async function GET(
         ),
         depositAmount: Number(q.deposit_paid_amount || 0),
         netAmount: Number(q.outstanding_amount || 0),
+        // งวดสุดท้าย = ส่วนที่ผ่อนบัตรได้ใน §8 (ปกติคืองวด 80%)
+        lastInstallment: terms.length
+          ? {
+              percent: Number(terms[terms.length - 1].percent || 0),
+              amount: paymentAmounts[paymentAmounts.length - 1],
+            }
+          : undefined,
       },
       financial: snapshot.financial,
     },
   );
+  // 15 หน้า หรือน้อยกว่าเมื่อใบระบุรูปแบบการชำระ (แผน 20261012-06) — นับจาก HTML จริง
+  const surveyPageCount = countSurveyReportPages(surveyHtml);
 
   const itemRows: QuoteTableRow[] = [
     ...(hasPackage
@@ -615,23 +666,13 @@ export async function GET(
     ...addOnRows,
   ];
 
-  let allocatedPaymentAmount = 0;
   const paymentRows = terms
     .map((term, index) => {
       const percent = Number(term.percent || 0);
       const percentText = percent.toLocaleString("th-TH", {
         maximumFractionDigits: 2,
       });
-      const outstandingAmount = Number(q.outstanding_amount) || 0;
-      const calculatedAmount =
-        Math.round(((outstandingAmount * percent) / 100) * 100) / 100;
-      const paymentAmount =
-        index === terms.length - 1
-          ? Math.round(
-              Math.max(0, outstandingAmount - allocatedPaymentAmount) * 100,
-            ) / 100
-          : calculatedAmount;
-      allocatedPaymentAmount += paymentAmount;
+      const paymentAmount = paymentAmounts[index];
       return `<tr><td>${esc(term.label)}</td><td class="center">${percentText}%</td><td>${esc(term.due)}</td><td class="center">เป็นจำนวนเงิน</td><td class="right">${money(paymentAmount)}</td></tr>`;
     })
     .join("");
@@ -705,7 +746,7 @@ export async function GET(
     `<div class="sig-cell">${signature ? `<img src="${signature}" alt="ลายเซ็น">` : `<div class="sig-space"></div>`}<div class="sig-line">ลงชื่อ<span class="sig-dots"></span>${role}</div><div>( ${name ? esc(name) : "............................................................."} )</div><div>วันที่ ${date ? thaiDate(date) : "................... / ................... / ..................."}</div></div>`;
 
   const documentStyles = `${heaventFontFace}
-    @page{size:210mm 297mm;margin:0}*{box-sizing:border-box}html,body{margin:0;padding:0;color:#172126;font-family:'DB Heavent',"Cordia New",Tahoma,"Noto Sans Thai",Arial,sans-serif;font-size:11pt;line-height:1.15}.page{position:relative;width:210mm;height:297mm;padding:13mm 16mm 7mm;overflow:hidden;page-break-after:always}.page:last-child{page-break-after:auto}.header{display:grid;grid-template-columns:46mm 1fr 50mm;gap:5mm;align-items:start;min-height:20mm}.brand img{display:block;width:43mm;height:17mm;object-fit:contain;object-position:left center}.company{padding-top:1mm;font-size:11pt;line-height:1.25;color:#273238}.quotation-title>div{border:1px solid #00a99d;border-radius:4px;padding:2px;text-align:center;font-size:18pt;font-weight:bold}.quotation-title table{width:100%;margin-top:2px;border-collapse:collapse;font-size:11pt}.quotation-title td{height:4.3mm;border:.75px solid #667078;padding:0 3px}.quotation-title td:first-child{width:25mm}.customer-grid{display:grid;grid-template-columns:1fr 1fr;gap:12mm;align-items:start;margin:0.5mm 0 1.5mm}.customer-grid table{width:100%;height:auto;align-self:start;border-collapse:collapse}.customer-grid tr{height:auto}.customer-grid th,.customer-grid td{padding:.5px 2px;text-align:left;vertical-align:top;line-height:1.18}.customer-grid th{width:25mm;white-space:nowrap;color:#253138}.customer-grid .contact-table th{width:15mm}.customer-grid .email{color:#0073c7;text-decoration:underline}.customer-grid .valid th,.customer-grid .valid td{border:.75px solid #667078;background:#f8fbfb}.customer-grid .valid th{width:22%;text-align:center}.customer-grid .valid-days{width:11%;text-align:center;font-weight:bold}.customer-grid .valid-copy{width:67%;white-space:nowrap}.quote-table,.payment-table,.summary{width:100%;border-collapse:collapse}.quote-table th,.quote-table td,.payment-table th,.payment-table td,.summary td{border:.65px solid #778188;padding:.5px 3px}.quote-table th{height:5.2mm;border-top:1.2px solid #169d94;background:#eef6f5;text-align:center;font-size:12pt}.quote-table tbody tr{height:5mm}.quote-table tbody tr:nth-child(even):not(.empty-row){background:#fbfcfc}.quote-table .empty-row{height:4.4mm}.quote-table tr.head-row td{font-weight:bold}.center{text-align:center}.right{text-align:right;white-space:nowrap}.muted{color:#667078;font-size:11pt}.payment-title{border:.65px solid #778188;border-bottom:0;background:#eef6f5;padding:0;text-align:center;font-size:12pt;font-weight:bold;color:#185f5b}.payment-table tr{height:4.6mm}.payment-table td:nth-child(1){width:25mm}.payment-table td:nth-child(2){width:13mm}.payment-table td:nth-child(4){width:31mm}.payment-table td:nth-child(5){width:28mm}.payment-bank-row{display:grid;grid-template-columns:1fr 25mm;border:.65px solid #778188;border-top:0;min-height:19mm;padding:2px 5mm 2px 7mm}.bank-copy{line-height:1.22}.qr{display:flex;align-items:center;justify-content:center}.qr img{width:18mm;height:18mm;object-fit:contain}.summary{width:96mm;margin-left:auto;table-layout:fixed}.summary td{height:4.5mm}.summary td:first-child{text-align:right}.summary td:last-child{width:32.5mm;text-align:right}.summary .strong td{background:#f7f9f9;font-weight:bold}.summary .grand td{background:#cfe9f4;font-size:12pt;font-weight:bold;color:#15343e}.amount-words{float:left;width:84mm;text-align:center;padding:7mm 3mm 0;font-weight:bold;line-height:1.25}.financials{border:.65px solid #778188;border-top:0;min-height:34mm;padding-top:1px}.financials:after{content:"";display:block;clear:both}.legal{clear:both;margin-top:3mm;font-size:11pt;line-height:1.18}.legal b{display:block;margin-top:1.5mm;border-bottom:.7px solid #66beb8;padding-bottom:.3mm;font-size:12pt;color:#176e69}.legal p{margin:.7mm 0 .7mm 12mm;text-indent:-4mm}.page-two-terms{margin-top:6mm;font-size:11pt}.page-two-terms p{margin:1.8mm 0 1.8mm 12mm}.signatures{display:grid;grid-template-columns:1fr 1fr;column-gap:20mm;row-gap:9mm;margin:13mm 8mm 0}.sig-cell{text-align:center;min-height:28mm;line-height:1.35}.sig-cell img{display:block;width:38mm;height:10mm;object-fit:contain;margin:0 auto -1mm}.sig-space{height:9mm}.watermark{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;transform:rotate(-25deg);font-size:48pt;font-weight:bold;color:rgba(222,51,74,.14);pointer-events:none}.footer{position:absolute;bottom:3mm;left:16mm;right:16mm;text-align:center;color:#7a858b;font-size:10pt}.quote-table .payment-spacer{height:8mm}.quote-table .payment-spacer td{background:#fff}.quote-table .payment-shell{height:auto;background:#fff}.quote-table .payment-cell{height:auto;padding:0;border-right:.65px solid #778188;background:#fff;vertical-align:top}.quote-table .payment-side{height:auto;background:#fff}.quote-table .payment-cell .payment-title{border:0;border-bottom:.65px solid #778188}.quote-table .payment-cell .payment-table td{height:4.6mm;border-width:0 .65px .65px 0;border-color:#778188;padding:.5px 3px;background:#fff}.quote-table .payment-cell .payment-table td:last-child{border-right:0}.quote-table .payment-cell .payment-bank-row{grid-template-columns:minmax(0,100mm) 24mm;justify-content:center;align-items:center;column-gap:10mm;border:0;min-height:25mm;padding:3mm 6mm}.quote-table .payment-cell .bank-copy{max-width:100mm}.quote-table .payment-cell .qr img{width:22mm;height:20mm}
+    @page{size:210mm 297mm;margin:0}*{box-sizing:border-box}html,body{margin:0;padding:0;color:#172126;font-family:'DB Heavent',"Cordia New",Tahoma,"Noto Sans Thai",Arial,sans-serif;font-size:11pt;line-height:1.15}.page{position:relative;width:210mm;height:297mm;padding:13mm 16mm 7mm;overflow:hidden;page-break-after:always}.page:last-child{page-break-after:auto}.header{display:grid;grid-template-columns:46mm 1fr 50mm;gap:5mm;align-items:start;min-height:20mm}.brand img{display:block;width:43mm;height:17mm;object-fit:contain;object-position:left center}.company{padding-top:1mm;font-size:11pt;line-height:1.25;color:#273238}.quotation-title>div{border:1px solid #00a99d;border-radius:4px;padding:2px;text-align:center;font-size:18pt;font-weight:bold}.quotation-title table{width:100%;margin-top:2px;border-collapse:collapse;font-size:11pt}.quotation-title td{height:4.3mm;border:.75px solid #667078;padding:0 3px}.quotation-title td:first-child{width:25mm}.quotation-title.om-doc td{white-space:nowrap}.quotation-title.om-doc td:first-child{width:22mm}.quotation-title.om-doc tr:first-child td:last-child{font-size:10pt}.customer-grid{display:grid;grid-template-columns:1fr 1fr;gap:12mm;align-items:start;margin:0.5mm 0 1.5mm}.customer-grid table{width:100%;height:auto;align-self:start;border-collapse:collapse}.customer-grid tr{height:auto}.customer-grid th,.customer-grid td{padding:.5px 2px;text-align:left;vertical-align:top;line-height:1.18}.customer-grid th{width:25mm;white-space:nowrap;color:#253138}.customer-grid .contact-table th{width:15mm}.customer-grid .email{color:#0073c7;text-decoration:underline}.customer-grid .valid th,.customer-grid .valid td{border:.75px solid #667078;background:#f8fbfb}.customer-grid .valid th{width:22%;text-align:center}.customer-grid .valid-days{width:11%;text-align:center;font-weight:bold}.customer-grid .valid-copy{width:67%;white-space:nowrap}.quote-table,.payment-table,.summary{width:100%;border-collapse:collapse}.quote-table th,.quote-table td,.payment-table th,.payment-table td,.summary td{border:.65px solid #778188;padding:.5px 3px}.quote-table th{height:5.2mm;border-top:1.2px solid #169d94;background:#eef6f5;text-align:center;font-size:12pt}.quote-table tbody tr{height:5mm}.quote-table tbody tr:nth-child(even):not(.empty-row){background:#fbfcfc}.quote-table .empty-row{height:4.4mm}.quote-table tr.head-row td{font-weight:bold}.center{text-align:center}.right{text-align:right;white-space:nowrap}.muted{color:#667078;font-size:11pt}.payment-title{border:.65px solid #778188;border-bottom:0;background:#eef6f5;padding:0;text-align:center;font-size:12pt;font-weight:bold;color:#185f5b}.payment-table tr{height:4.6mm}.payment-table td:nth-child(1){width:25mm}.payment-table td:nth-child(2){width:13mm}.payment-table td:nth-child(4){width:31mm}.payment-table td:nth-child(5){width:28mm}.payment-bank-row{display:grid;grid-template-columns:1fr 25mm;border:.65px solid #778188;border-top:0;min-height:19mm;padding:2px 5mm 2px 7mm}.bank-copy{line-height:1.22}.qr{display:flex;align-items:center;justify-content:center}.qr img{width:18mm;height:18mm;object-fit:contain}.summary{width:96mm;margin-left:auto;table-layout:fixed}.summary td{height:4.5mm}.summary td:first-child{text-align:right}.summary td:last-child{width:32.5mm;text-align:right}.summary .strong td{background:#f7f9f9;font-weight:bold}.summary .grand td{background:#cfe9f4;font-size:12pt;font-weight:bold;color:#15343e}.amount-words{float:left;width:84mm;text-align:center;padding:7mm 3mm 0;font-weight:bold;line-height:1.25}.financials{border:.65px solid #778188;border-top:0;min-height:34mm;padding-top:1px}.financials:after{content:"";display:block;clear:both}.legal{clear:both;margin-top:3mm;font-size:11pt;line-height:1.18}.legal b{display:block;margin-top:1.5mm;border-bottom:.7px solid #66beb8;padding-bottom:.3mm;font-size:12pt;color:#176e69}.legal p{margin:.7mm 0 .7mm 12mm;text-indent:-4mm}.page-two-terms{margin-top:6mm;font-size:11pt}.page-two-terms p{margin:1.8mm 0 1.8mm 12mm}.signatures{display:grid;grid-template-columns:1fr 1fr;column-gap:20mm;row-gap:9mm;margin:13mm 8mm 0}.sig-cell{text-align:center;min-height:28mm;line-height:1.35}.sig-cell img{display:block;width:38mm;height:10mm;object-fit:contain;margin:0 auto -1mm}.sig-space{height:9mm}.watermark{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;transform:rotate(-25deg);font-size:48pt;font-weight:bold;color:rgba(222,51,74,.14);pointer-events:none}.footer{position:absolute;bottom:3mm;left:16mm;right:16mm;text-align:center;color:#7a858b;font-size:10pt}.quote-table .payment-spacer{height:8mm}.quote-table .payment-spacer td{background:#fff}.quote-table .payment-shell{height:auto;background:#fff}.quote-table .payment-cell{height:auto;padding:0;border-right:.65px solid #778188;background:#fff;vertical-align:top}.quote-table .payment-side{height:auto;background:#fff}.quote-table .payment-cell .payment-title{border:0;border-bottom:.65px solid #778188}.quote-table .payment-cell .payment-table td{height:4.6mm;border-width:0 .65px .65px 0;border-color:#778188;padding:.5px 3px;background:#fff}.quote-table .payment-cell .payment-table td:last-child{border-right:0}.quote-table .payment-cell .payment-bank-row{grid-template-columns:minmax(0,100mm) 24mm;justify-content:center;align-items:center;column-gap:10mm;border:0;min-height:25mm;padding:3mm 6mm}.quote-table .payment-cell .bank-copy{max-width:100mm}.quote-table .payment-cell .qr img{width:22mm;height:20mm}
     .customer-grid{column-gap:40mm}
     .customer-grid .customer-table{table-layout:fixed}
     .customer-grid .customer-table th{width:15mm}
@@ -793,7 +834,7 @@ export async function GET(
     <div class="header cont-header">
       <div class="brand"><img src="${logoDataUrl}" alt="SENA Solar Energy"></div>
       <div class="company"><b>บริษัท เสนา โซลาร์ เอนเนอร์ยี่ จำกัด (สำนักงานใหญ่)</b><br>ลูกค้า : ${esc(q.customer_name || "-")}<br>ชื่อโครงการ : ${esc(q.project_name || "-")}</div>
-      <div class="quotation-title"><div>ใบเสนอราคา (ต่อ)</div><table><tr><td>QUOTATION NO.</td><td>${esc(q.doc_no)}</td></tr><tr><td>วันที่</td><td>${thaiDate(q.issue_date)}</td></tr></table></div>
+      <div class="quotation-title${isOm ? " om-doc" : ""}"><div>ใบเสนอราคา (ต่อ)</div><table><tr><td>QUOTATION NO.</td><td>${esc(q.doc_no)}</td></tr><tr><td>วันที่</td><td>${thaiDate(q.issue_date)}</td></tr></table></div>
     </div>`;
   const quoteThead = `<thead><tr><th style="width:12mm">ลำดับ</th><th>รายการ</th><th style="width:32.5mm">จำนวนเงิน</th></tr></thead>`;
   const emptyRowHtml = '<tr class="empty-row"><td>&nbsp;</td><td></td><td></td></tr>';
@@ -805,7 +846,24 @@ export async function GET(
   // เพราะแถวลงครบหน้าก่อนพอดี → ไม่มีตารางอยู่ข้างบน ต้องมีเส้นขอบบนของตัวเอง
   const paymentBlockHtml = (joined: boolean) =>
     `<table class="quote-table payment-block${joined ? " joined" : ""}"><tbody>${joined ? '<tr class="payment-spacer"><td style="width:12mm"></td><td></td><td style="width:32.5mm"></td></tr>' : ""}<tr class="payment-shell"><td colspan="2" class="payment-cell"${joined ? "" : ' style="width:auto"'}><div class="payment-title">เงื่อนไขการชำระเงิน</div><table class="payment-table"><tbody>${paymentRows}</tbody></table><div class="payment-bank-row"><div class="bank-copy"><b>ธนาคาร${esc(bankName)}</b><br>ชื่อบัญชี : ${esc(bankAccountName)}<br>เลขที่บัญชี : ${esc(bankAccountNumber)} สาขา ${esc(bankBranch)}<div class="payment-notice"><b>โปรดตรวจสอบก่อนโอนเงิน</b> <span class="sep"></span> ชำระเงินเข้าบัญชีบริษัทที่ SENA SOLAR ENERGY กำหนดเท่านั้น <span class="sep"></span> ห้ามโอนเข้าบัญชีส่วนบุคคลของ Agent พนักงาน หรือบุคคลอื่น <span class="sep"></span> การชำระเงินนอกเหนือจากช่องทางที่บริษัทกำหนด บริษัทฯ ขอสงวนสิทธิ์ไม่รับผิดชอบต่อความเสียหายที่เกิดขึ้น</div></div><div class="qr"><img src="${paymentQrDataUrl}" alt="QR Payment"></div></div></td><td class="payment-side" style="width:32.5mm"></td></tr></tbody></table>`;
-  const financialsHtml = `<table class="financials"><tbody><tr class="strong"><td></td><td class="summary-label">ราคาก่อนหักส่วนลด (รวมภาษีมูลค่าเพิ่ม)</td><td class="summary-value">${money(q.subtotal_incl_vat)}</td></tr>${Number(q.discount_amount) > 0 ? `<tr><td></td><td class="summary-label">${esc(q.discount_label || "ส่วนลด")}</td><td class="summary-value">-${money(q.discount_amount)}</td></tr>` : ""}<tr><td></td><td class="summary-label">หัก เงินจอง</td><td class="summary-value">${Number(q.deposit_paid_amount) > 0 ? `-${money(q.deposit_paid_amount)}` : money(0)}</td></tr><tr class="strong"><td></td><td class="summary-label">ราคาหลังหักส่วนลด (รวมภาษีมูลค่าเพิ่ม)</td><td class="summary-value">${money(q.outstanding_amount)}</td></tr><tr><td></td><td class="summary-label">ราคาสินค้าก่อนภาษีมูลค่าเพิ่ม</td><td class="summary-value">${money(q.amount_before_vat)}</td></tr><tr><td></td><td class="summary-label">ภาษีมูลค่าเพิ่ม (VAT) 7%</td><td class="summary-value">${money(q.vat_amount)}</td></tr><tr class="grand"><td class="amount-words">( ${thaiBahtText(q.outstanding_amount)} )</td><td class="summary-label">รวมยอดที่ต้องชำระสุทธิ</td><td class="summary-value">${money(q.outstanding_amount)}</td></tr></tbody></table>`;
+  // ★ ใบ O&M (ผู้ใช้เลือก 14 ต.ค. 69): ราคารวม → ส่วนลด → ค่าบริการก่อน VAT → VAT → รวมสุทธิ ชุดเดียวทุกใบ
+  //   ไม่มีส่วนลด = แถว "ส่วนลด 0.00" (ผู้ใช้เลือก — ชัดกว่าเว้นว่าง/ขีด · แบบ "หัก เงินจอง 0.00" ใบขาย) — เดิม ราคาก่อน/หลังหักส่วนลด เท่ากัน สับสน
+  //   ไม่มีเงินจอง (ไม่มีขั้นจอง/สำรวจ · ผู้ใช้ตรวจ PDF 2 ต.ค.) · "ค่าบริการ" แทน "ราคาสินค้า" · ใบขายคงแถวเดิมทุกตัวอักษร
+  //   ความสูงกรอบนี้ตัวจัดหน้าวัดจากของจริง (measureLayout) — จำนวนแถวต่างกันได้
+  const omDiscount = Number(q.discount_amount) > 0;
+  // ป้ายส่วนลด: Sale พิมพ์แค่ชื่อ (เช่น "VIP") ระบบเติม "ส่วนลด" ข้างหน้าให้ · มีคำว่าส่วนลดอยู่แล้วไม่เติมซ้ำ (ผู้ใช้ขอ 14 ต.ค. 69)
+  const omDiscountText = (label: unknown) => {
+    const text = String(label ?? "").trim();
+    return !text ? "ส่วนลด" : text.includes("ส่วนลด") ? text : `ส่วนลด ${text}`;
+  };
+  const omFinancialRows = () => [
+    `<tr class="strong"><td></td><td class="summary-label">ราคารวม (รวมภาษีมูลค่าเพิ่ม)</td><td class="summary-value">${money(q.subtotal_incl_vat)}</td></tr>`,
+    `<tr><td></td><td class="summary-label">${omDiscount ? esc(omDiscountText(q.discount_label)) : "ส่วนลด"}</td><td class="summary-value">${omDiscount ? `-${money(q.discount_amount)}` : money(0)}</td></tr>`,
+    `<tr><td></td><td class="summary-label">ค่าบริการก่อนภาษีมูลค่าเพิ่ม</td><td class="summary-value">${money(q.amount_before_vat)}</td></tr>`,
+    `<tr><td></td><td class="summary-label">ภาษีมูลค่าเพิ่ม (VAT) 7%</td><td class="summary-value">${money(q.vat_amount)}</td></tr>`,
+  ].join("");
+  const salesFinancialRows = () => `<tr class="strong"><td></td><td class="summary-label">ราคาก่อนหักส่วนลด (รวมภาษีมูลค่าเพิ่ม)</td><td class="summary-value">${money(q.subtotal_incl_vat)}</td></tr>${Number(q.discount_amount) > 0 ? `<tr><td></td><td class="summary-label">${esc(q.discount_label || "ส่วนลด")}</td><td class="summary-value">-${money(q.discount_amount)}</td></tr>` : ""}<tr><td></td><td class="summary-label">หัก เงินจอง</td><td class="summary-value">${Number(q.deposit_paid_amount) > 0 ? `-${money(q.deposit_paid_amount)}` : money(0)}</td></tr><tr class="strong"><td></td><td class="summary-label">ราคาหลังหักส่วนลด (รวมภาษีมูลค่าเพิ่ม)</td><td class="summary-value">${money(q.outstanding_amount)}</td></tr><tr><td></td><td class="summary-label">ราคาสินค้าก่อนภาษีมูลค่าเพิ่ม</td><td class="summary-value">${money(q.amount_before_vat)}</td></tr><tr><td></td><td class="summary-label">ภาษีมูลค่าเพิ่ม (VAT) 7%</td><td class="summary-value">${money(q.vat_amount)}</td></tr>`;
+  const financialsHtml = `<table class="financials"><tbody>${isOm ? omFinancialRows() : salesFinancialRows()}<tr class="grand"><td class="amount-words">( ${thaiBahtText(q.outstanding_amount)} )</td><td class="summary-label">รวมยอดที่ต้องชำระสุทธิ</td><td class="summary-value">${money(q.outstanding_amount)}</td></tr></tbody></table>`;
   const signaturesHtml = `<div class="signatures">${sigCell("ลูกค้า")}${sigCell("ผู้จัดทำเอกสาร", q.created_by_name, creatorSignature, q.issue_date)}${sigCell("ผู้ตรวจสอบ", q.solar_approved_name, solarSignature, q.solar_approved_at)}${sigCell("ผู้ขาย / ผู้ตรวจสอบ", q.approver_name_snapshot || q.approved_by_name, approverSignature, q.approved_at)}</div>`;
 
   /**
@@ -992,6 +1050,17 @@ export async function GET(
     // หัวข้อห้ามค้างท้ายหน้าโดยไม่มีข้อไหนตามมาเลย
     while (blocksOnTable > 0 && legalBlocks[blocksOnTable - 1].isTitle)
       blocksOnTable--;
+    // ★ ใบ O&M (ผู้ใช้ตรวจ PDF 2 ต.ค. 69): เงื่อนไขลงหน้ายอดเงินได้หมด แต่ลายเซ็นไม่พอที่
+    //   ⇒ หน้าท้ายจะมีแต่หัวเอกสาร + ลายเซ็นลอยบนกระดาษเปล่า · ย้ายหัวข้อสุดท้าย (ทั้งหัวข้อ) ไปอยู่กับลายเซ็น
+    //   หน้าท้ายมีเนื้อหา ส่วนหน้าแรกได้แถวว่างเติมกรอบตารางแทน (มีหัวข้อเดียว = ย้ายไปทั้งหมด)
+    //   ใบงานขายไม่แตะ — ชุดเงื่อนไขยาวกว่ามาก แทบไม่เข้าเคสนี้ และหน้าตาเอกสารขายผ่านการตรวจมาแล้ว
+    if (
+      isOm &&
+      blocksOnTable > 0 &&
+      blocksOnTable === legalBlocks.length &&
+      lastPageSlack - legalCost[blocksOnTable - 1] < layout.signaturesCostCompact
+    )
+      blocksOnTable = Math.max(0, legalBlocks.map((block) => block.isTitle).lastIndexOf(true));
     const legalOnTable = legalBlocks.slice(0, blocksOnTable);
     const legalOnTerms = legalBlocks.slice(blocksOnTable);
     const legalUsed = blocksOnTable ? legalCost[blocksOnTable - 1] : 0;
@@ -1028,10 +1097,12 @@ export async function GET(
         : 0;
 
     const quotationPageCount = rowPages.length + (mergeTermsPage ? 0 : 1);
-    // เลขหน้าอ้างอิงชุดเอกสารเต็ม (รายงานสำรวจ 15 หน้า + ใบเสนอราคา)
-    const bundleTotal = 15 + quotationPageCount;
+    // เลขหน้าอ้างอิงชุดเอกสารเต็ม (รายงานสำรวจ 13–15 หน้าตามรูปแบบการชำระ + ใบเสนอราคา)
+    // ใบ O&M ไม่มีรายงานสำรวจนำหน้า — ตัวใบคือเอกสารทั้งชุด เลขหน้าเริ่มที่ 1
+    const surveyPages = isOm ? 0 : surveyPageCount;
+    const bundleTotal = surveyPages + quotationPageCount;
     const footer = (index: number) =>
-      `<div class="footer">หน้า ${16 + index} / ${bundleTotal} · ใบเสนอราคา ${index + 1} / ${quotationPageCount} · ${esc(q.doc_no)}</div>`;
+      `<div class="footer">หน้า ${surveyPages + 1 + index} / ${bundleTotal} · ใบเสนอราคา ${index + 1} / ${quotationPageCount} · ${esc(q.doc_no)}</div>`;
 
     const tablePages = rowPages.map((rowPage, index) => {
       const isFirst = index === 0;
@@ -1124,9 +1195,9 @@ export async function GET(
         margin: { top: "0", right: "0", bottom: "0", left: "0" },
       });
       surveyPdf = await PDFDocument.load(surveyBytes);
-      if (surveyPdf.getPageCount() !== 15)
+      if (surveyPdf.getPageCount() !== surveyPageCount)
         throw new Error(
-          `จำนวนหน้ารายงานสำรวจไม่ถูกต้อง: ${surveyPdf.getPageCount()}/15 หน้า`,
+          `จำนวนหน้ารายงานสำรวจไม่ถูกต้อง: ${surveyPdf.getPageCount()}/${surveyPageCount} หน้า`,
         );
     }
 
@@ -1151,7 +1222,15 @@ export async function GET(
       return new NextResponse(Buffer.from(quotationBytes), {
         headers: {
           "Content-Type": "application/pdf",
-          "Content-Disposition": `inline; filename="${q.doc_no}-quotation.pdf"`,
+          // ใบ O&M ใบนี้คือเอกสารฉบับจริงที่ส่งลูกค้า — ตั้งชื่อไฟล์แบบเดียวกับเอกสารชุดเต็มของฝั่งขาย
+          "Content-Disposition": isOm
+            ? buildContentDisposition({
+                base: String(q.doc_no),
+                ext: "pdf",
+                customerName: (detail.customer_name as string) || null,
+                disposition: req.nextUrl.searchParams.get("download") === "1" ? "attachment" : "inline",
+              })
+            : `inline; filename="${q.doc_no}-quotation.pdf"`,
           "X-Quotation-Document-Pages": String(quotationPageCount),
         },
       });
@@ -1171,7 +1250,7 @@ export async function GET(
     );
     const bytes = await mergedPdf.save();
     const pageCount = mergedPdf.getPageCount();
-    const expectedPageCount = 15 + quotationPageCount;
+    const expectedPageCount = surveyPageCount + quotationPageCount;
     if (pageCount !== expectedPageCount)
       throw new Error(
         `จำนวนหน้าเอกสารไม่ถูกต้อง: ${pageCount}/${expectedPageCount} หน้า`,

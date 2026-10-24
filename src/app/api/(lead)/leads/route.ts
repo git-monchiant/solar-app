@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql, fixDates } from "@/lib/db";
 import { geocodeThaiPlace } from "@/lib/utils/geocode";
 import { requireAuth } from "@/lib/auth";
+import { gzipJson } from "@/lib/gzip-json";
+import { refreshJourneySafe, flipJourneyDatesIfDue } from "@/lib/journey";
 import { ensureFirstContactSla, syncOperationalSlas } from "@/lib/sla-service";
 import { followUpOverdueSql, LAST_FOLLOW_UP_APPLY } from "@/lib/lead-followup-sql";
 import { LATE_SLA_STAGES_APPLY, LATE_SLA_STAGES_COLUMN, SLA_DONE_APPLY, SLA_DONE_COLUMNS, slaLiveStatusSql } from "@/lib/lead-sla-sql";
@@ -31,9 +33,10 @@ export async function GET(req: NextRequest) {
     // Explicit column list — `leads` has 180+ columns but the card UI uses
     // ~30. Picking only what LeadCard/pipeline render keeps the response
     // ~3-4× smaller (1MB → ~250KB at 150 leads).
+    await flipJourneyDatesIfDue(db);
     const result = await db.request().query(`
       SELECT l.id, l.full_name, l.phone, l.email, l.installation_address, l.house_number,
-             l.customer_type, l.customer_grade, l.customer_group, l.status, l.source, l.tag, l.note, l.contact_date, l.created_at,
+             l.customer_type, l.customer_grade, l.customer_group, l.status, l.journey_step, l.journey_sub, l.source, l.tag, l.note, l.contact_date, l.created_at,
              l.next_follow_up, l.revisit_date, l.lost_reason,
              l.assigned_user_id, l.zone, l.line_id,
              l.survey_date, l.survey_time_slot, l.install_date, l.install_date_end, l.install_actual_date, l.install_completed_at, l.install_extra_cost,
@@ -93,9 +96,10 @@ export async function GET(req: NextRequest) {
         ORDER BY si.due_at ASC
       ) sla
       LEFT JOIN users sla_owner ON sla.owner_user_id = sla_owner.id${LATE_SLA_STAGES_APPLY}${SLA_DONE_APPLY}${LAST_FOLLOW_UP_APPLY}
+      WHERE l.om_only = 0   -- ไม่รวม lead ที่ระบบ O&M สร้าง (แผน 20260924-02) — งานนั้นอยู่ในโมดูล O&M
       ORDER BY l.created_at DESC
     `);
-    return NextResponse.json(fixDates(result.recordset));
+    return gzipJson(req, fixDates(result.recordset));
   } catch (error) {
     console.error("GET /api/leads error:", error);
     return NextResponse.json({ error: "Failed to fetch leads" }, { status: 500 });
@@ -208,6 +212,7 @@ export async function POST(request: NextRequest) {
     // creates both attribute correctly — was hardcoded to 1 (system/admin),
     // which broke "who synced this lead" reporting.
     const leadId = result.recordset[0].id;
+    await refreshJourneySafe(db, leadId);
     await db.request()
       .input("lead_id", sql.Int, leadId)
       .input("source", sql.NVarChar(30), body.source || "walk-in")

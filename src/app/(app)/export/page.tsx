@@ -1,11 +1,11 @@
 "use client";
 import { DownloadIcon } from "@/components/ui/icons";
+import { useDialog } from "@/components/ui/Dialog";
 
 import { useState } from "react";
 import Header from "@/components/layout/Header";
 import { useMe } from "@/lib/roles";
 import { getUserIdHeader } from "@/lib/api";
-import { useDialog } from "@/components/ui/Dialog";
 
 // Temporary admin-only export page. Will be replaced by a proper reports page.
 export default function ExportPage() {
@@ -43,7 +43,7 @@ export default function ExportPage() {
       a.remove();
       URL.revokeObjectURL(url);
     } catch (e) {
-      dialog.alert({ message: e instanceof Error ? e.message : "ดาวน์โหลดไฟล์ไม่สำเร็จ", variant: "danger" });
+      dialog.alert({ title: "Export ไม่สำเร็จ", message: e instanceof Error ? e.message : "Export failed", variant: "danger" });
     } finally {
       setBusy(false);
     }
