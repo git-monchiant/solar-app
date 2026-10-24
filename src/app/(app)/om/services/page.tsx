@@ -98,7 +98,8 @@ export default function OmServicesPage() {
         title={activeItem?.label ?? "งานบริการ"}
         search={q}
         onSearchChange={(v) => { setQ(v); setPage(1); }}
-        searchPlaceholder="ค้นหาบ้านเลขที่ · ชื่อลูกค้า · เบอร์โทร"
+        // ★ 24 ต.ค. 69 (แผน 20261024-01): ค้นได้เพิ่ม — ทุกชื่อ/ทุกเบอร์ของบ้าน · เลขใบงาน/เอกสาร · ขนาด kW (เกณฑ์อยู่ที่ /api/om/follow)
+        searchPlaceholder="ค้นหาบ้านเลขที่ · ชื่อ · เบอร์ · เลขใบงาน/เอกสาร · ขนาด kW (เช่น 1.28kw)"
         // ★ แผน 20261023-04: แท็บแรก "ทั้งหมด" แทนตัวเลข "x รายการ" ที่กดไม่ได้ (แบบแท็บทั้งหมดของ Pipeline ฝั่งขาย)
         tabs={[{ key: "all", label: "ทั้งหมด", count: totalAll },
           ...TABS.map((t) => ({ key: t.k, label: t.t, count: counts[t.k] ?? 0 }))]}

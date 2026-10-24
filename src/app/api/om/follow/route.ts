@@ -70,6 +70,34 @@ export async function GET(req: NextRequest) {
   //   คีย์/ป้ายชุดเดียวกับกลุ่มของหน้าบ้าน / ระบบติดตั้ง (house-scope.ts)
   const groupSql = `(@g = '' OR d.project_id = @g OR (@g = N'${HG.NOPJ}' AND d.project_id IS NULL))`;
 
+  // ★ 24 ต.ค. 69 (แผน 20261024-01) ค้นหาหลายแบบ — เดิมค้นแค่บ้านเลขที่ · ชื่อลูกค้าหลัก · เบอร์หลัก (ต้องพิมพ์เลขติดกัน)
+  //   ชื่อ/เบอร์: ทุกคนทุกเบอร์ที่ผูกกับบ้านปัจจุบัน · เบอร์พิมพ์มีขีด/ช่องว่างได้ (ตัดออกก่อน · ≥ 4 หลัก กันชนบ้านเลขที่/เลขใบงาน)
+  //   เลขใบงาน (ตัวเลขล้วน/#190) · เลขใบบริการ OM-xxxx-xxxx · เลขใบเสนอราคา SSR-OM-QT-…
+  //   ขนาดระบบ: "1.28" (มีจุด) · "1.28kw" · "2 kw" = ระบบขนาดนั้นพอดี — ตัวเลขล้วน "2" ไม่ถือเป็นขนาด (ปนบ้านเลขที่/เลขใบงาน)
+  const qDigits = /^[\d\s\-().+]+$/.test(q) ? q.replace(/\D/g, "") : "";
+  const qPhone = qDigits.length >= 4 ? `%${qDigits}%` : "";
+  const qId = /^#?\d{1,7}$/.test(q) ? Number(q.replace("#", "")) : 0;
+  const kwHit = /^(\d+(?:\.\d+)?)\s*(?:kwp?|k|กิโลวัตต์)$/i.exec(q) ?? (/^\d+\.\d+$/.test(q) ? [q, q] : null);
+  const qKw = kwHit ? Number(kwHit[1]) : null;
+  // ★ หาบ้านที่ตรงคำค้นครั้งเดียวลง #hit (ชุดข้อมูลทีเดียว) แล้วค่อยกรอง — เดิมลองเป็น OR + EXISTS ต่อแถว ช้าจน timeout 15 วิ
+  //   ไม่มีคำค้น = #hit ว่าง (ทุกท่อนมี @q <> '') และตัวกรองข้ามไปที่ @q = ''
+  const hitSql = `
+    SELECT house_id INTO #hit FROM (
+      SELECT d.house_id FROM #x d WHERE @q <> '' AND d.house_number LIKE @q
+      UNION SELECT hc.house_id FROM om_house_customers hc JOIN om_customers c ON c.id = hc.customer_id
+             WHERE @q <> '' AND hc.is_current = 1 AND c.full_name LIKE @q
+      UNION SELECT hc.house_id FROM om_house_customers hc JOIN om_customer_phones p ON p.customer_id = hc.customer_id
+             WHERE @qp <> '' AND hc.is_current = 1 AND p.phone LIKE @qp
+      UNION SELECT b.house_id FROM om_bookings b WHERE @qid > 0 AND b.id = @qid
+      UNION SELECT b.house_id FROM om_bookings b JOIN om_job_report jr ON jr.booking_id = b.id
+             WHERE @q <> '' AND jr.job_no LIKE @q
+      UNION SELECT b.house_id FROM om_bookings b JOIN quotations qq ON qq.om_booking_id = b.id
+             WHERE @q <> '' AND qq.doc_no LIKE @q
+      UNION SELECT i.house_id FROM om_installations i
+             WHERE @kw IS NOT NULL AND ABS(COALESCE(i.rem_size_kwp, i.promo_size_kw) - @kw) < 0.005
+    ) u;`;
+  const searchSql = `(@q = '' OR d.house_id IN (SELECT house_id FROM #hit))`;
+
   const db = await getOmDb();
   await expireOmGrantsIfDue(db);   // สิทธิ์ที่หมดอายุตัดวันละครั้ง ก่อนอ่านยอด (แผน 20260924-02 เฟส 4)
   try {
@@ -80,11 +108,15 @@ export async function GET(req: NextRequest) {
     .input("nopj", sql.NVarChar(60), GROUP_LABEL[HG.NOPJ])
     .input("tab", sql.VarChar(20), tab)
     .input("q", sql.NVarChar(80), q ? `%${q}%` : "")
+    .input("qp", sql.NVarChar(40), qPhone)
+    .input("qid", sql.Int, qId)
+    .input("kw", sql.Decimal(8, 3), qKw)
     .input("max", sql.Int, maxAttempts)
     .input("off", sql.Int, (page - 1) * size)
     .input("size", sql.Int, size)
     .query(`
     ${OM_FOLLOW_SCOPE_SQL}
+    ${hitSql}
 
     SELECT bucket, COUNT(*) n FROM #x d
      WHERE (@mine = 0 OR owner_user_id = @mine)
@@ -94,7 +126,7 @@ export async function GET(req: NextRequest) {
     SELECT COUNT(*) total FROM #x d
      WHERE (@tab = 'all' OR d.bucket = @tab)
        AND ${groupSql}
-       AND (@q = '' OR d.house_number LIKE @q OR d.customer_name LIKE @q OR d.phone LIKE @q)
+       AND ${searchSql}
        AND (@mine = 0 OR d.owner_user_id = @mine)
        ${houseOriginSql(origin, "d.house_id")};
 
@@ -103,7 +135,7 @@ export async function GET(req: NextRequest) {
         OR (@house = 0
             AND (@tab = 'all' OR d.bucket = @tab)
             AND ${groupSql}
-            AND (@q = '' OR d.house_number LIKE @q OR d.customer_name LIKE @q OR d.phone LIKE @q)
+            AND ${searchSql}
             AND (@mine = 0 OR d.owner_user_id = @mine)
             ${houseOriginSql(origin, "d.house_id")})
      ORDER BY ${sort}
@@ -156,6 +188,7 @@ export async function GET(req: NextRequest) {
        WHERE b.house_id = @house
        ORDER BY b.id DESC;
 
+    DROP TABLE #hit;
     ${OM_FOLLOW_DROP_SQL}`);
 
   const rs = r.recordsets as sql.IRecordSet<Record<string, unknown>>[];
