@@ -160,12 +160,14 @@ export default function DashboardPage() {
   // state and its own popup rather than bending the lead one out of shape.
   const [prospectBucket, setProspectBucket] = useState<{ title: string; rows: ProspectRow[] } | null>(null);
 
-  // Export the open bucket popup's leads to .xlsx — same columns the popup
-  // shows, so the sheet matches what the user is looking at.
-  const exportBucketExcel = () => {
-    if (!bucket || bucket.rows.length === 0) return;
+  // Export a lead list to .xlsx — same columns the bucket popup shows, so the
+  // sheet matches what the user is looking at. `stageOf` adds a leading
+  // ขั้นตอน column for exports that span several stations at once.
+  const exportLeadsExcel = (title: string, rows: LifecycleRow[], stageOf?: (r: LifecycleRow) => string) => {
+    if (rows.length === 0) return;
     const money = (r: LifecycleRow) => moneyOf(r);
     const cols: SheetCol<LifecycleRow>[] = [
+      ...(stageOf ? [{ label: "ขั้นตอน", wch: 16, always: true, value: stageOf }] : []),
       { label: "ID", wch: 8, always: true, value: r => r.id },
       { label: "ชื่อ-นามสกุล", wch: 28, always: true, value: r => r.full_name },
       // Every bucket carries the phone now — whatever list sales opens, the
@@ -187,11 +189,12 @@ export default function DashboardPage() {
       { label: "เหตุผลที่ยกเลิก", wch: 48, value: r => r.lost_reason || "" },
       { label: "เหตุผลที่ยังไม่จอง", wch: 28, value: r => r.undecided_reason || "" },
     ];
-    const wb = sheetOf(cols, bucket.rows, "Leads");
+    const wb = sheetOf(cols, rows, "Leads");
     // Excel rejects \ / : * ? [ ] in names — strip them out of the bucket title.
-    const safe = bucket.title.replace(/[\\/:*?[\]]/g, "-");
+    const safe = title.replace(/[\\/:*?[\]]/g, "-");
     XLSX.writeFile(wb, `${safe}_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
+  const exportBucketExcel = () => { if (bucket) exportLeadsExcel(bucket.title, bucket.rows); };
   // Prospect popup export — mirrors exportBucketExcel but for the SEEKER-side
   // columns (no money: a prospect has no order yet).
   const exportProspectExcel = () => {
@@ -948,6 +951,27 @@ export default function DashboardPage() {
                       >+ {stepLostAfterRows.length} ยกเลิกหลังจอง</button>
                     )}
                     <span className="text-xs font-semibold text-gray-500">{pct(bookingPaidCount, contactedYes)}% ของติดต่อได้</span>
+                    {/* ทุกการ์ดในแถวนี้รวมเป็นไฟล์เดียว เรียงตามลำดับสถานี — คอลัมน์ ขั้นตอน
+                        บอกว่าลีดอยู่การ์ดไหน (ลีดหนึ่งอยู่ได้สถานีเดียว เผื่อซ้อนก็นับครั้งแรก) */}
+                    {(() => {
+                      const stageById = new Map<number, string>();
+                      const rowsAll: LifecycleRow[] = [];
+                      for (const s of stations) for (const r of s.rows) {
+                        if (!stageById.has(r.id)) { stageById.set(r.id, s.l); rowsAll.push(r); }
+                      }
+                      return rowsAll.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => exportLeadsExcel("ชำระจองสำรวจ", rowsAll, r => stageById.get(r.id) ?? "")}
+                          className="no-print cursor-pointer self-center inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg bg-white border border-gray-200 text-xs font-semibold text-gray-700 hover:border-gray-300 transition-colors"
+                          style={{ minHeight: 0 }}
+                          title={`Export ${rowsAll.length} รายการในแถวนี้เป็น Excel`}
+                        >
+                          <DownloadIcon className="w-3.5 h-3.5 text-gray-400" strokeWidth={2} />
+                          <span>Excel</span>
+                        </button>
+                      );
+                    })()}
                   </div>
                   <span className="text-xxs text-gray-400">แตกย่อยตาม step ปัจจุบัน (sum = ชำระจองสำรวจ)</span>
                 </div>
