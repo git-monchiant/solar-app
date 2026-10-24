@@ -56,6 +56,11 @@ export async function GET(req: NextRequest) {
   // ★ origin = ตัวกรอง "ที่มา" (แผน 20261007-01) — ซ้อนบนแท็บเหมือน mine และกรองเลขบนแท็บด้วย
   //   ไม่กรองโหมดบ้านเดียว (หน้ารายละเอียดต้องได้บ้านเสมอ) · นิยามอยู่ที่ house-origin.ts
   const origin = parseOrigin(u.get("origin"));
+  // ★ 24 ต.ค. 69 (แผน 20261024-02): กรองจำนวนครั้งที่ล้างแล้ว — "" ทั้งหมด · 0 ยังไม่เคยล้าง · 1 · 2 · 3 = 3 ครั้งขึ้นไป
+  //   ซ้อนบนแท็บ/โครงการ/ที่มา/คำค้น แบบตัวกรองที่มา (wash_count ของ #due — นับใบตัดสิทธิ์ล้างแผงที่ไม่ยกเลิก)
+  const washRaw = (u.get("wash") ?? "").trim();
+  const washMin = ["0", "1", "2", "3"].includes(washRaw) ? Number(washRaw) : -1;
+  const washMax = washMin === 3 ? 9999 : washMin;
   const page = Math.max(1, Number(u.get("page")) || 1);
   const size = Math.min(100, Math.max(10, Number(u.get("size")) || 30));
 
@@ -111,6 +116,8 @@ export async function GET(req: NextRequest) {
     .input("qp", sql.NVarChar(40), qPhone)
     .input("qid", sql.Int, qId)
     .input("kw", sql.Decimal(8, 3), qKw)
+    .input("wmin", sql.Int, washMin)
+    .input("wmax", sql.Int, washMax)
     .input("max", sql.Int, maxAttempts)
     .input("off", sql.Int, (page - 1) * size)
     .input("size", sql.Int, size)
@@ -127,6 +134,7 @@ export async function GET(req: NextRequest) {
      WHERE (@tab = 'all' OR d.bucket = @tab)
        AND ${groupSql}
        AND ${searchSql}
+       AND (@wmin < 0 OR d.wash_count BETWEEN @wmin AND @wmax)
        AND (@mine = 0 OR d.owner_user_id = @mine)
        ${houseOriginSql(origin, "d.house_id")};
 
@@ -136,6 +144,7 @@ export async function GET(req: NextRequest) {
             AND (@tab = 'all' OR d.bucket = @tab)
             AND ${groupSql}
             AND ${searchSql}
+            AND (@wmin < 0 OR d.wash_count BETWEEN @wmin AND @wmax)
             AND (@mine = 0 OR d.owner_user_id = @mine)
             ${houseOriginSql(origin, "d.house_id")})
      ORDER BY ${sort}
@@ -154,6 +163,15 @@ export async function GET(req: NextRequest) {
      GROUP BY d.project_id
      -- นอกโครงการขึ้นบนสุด ต่อจาก "ทุกโครงการ" (ผู้ใช้สั่ง 15 ต.ค. 69) · ที่เหลือเรียงตามจำนวนบ้าน
      ORDER BY CASE WHEN d.project_id IS NULL THEN 0 ELSE 1 END, n DESC, project_name;
+
+    -- ★ แผน 20261024-02: เลขข้างตัวเลือก "ล้างแล้วกี่ครั้ง" — แท็บที่เปิด + โครงการ + ที่มา (ไม่นับคำค้น เหมือนรายชื่อโครงการ)
+    SELECT CASE WHEN d.wash_count >= 3 THEN 3 ELSE d.wash_count END wc, COUNT(*) n
+      FROM #x d
+     WHERE (@tab = 'all' OR d.bucket = @tab)
+       AND ${groupSql}
+       AND (@mine = 0 OR d.owner_user_id = @mine)
+       ${houseOriginSql(origin, "d.house_id")}
+     GROUP BY CASE WHEN d.wash_count >= 3 THEN 3 ELSE d.wash_count END;
 
     -- ประวัติของบ้านหลังนี้ (โหมดบ้านเดียว) — รวมทั้งที่ผูกกับบ้านตรง ๆ (การโทรก่อนมีใบงาน)
     -- และที่ผูกกับใบงานของบ้านหลังนี้ทุกใบ ⇒ ไทม์ไลน์เส้นเดียวไม่ขาดตอน
@@ -199,12 +217,14 @@ export async function GET(req: NextRequest) {
     total: Number(rs[1][0]?.total ?? 0),
     items: fixDates(rs[2]),
     projects: rs[3],
-    // rs[4] มีเฉพาะโหมดบ้านเดียว (IF @house > 0) — ต่อท้ายสุดไว้ index 0-3 ของโหมดลิสต์จะได้ไม่ขยับ
+    // rs[4] จำนวนบ้านตามจำนวนครั้งที่ล้าง (0 · 1 · 2 · 3 = 3 ขึ้นไป) — แผน 20261024-02
+    wash_counts: Object.fromEntries((rs[4] ?? []).map((x) => [String(x.wc), Number(x.n)])),
+    // rs[5] มีเฉพาะโหมดบ้านเดียว (IF @house > 0) — ต่อท้ายสุดไว้ index 0-4 ของโหมดลิสต์จะได้ไม่ขยับ
     history: houseOnly > 0
-      ? fixDates(rs[4] ?? []).map((h) => ({ ...h, action_label: historyLabel(String(h.action), h.to_json as string | null) }))
+      ? fixDates(rs[5] ?? []).map((h) => ({ ...h, action_label: historyLabel(String(h.action), h.to_json as string | null) }))
       : [],
-    // rs[5] โหมดบ้านเดียว — ใบงานทุกใบของบ้าน (แท็บ Timeline)
-    bookings: houseOnly > 0 ? fixDates(rs[5] ?? []) : [],
+    // rs[6] โหมดบ้านเดียว — ใบงานทุกใบของบ้าน (แท็บ Timeline)
+    bookings: houseOnly > 0 ? fixDates(rs[6] ?? []) : [],
     rules: cfg,
     page, size,
   });

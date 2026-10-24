@@ -31,6 +31,9 @@ export default function OmServicesPage() {
   const [group, setGroup] = useState(() => sp.get("group") || "");
   // ที่มา (แผน 20261007-01) — ตัวกรองซ้อนบนแท็บแบบ "งานของฉัน" · เลขบนแท็บขยับตาม
   const [origin, setOrigin] = useState<HouseOrigin>("");
+  // ★ 24 ต.ค. 69 (แผน 20261024-02): กรองจำนวนครั้งที่ล้างแล้ว — "" ทั้งหมด · 0 ยังไม่เคยล้าง · 1 · 2 · 3 = 3 ครั้งขึ้นไป
+  const [wash, setWash] = useState("");
+  const [washCounts, setWashCounts] = useState<Record<string, number>>({});
   const [sort, setSort] = useState("wash");
   const [dir, setDir] = useState<"asc" | "desc">("asc");
   const sortDef = SORTS.find((s) => s.k === sort) ?? SORTS[0];
@@ -56,9 +59,11 @@ export default function OmServicesPage() {
     if (group) p.set("group", group);
     if (q.trim()) p.set("q", q.trim());
     if (origin) p.set("origin", origin);
+    if (wash) p.set("wash", wash);
     apiFetch(`/api/om/follow?${p}`)
       .then((d) => {
         setItems(d.items ?? []); setCounts(d.counts ?? {}); setTotal(Number(d.total ?? 0));
+        setWashCounts(d.wash_counts ?? {});
         // ★ รายชื่อโครงการนับตามแท็บที่เปิด (แผน 20261015-05) — เลือกโครงการไว้แล้วสลับไปแท็บที่ไม่มีบ้านของโครงการนั้น
         //   ให้คงชื่อไว้ "· 0" ไม่หายไปเฉย ๆ (ช่องจะว่างทั้งที่ยังกรองอยู่)
         setProjects((prev) => {
@@ -69,7 +74,7 @@ export default function OmServicesPage() {
         });
       })
       .catch((e) => { setErr(e instanceof Error ? e.message : String(e)); setItems([]); });
-  }, [effTab, group, sort, dir, q, origin, page, size]);
+  }, [effTab, group, sort, dir, q, origin, wash, page, size]);
   useEffect(() => { const t = setTimeout(load, q ? 350 : 0); return () => clearTimeout(t); }, [load, q]);
 
   const totalAll = Object.values(counts).reduce((s, n) => s + n, 0);
@@ -127,6 +132,19 @@ export default function OmServicesPage() {
             value={origin}
             onChange={(v) => { setOrigin(parseOrigin(v)); setPage(1); }}
             options={ORIGIN_OPTIONS}
+          />
+          {/* ★ แผน 20261024-02: ล้างแล้วกี่ครั้ง — เลขข้างตัวเลือก = จำนวนบ้านในแท็บ/โครงการ/ที่มาที่เลือก (ไม่นับคำค้น) */}
+          <Dropdown
+            className="w-48 font-normal"
+            value={wash}
+            onChange={(v) => { setWash(v); setPage(1); }}
+            options={[
+              { value: "", label: "ทุกจำนวนครั้งที่ล้าง" },
+              { value: "0", label: `ยังไม่เคยล้าง · ${washCounts["0"] ?? 0}` },
+              { value: "1", label: `ล้างแล้ว 1 ครั้ง · ${washCounts["1"] ?? 0}` },
+              { value: "2", label: `ล้างแล้ว 2 ครั้ง · ${washCounts["2"] ?? 0}` },
+              { value: "3", label: `ล้างแล้ว 3 ครั้งขึ้นไป · ${washCounts["3"] ?? 0}` },
+            ]}
           />
           <div className="ml-auto flex items-center gap-2">
             <Dropdown
